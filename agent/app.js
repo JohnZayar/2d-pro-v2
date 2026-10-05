@@ -1044,8 +1044,7 @@ window.saveBoard = async function saveBoard() {
         }
         ta.value = '';
         closeBoard();
-        await renderEntryTable();
-        if (activeScreen === 'records') await renderRecordsView();
+        openScreen('records'); // board bypasses pendingEntries; show the saved batch immediately
         updateSyncPill();
         const skipped = invalidLines.length + (items.length - validItems.length);
         showToast('✅ No' + batchNo + ' — သိမ်းပြီးပြီ' +
