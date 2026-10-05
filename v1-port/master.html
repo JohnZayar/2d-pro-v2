@@ -941,6 +941,10 @@ const PB = {
 
     async setSetting(key, value) {
         if (!this.tenantId) throw new Error('No tenant');
+        // Handle chunked save for large 2d_list_data
+        if (key === '2d_list_data' && Array.isArray(value)) {
+            return await this.setSettingChunked(key, value);
+        }
         const jsonVal = typeof value === 'string' ? value : JSON.stringify(value);
         try {
             const filter = encodeURIComponent('tenant="' + this.tenantId + '" && key="' + key + '"');
@@ -961,6 +965,55 @@ const PB = {
             return true;
         } catch (e) {
             console.warn('PB setSetting failed:', key, e.message);
+            throw e;
+        }
+    },
+
+    async setSettingChunked(key, records) {
+        // Split into chunks of 15 records (~3KB each, under 5000 limit)
+        const chunkSize = 15;
+        const chunks = [];
+        for (let i = 0; i < records.length; i += chunkSize) {
+            chunks.push(records.slice(i, i + chunkSize));
+        }
+        // Save each chunk
+        for (let i = 0; i < chunks.length; i++) {
+            const chunkKey = key + '_chunk_' + String(i).padStart(3, '0');
+            const jsonVal = JSON.stringify(chunks[i]);
+            await this.setSettingRaw(chunkKey, jsonVal);
+        }
+        // Save metadata
+        await this.setSettingRaw(key + '_chunks', JSON.stringify({ count: chunks.length, total: records.length }));
+        // Delete old direct key if exists (to avoid confusion)
+        try {
+            const filter = encodeURIComponent('tenant="' + this.tenantId + '" && key="' + key + '"');
+            const data = await this.req('GET', '/api/collections/app_settings/records?filter=' + filter + '&perPage=1');
+            if (data.items && data.items.length > 0) {
+                await this.req('DELETE', '/api/collections/app_settings/records/' + data.items[0].id);
+            }
+        } catch (e) {}
+        return true;
+    },
+
+    async setSettingRaw(key, jsonVal) {
+        if (!this.tenantId) throw new Error('No tenant');
+        try {
+            const filter = encodeURIComponent('tenant="' + this.tenantId + '" && key="' + key + '"');
+            const data = await this.req('GET', '/api/collections/app_settings/records?filter=' + filter + '&perPage=1');
+            if (data.items && data.items.length > 0) {
+                await this.req('PATCH', '/api/collections/app_settings/records/' + data.items[0].id, {
+                    value: jsonVal
+                });
+            } else {
+                await this.req('POST', '/api/collections/app_settings/records', {
+                    tenant: this.tenantId,
+                    key: key,
+                    value: jsonVal
+                });
+            }
+            return true;
+        } catch (e) {
+            console.warn('PB setSettingRaw failed:', key, e.message);
             throw e;
         }
     }
