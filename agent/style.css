@@ -446,8 +446,194 @@ select.field-input { appearance: auto; }
 /* ---------- Detail modal card ---------- */
 .detail-card { max-width: 480px; max-height: 84vh; overflow-y: auto; }
 
-/* ---------- Print: receipt only ---------- */
-.print-area { display: none; }
+/* ================= ENTRY SCREEN (စာရင်းသွင်းရန် — v1 POS style) ================= */
+
+.entry-topbar {
+    display: flex; align-items: center; gap: 8px;
+    background: linear-gradient(160deg, var(--card) 0%, #141d31 100%);
+    border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 8px 10px;
+    box-shadow: var(--shadow);
+    position: sticky; top: 64px; z-index: 40;
+}
+.sess-select {
+    flex: 1; min-width: 0;
+    background: #0a0f1a; color: var(--yellow);
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px; font-size: 13px; font-weight: 700;
+}
+#entrySyncPill { font-size: 15px; white-space: nowrap; }
+
+.entry-playerbar {
+    display: flex; align-items: center; gap: 8px;
+}
+.player-select {
+    flex: 1; min-width: 0;
+    background: #0a0f1a; color: #38bdf8;
+    font-weight: 700; font-size: 14px;
+}
+.entry-topbtns { display: flex; gap: 6px; }
+.top-btn {
+    background: var(--card); border: 1px solid var(--border); color: var(--text);
+    border-radius: 10px; padding: 10px 14px;
+    font-size: 16px; font-weight: 700; cursor: pointer;
+}
+.top-btn:active { transform: scale(.93); }
+.btn-save-top {
+    background: linear-gradient(135deg, #0284c7, #0369a1); color: #fff;
+    border: none; box-shadow: 0 4px 12px rgba(2,132,199,.4);
+}
+
+/* ---------- POS table ---------- */
+.table-container {
+    background: var(--card2); border: 1px solid var(--border);
+    border-radius: var(--radius); overflow: hidden;
+    box-shadow: var(--shadow);
+    max-height: 220px; overflow-y: auto;
+}
+.pos-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.pos-table thead th {
+    background: #141d31; color: var(--muted); font-size: 12px; font-weight: 700;
+    padding: 10px 8px; text-align: left;
+    position: sticky; top: 0; z-index: 2;
+}
+.pos-table tbody td {
+    padding: 10px 8px; border-top: 1px solid var(--border);
+    color: var(--text);
+}
+.pos-table .cell-no { color: var(--yellow); font-weight: 800; font-size: 16px; letter-spacing: 1px; }
+.pos-table .cell-amt { color: var(--green); font-weight: 700; }
+.pos-table .cell-del { text-align: center; }
+.pos-table .empty-cell { text-align: center; color: var(--muted); padding: 24px; font-size: 13px; }
+
+/* ---------- Color formula keypad (screenshot layout) ---------- */
+.keypad-panel {
+    background: var(--card2); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 10px;
+    box-shadow: var(--shadow);
+    display: flex; flex-direction: column; gap: 10px;
+}
+.quick-btns-grid {
+    display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px;
+}
+.q-btn {
+    border: none; border-radius: 10px;
+    padding: 12px 2px; font-size: 13px; font-weight: 800;
+    color: #fff; cursor: pointer; font-family: inherit;
+    box-shadow: 0 3px 8px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.25);
+    transition: transform .08s ease, filter .08s ease;
+    text-shadow: 0 1px 2px rgba(0,0,0,.4);
+}
+.q-btn:active { transform: scale(.92); filter: brightness(1.15); }
+.c-blue   { background: linear-gradient(160deg, #3b82f6, #1d4ed8); }
+.c-lblue  { background: linear-gradient(160deg, #38bdf8, #0284c7); }
+.c-green  { background: linear-gradient(160deg, #22c55e, #15803d); }
+.c-orange { background: linear-gradient(160deg, #f97316, #c2410c); }
+.c-pink   { background: linear-gradient(160deg, #f9a8d4, #ec4899); color: #4a044e; text-shadow: none; }
+.c-lpink  { background: linear-gradient(160deg, #fbcfe8, #f9a8d4); color: #831843; text-shadow: none; }
+.c-rose   { background: linear-gradient(160deg, #fb7185, #e11d48); }
+.c-peach  { background: linear-gradient(160deg, #fdba74, #fb923c); color: #7c2d12; text-shadow: none; }
+.c-yellow { background: linear-gradient(160deg, #fde047, #eab308); color: #713f12; text-shadow: none; }
+.c-dorange{ background: linear-gradient(160deg, #fb923c, #ea580c); }
+.c-dgreen { background: linear-gradient(160deg, #4ade80, #16a34a); }
+.c-cyan   { background: linear-gradient(160deg, #22d3ee, #0891b2); }
+.c-xblue  { background: linear-gradient(160deg, #93c5fd, #60a5fa); color: #1e3a8a; text-shadow: none; }
+
+/* ---------- 3 input boxes + R ---------- */
+.input-row-3box { display: flex; gap: 8px; align-items: stretch; }
+.box-wrap { flex: 1; min-width: 0; }
+.mbox {
+    width: 100%; padding: 12px 8px; font-size: 16px; font-weight: 800;
+    background: #0a0f1a; color: var(--text);
+    border: 2px solid var(--border); border-radius: 10px;
+    text-align: center; outline: none; font-family: inherit;
+}
+.mbox::placeholder { color: #475569; font-weight: 600; font-size: 13px; }
+.mbox.active-box { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(59,130,246,.25); }
+.btn-r-box {
+    background: linear-gradient(160deg, #3b82f6, #1d4ed8); color: #fff;
+    border: none; border-radius: 10px; padding: 0 18px;
+    font-size: 18px; font-weight: 800; cursor: pointer;
+    box-shadow: 0 3px 8px rgba(0,0,0,.35);
+}
+.btn-r-box:active { transform: scale(.92); }
+
+/* ---------- Numpad + ထည့်မည် ---------- */
+.numpad-grid-wrapper { display: flex; gap: 8px; }
+.numpad {
+    flex: 1; display: grid;
+    grid-template-columns: repeat(3, 1fr); gap: 6px;
+}
+.num-btn {
+    background: linear-gradient(160deg, #1e3a5f 0%, #14294a 100%);
+    border: 1px solid #2b4a7a; color: #fff;
+    border-radius: 10px; padding: 14px 4px;
+    font-size: 19px; font-weight: 800; cursor: pointer;
+    font-family: inherit;
+    box-shadow: 0 3px 8px rgba(0,0,0,.35);
+    transition: transform .08s ease;
+}
+.num-btn:active { transform: scale(.93); background: #2b4a7a; }
+.submit-btn {
+    width: 96px; flex-shrink: 0;
+    background: linear-gradient(160deg, #0ea5e9 0%, #0369a1 100%);
+    border: 1px solid rgba(255,255,255,.25);
+    font-size: 17px; line-height: 1.4;
+    box-shadow: 0 6px 16px rgba(2,132,199,.45), inset 0 1px 0 rgba(255,255,255,.25);
+}
+
+/* ---------- Entry footer ---------- */
+.footer-bar {
+    display: flex; justify-content: space-between; align-items: center;
+    background: linear-gradient(135deg, #0ea5e9 0%, #0369a1 100%);
+    border-radius: var(--radius); padding: 12px 16px;
+    font-size: 15px; font-weight: 700; color: #fff;
+    box-shadow: 0 6px 16px rgba(2,132,199,.4);
+    position: sticky; bottom: 8px;
+}
+.footer-bar b { font-size: 18px; }
+
+/* ================= RECORDS VIEW (batches) ================= */
+
+.v-player-block {
+    background: var(--card2); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 12px;
+    display: flex; flex-direction: column; gap: 10px;
+    box-shadow: var(--shadow);
+}
+.v-player-head {
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 15px; font-weight: 800;
+    padding: 4px 2px 8px;
+    border-bottom: 1px solid var(--border);
+}
+.v-player-head b { color: var(--green); }
+.v-batch {
+    display: flex; flex-direction: column; gap: 6px;
+    background: rgba(0,0,0,.18);
+    border: 1px dashed var(--border);
+    border-radius: 10px; padding: 8px;
+}
+.v-batch-head {
+    display: flex; justify-content: space-between; align-items: center;
+    cursor: pointer; padding: 4px 6px;
+    border-radius: 8px;
+}
+.v-batch-head:active { background: rgba(59,130,246,.12); }
+.v-batch-no {
+    font-size: 14px; font-weight: 800; color: #38bdf8;
+    background: rgba(56,189,248,.12);
+    border: 1px solid rgba(56,189,248,.4);
+    padding: 3px 12px; border-radius: 16px;
+}
+.v-batch-total { font-size: 13px; color: var(--green); font-weight: 700; }
+
+/* ---------- Print: batch structure ---------- */
+@media print {
+    .pr-player { font-size: 16px; font-weight: 800; margin-top: 6px; }
+    .pr-batch { font-size: 13px; font-weight: 700; margin-top: 4px; color: #333; }
+}
+
 
 @media print {
     body { background: #fff !important; color: #000 !important; }

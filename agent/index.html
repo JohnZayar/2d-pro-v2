@@ -44,27 +44,25 @@
     <main class="app-main">
         <!-- ===== HOME SCREEN: big menu buttons ===== -->
         <section id="screen-home" class="screenpane">
-            <!-- Current session banner -->
             <div id="sessionBanner" class="session-banner">
                 <span id="sessionBannerText">Session ရွေးနေတယ်…</span>
             </div>
 
-            <!-- Menu grid -->
             <div class="menu-grid">
-                <button class="menu-card menu-board" onclick="openBoard()">
+                <button class="menu-card menu-entry" onclick="openScreen('entry')">
                     <span class="menu-icon">📝</span>
-                    <span class="menu-label">စာရင်းသွင်း</span>
-                    <span class="menu-sub">ဘုတ်ဖွင့်၍ ဂဏန်းရိုက်</span>
+                    <span class="menu-label">စာရင်းသွင်းရန်</span>
+                    <span class="menu-sub">ဂဏန်းရိုက် ထည့်သွင်း</span>
+                </button>
+                <button class="menu-card" onclick="openScreen('records')">
+                    <span class="menu-icon">📋</span>
+                    <span class="menu-label">စာရင်းများ</span>
+                    <span class="menu-sub">ဘောက်ချာ ကြည့်ရန်</span>
                 </button>
                 <button class="menu-card" onclick="openScreen('players')">
                     <span class="menu-icon">👥</span>
                     <span class="menu-label">လူစာရင်း</span>
                     <span class="menu-sub" id="menuPlayersSub">—</span>
-                </button>
-                <button class="menu-card" onclick="openScreen('voucher')">
-                    <span class="menu-icon">🧾</span>
-                    <span class="menu-label">ဘောက်ချာ</span>
-                    <span class="menu-sub">တဦးချင်း စာရွက်</span>
                 </button>
                 <button class="menu-card" onclick="openScreen('daily')">
                     <span class="menu-icon">📅</span>
@@ -82,28 +80,111 @@
                     <span class="menu-sub">Sync • ထွက်ရန်</span>
                 </button>
             </div>
+        </section>
 
-            <!-- My records summary -->
-            <div class="section-head">
-                <h2>📋 ကျွန်တော့် စာရင်း</h2>
-                <span id="recordCount" class="count-badge">0</span>
-            </div>
-            <div id="recordsList" class="records-list"></div>
-            <div id="recordsEmpty" class="empty-state" hidden>
-                စာရင်း မရှိသေးပါ<br><span>📝 စာရင်းသွင်း နှိပ်၍ စသွင်းပါ</span>
+        <!-- ===== SCREEN: ENTRY (စာရင်းသွင်းရန်) — v1 POS style ===== -->
+        <section id="screen-entry" class="screenpane" hidden>
+            <div class="entry-topbar">
+                <button class="back-btn" onclick="goHome()">‹ ပင်မ</button>
+                <select id="entrySessionSelect" class="sess-select" onchange="onEntrySessionChange(this)"></select>
+                <span id="entrySyncPill" class="sync-pill">⚪</span>
             </div>
 
-            <!-- Totals -->
-            <div class="totals-bar">
-                <div class="total-item">
-                    <span class="total-label">စုစုပေါင်း</span>
-                    <span class="total-value" id="totalAmount">0</span>
-                </div>
-                <div class="total-item">
-                    <span class="total-label">အကွက်</span>
-                    <span class="total-value" id="totalCount">0</span>
+            <div class="entry-playerbar">
+                <select id="entryPlayerSelect" class="field-input player-select">
+                    <option value="">-- ထိုးသား ရွေးပါ --</option>
+                </select>
+                <div class="entry-topbtns">
+                    <button class="top-btn" onclick="openBoard()" title="Digital Board">📋</button>
+                    <button class="top-btn btn-save-top" onclick="openScreen('records')">Save</button>
                 </div>
             </div>
+
+            <div class="table-container">
+                <table class="pos-table">
+                    <thead>
+                        <tr>
+                            <th style="width:30%;">ထိုးသား</th>
+                            <th style="width:30%;">ဂဏန်း</th>
+                            <th style="width:30%;">ပမာဏ</th>
+                            <th style="width:10%;text-align:center;">🗑️</th>
+                        </tr>
+                    </thead>
+                    <tbody id="entryTableBody">
+                        <tr><td colspan="4" class="empty-cell">စာရင်း မရှိသေးပါ။</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Color formula keypad (matches v1 screenshot) -->
+            <div class="keypad-panel" id="entryKeypad">
+                <div class="quick-btns-grid">
+                    <button class="q-btn c-blue" type="button" onclick="applyFormula('ခွေ')">ခွေ</button>
+                    <button class="q-btn c-lblue" type="button" onclick="applyFormula('နောက်')">နောက်</button>
+                    <button class="q-btn c-green" type="button" onclick="applyFormula('ပတ်')">ပတ်</button>
+                    <button class="q-btn c-orange" type="button" onclick="applyFormula('အပူ')">အပူ</button>
+                    <button class="q-btn c-pink" type="button" onclick="applyFormula('ပါဝါ')">ပါဝါ</button>
+                    <button class="q-btn c-lpink" type="button" onclick="applyFormula('အစုံ')">အစုံ</button>
+                    <button class="q-btn c-rose" type="button" onclick="applyFormula('ရွေ')">ရွေ</button>
+                    <button class="q-btn c-peach" type="button" onclick="applyFormula('ချေးပါ')">ချေးပါ</button>
+                    <button class="q-btn c-yellow" type="button" onclick="applyFormula('နက္ခတ်')">နက္ခတ်</button>
+                    <button class="q-btn c-yellow" type="button" onclick="applyFormula('ထိပ်')">ထိပ်</button>
+                    <button class="q-btn c-dorange" type="button" onclick="applyFormula('ပူး')">ပူး</button>
+                    <button class="q-btn c-dgreen" type="button" onclick="applyFormula('ဖုံ')">ဖုံ</button>
+                    <button class="q-btn c-blue" type="button" onclick="applyFormula('ယုံ')">ယုံ</button>
+                    <button class="q-btn c-cyan" type="button" onclick="applyFormula('ညီအစ်ကို')">ညီအစ်ကို</button>
+                    <button class="q-btn c-xblue" type="button" onclick="clearInputs()">C</button>
+                </div>
+
+                <div class="input-row-3box">
+                    <div class="box-wrap"><input type="text" id="boxNo" class="mbox active-box" placeholder="ဂဏန်း" readonly onclick="setFocusBox('no')"></div>
+                    <div class="box-wrap"><input type="text" id="boxAmt" class="mbox" placeholder="ဒဲ့" readonly onclick="setFocusBox('amt')"></div>
+                    <div class="box-wrap"><input type="text" id="boxRev" class="mbox" placeholder="အပြန်" readonly onclick="setFocusBox('rev')"></div>
+                    <button class="btn-r-box" type="button" onclick="toggleRVal()">R</button>
+                </div>
+
+                <div class="numpad-grid-wrapper">
+                    <div class="numpad">
+                        <button class="num-btn" type="button" onclick="appendNum('1')">1</button>
+                        <button class="num-btn" type="button" onclick="appendNum('2')">2</button>
+                        <button class="num-btn" type="button" onclick="appendNum('3')">3</button>
+                        <button class="num-btn" type="button" onclick="appendNum('4')">4</button>
+                        <button class="num-btn" type="button" onclick="appendNum('5')">5</button>
+                        <button class="num-btn" type="button" onclick="appendNum('6')">6</button>
+                        <button class="num-btn" type="button" onclick="appendNum('7')">7</button>
+                        <button class="num-btn" type="button" onclick="appendNum('8')">8</button>
+                        <button class="num-btn" type="button" onclick="appendNum('9')">9</button>
+                        <button class="num-btn" type="button" onclick="appendNum('00')">00</button>
+                        <button class="num-btn" type="button" onclick="appendNum('0')">0</button>
+                        <button class="num-btn" type="button" onclick="backspaceNum()">⌫</button>
+                    </div>
+                    <button class="num-btn submit-btn" type="button" onclick="submitEntry()">ထည့်မည်</button>
+                </div>
+            </div>
+
+            <div class="footer-bar">
+                <span>Total: <b id="entryTotal">0</b></span>
+                <span>ကွက်: <b id="entryCount">0</b></span>
+            </div>
+        </section>
+
+        <!-- ===== SCREEN: RECORDS (စာရင်းများ — batches by player) ===== -->
+        <section id="screen-records" class="screenpane" hidden>
+            <div class="screen-head">
+                <button class="back-btn" onclick="goHome()">‹ ပင်မ</button>
+                <h2>📋 စာရင်းများ</h2>
+                <span></span>
+            </div>
+            <label class="field-label" for="recordsPlayer">လူ ရွေးပါ</label>
+            <select id="recordsPlayer" class="field-input" onchange="renderRecordsView()"></select>
+            <label class="field-label" for="recordsSession">Session</label>
+            <select id="recordsSession" class="field-input" onchange="renderRecordsView()"></select>
+            <div class="voucher-actions">
+                <button class="btn-action" onclick="copyVoucher()">📋 Copy</button>
+                <button class="btn-action" onclick="printVoucher()">🖨️ Print</button>
+                <button class="btn-action" onclick="shareVoucher()">📤 Share</button>
+            </div>
+            <div id="recordsViewContent" class="voucher-content"></div>
         </section>
 
         <!-- ===== SCREEN: PLAYERS ===== -->
@@ -117,25 +198,6 @@
             <div id="playersEmpty" class="empty-state" hidden>
                 လူ မရှိသေးပါ<br><span>＋ အသစ် နှိပ်၍ ထည့်ပါ</span>
             </div>
-        </section>
-
-        <!-- ===== SCREEN: VOUCHER ===== -->
-        <section id="screen-voucher" class="screenpane" hidden>
-            <div class="screen-head">
-                <button class="back-btn" onclick="goHome()">‹ ပင်မ</button>
-                <h2>🧾 ဘောက်ချာ</h2>
-                <span></span>
-            </div>
-            <label class="field-label" for="voucherPlayer">လူ ရွေးပါ</label>
-            <select id="voucherPlayer" class="field-input" onchange="renderVoucher()"></select>
-            <label class="field-label" for="voucherSession">Session</label>
-            <select id="voucherSession" class="field-input" onchange="renderVoucher()"></select>
-            <div class="voucher-actions">
-                <button class="btn-action" onclick="copyVoucher()">📋 Copy</button>
-                <button class="btn-action" onclick="printVoucher()">🖨️ Print</button>
-                <button class="btn-action" onclick="shareVoucher()">📤 Share</button>
-            </div>
-            <div id="voucherContent" class="voucher-content"></div>
         </section>
 
         <!-- ===== SCREEN: DAILY ===== -->
@@ -167,41 +229,17 @@
     </main>
 </div>
 
-<!-- ============ DIGITAL BOARD MODAL ============ -->
+<!-- ============ DIGITAL BOARD MODAL (paste/type alternative) ============ -->
 <div id="boardModal" class="modal" hidden>
     <div class="board-card">
         <div class="board-title">
-            <span>📝 ဒစ်ဂျစ်တယ် ဘုတ်</span>
+            <span>📋 ဒစ်ဂျစ်တယ် ဘုတ်</span>
             <span class="close-x" onclick="closeBoard()">✕</span>
         </div>
 
         <div class="board-player-row">
             <label class="field-label" for="boardPlayer">🧍 ဘယ်သူ့အတွက်</label>
             <select id="boardPlayer" class="field-input"></select>
-        </div>
-
-        <button class="btn-kb-toggle" onclick="toggleKeyboard()">⌨️ ကီးဘုတ် ဖွင့်/ပိတ်</button>
-
-        <div id="boardKeyboard" class="kb" hidden>
-            <button class="kb-key" onclick="kbPress('1')">1</button>
-            <button class="kb-key" onclick="kbPress('2')">2</button>
-            <button class="kb-key" onclick="kbPress('3')">3</button>
-            <button class="kb-key kb-fn" onclick="kbPress('R')">R</button>
-            <button class="kb-key kb-fn" onclick="kbPress('ထိပ်')">ထိပ်</button>
-            <button class="kb-key" onclick="kbPress('4')">4</button>
-            <button class="kb-key" onclick="kbPress('5')">5</button>
-            <button class="kb-key" onclick="kbPress('6')">6</button>
-            <button class="kb-key kb-fn" onclick="kbPress('နောက်')">နောက်</button>
-            <button class="kb-key kb-fn" onclick="kbPress('=')">=</button>
-            <button class="kb-key" onclick="kbPress('7')">7</button>
-            <button class="kb-key" onclick="kbPress('8')">8</button>
-            <button class="kb-key" onclick="kbPress('9')">9</button>
-            <button class="kb-key kb-fn" onclick="kbPress(' ')">␣</button>
-            <button class="kb-key kb-fn" onclick="kbPress('\n')">⏎</button>
-            <button class="kb-key" onclick="kbPress('0')">0</button>
-            <button class="kb-key kb-fn" onclick="kbPress('00')">00</button>
-            <button class="kb-key kb-del" onclick="kbPress('BS')">⌫</button>
-            <button class="kb-key kb-del" onclick="kbPress('CLR')">🧹</button>
         </div>
 
         <div class="board-textarea-wrap">
@@ -256,14 +294,14 @@
     </div>
 </div>
 
-<!-- ============ VOUCHER GROUP DETAIL MODAL ============ -->
-<div id="voucherDetailModal" class="modal" hidden>
+<!-- ============ BATCH DETAIL MODAL ============ -->
+<div id="batchDetailModal" class="modal" hidden>
     <div class="settings-card detail-card">
         <div class="board-title">
-            <span id="voucherDetailTitle">🧾</span>
-            <span class="close-x" onclick="closeVoucherDetail()">✕</span>
+            <span id="batchDetailTitle">🧾</span>
+            <span class="close-x" onclick="closeBatchDetail()">✕</span>
         </div>
-        <div id="voucherDetailList" class="records-list"></div>
+        <div id="batchDetailList" class="records-list"></div>
     </div>
 </div>
 

@@ -1,18 +1,21 @@
 /**
- * app.js — 2D Agent Pro v2 (local-first)
+ * app.js — 2D Agent Pro v2 (local-first, v1-style entry)
  *
- * Flow:
- *  1. First run → link screen (tenant link code + agent name).
- *  2. Connected → main screen: session banner, big board button, records list.
- *  3. Digital board → parseBoard() → optimistic local save via sync.mutate()
- *     (instant UI + background PocketBase sync).
- *  4. Background sync: syncNow() on boot, startAutoSync(60s), manual button.
+ * Screens (home menu):
+ *  - entry   : 📝 စာရင်းသွင်းရန် — v1 POS style (boxes + color keypad + numpad + ထည့်မည်)
+ *  - records : 📋 စာရင်းများ — voucher batches by player (No1, No2… in entry order)
+ *  - players : 👥 လူစာရင်း
+ *  - daily   : 📅 တနေ့စာ
+ *  - weekly  : 📊 တပတ်စာ
+ *
+ * Each ထည့်မည် press creates a new batch (No1, No2…) per player per session.
+ * Batches keep entry order — never re-sorted — so they match what was sent.
  */
 
 import * as db from '../shared/db.js';
 import * as pb from '../shared/pb.js';
 import * as sync from '../shared/sync.js';
-import { parseBoard, parseBoardReport } from '../shared/parser.js';
+import { parseBoardReport } from '../shared/parser.js';
 import { uid, formatMoney, formatDateStr, getWeekMonday, showToast, escHtml, debounce } from '../shared/utils.js';
 
 const LS_TENANT = 'v2_agent_tenant';
@@ -53,13 +56,11 @@ async function init() {
     if (tenantId && agentName) {
         showApp();
         await refreshSession();
-        await renderRecords();
         // Background sync (non-blocking)
         sync.startAutoSync(60000);
         sync.syncNow().then(() => {
             updateSyncPill();
             refreshSession();
-            renderRecords();
             refreshActiveScreen();
         }).catch(() => updateSyncPill());
     } else {
@@ -89,7 +90,6 @@ function showApp() {
 window.connectAgent = async function connectAgent() {
     const code = document.getElementById('tenantCodeInput').value.trim();
     const name = document.getElementById('agentNameInput').value.trim();
-    const errEl = document.getElementById('linkError');
 
     if (!code) return showLinkError('Link Code ထည့်ပါ');
     if (!name) return showLinkError('နာမည် ထည့်ပါ');
@@ -109,7 +109,6 @@ window.connectAgent = async function connectAgent() {
             } catch (e) { /* not found remotely either */ }
         }
         // Local-first: accept the code even if unverified (works offline).
-        // Record will reconcile on first sync.
         if (!tenant) {
             tenant = { id: code, name: 'Main (' + code.slice(0, 6) + '…)' };
             await db.put('tenants', tenant);
@@ -122,7 +121,6 @@ window.connectAgent = async function connectAgent() {
 
         showApp();
         await refreshSession();
-        await renderRecords();
         sync.startAutoSync(60000);
         sync.syncNow().catch(() => {});
         showToast('✅ ချိတ်ဆက်ပြီးပြီ');
@@ -175,288 +173,37 @@ async function refreshSession() {
     }
 }
 
-/* ================= Digital board ================= */
-
-window.openBoard = function openBoard() {
-    if (!currentSessionId) {
-        showToast('⚠️ Session မရှိသေးပါ');
-        return;
-    }
-    populateBoardPlayer();
-    document.getElementById('boardModal').hidden = false;
-    document.getElementById('boardPreview').hidden = true;
-    document.getElementById('boardKeyboard').hidden = true;
-    const ta = document.getElementById('boardTextarea');
-    ta.value = '';
-    setTimeout(() => ta.focus(), 100);
-};
-
-/** Fill the "who is this bet for" select in the board modal. */
-async function populateBoardPlayer() {
-    const sel = document.getElementById('boardPlayer');
-    const players = await getPlayers();
-    let html = '<option value="">🧍 ကိုယ်တိုင်</option>';
-    html += players.map((p) => '<option value="' + escHtml(p.name) + '">' + escHtml(p.name) + '</option>').join('');
-    sel.innerHTML = html;
-    // Default to first player when players exist, else self.
-    sel.value = players.length ? players[0].name : '';
-}
-
-window.closeBoard = function closeBoard() {
-    document.getElementById('boardModal').hidden = true;
-};
-
-window.pasteToBoard = async function pasteToBoard() {
+async function getAgentSessions() {
     try {
-        const text = await navigator.clipboard.readText();
-        const ta = document.getElementById('boardTextarea');
-        ta.value = (ta.value ? ta.value + '\n' : '') + text;
-        updateBoardPreview();
+        const sessions = await db.query('sessions', 'by_tenant', tenantId);
+        return sessions.sort((a, b) => (b.created || 0) - (a.created || 0));
     } catch (e) {
-        showToast('📋 Paste ခွင့်မရှိပါ — ကိုယ်တိုင် paste လုပ်ပါ');
-    }
-};
-
-const updateBoardPreview = debounce(() => {
-    const text = document.getElementById('boardTextarea').value;
-    const box = document.getElementById('boardPreview');
-    if (!text.trim()) { box.hidden = true; return; }
-    const { items, invalidLines } = parseBoardReport(text);
-    box.hidden = false;
-    box.innerHTML = '✅ <b>' + items.length + '</b> ကွက် ဝင်မယ်' +
-        (invalidLines.length ? ' &nbsp; <span class="warn">⚠️ ' + invalidLines.length + ' လိုင်း ပြင်ရန်</span>' : '');
-}, 400);
-
-document.addEventListener('input', (e) => {
-    if (e.target && e.target.id === 'boardTextarea') updateBoardPreview();
-});
-
-/**
- * Save board → parse → optimistic local records via sync.mutate().
- * Valid lines save; invalid lines stay in the textarea for correction.
- */
-window.saveBoard = async function saveBoard() {
-    if (saveInFlight) return;
-    const ta = document.getElementById('boardTextarea');
-    const text = ta.value;
-    if (!text.trim()) { showToast('စာရွက် လွတ်နေတယ်'); return; }
-    if (!currentSessionId) { showToast('⚠️ Session မရှိသေးပါ'); return; }
-
-    saveInFlight = true;
-    try {
-        const { items, invalidLines } = parseBoardReport(text);
-        const playerName = document.getElementById('boardPlayer').value || null;
-        let savedCount = 0;
-
-        for (const it of items) {
-            await sync.mutate('create', 'lottery_records', {
-                id: uid(),
-                tenant: tenantId,
-                session: currentSessionId,
-                number: it.number,
-                amount: it.amount,
-                agent_name: agentName,
-                player_name: playerName,
-                record_type: 'pos',
-                batch_no: null,
-                created: Date.now()
-            });
-            savedCount++;
-        }
-
-        // Optimistic UI: re-render immediately from local DB.
-        await renderRecords();
-        refreshActiveScreen();
-
-        if (invalidLines.length) {
-            ta.value = invalidLines.join('\n');
-            showToast('✅ ' + savedCount + ' ကွက် ဝင်ပြီ — ⚠️ ' + invalidLines.length + ' လိုင်း ပြင်ရန်');
-        } else {
-            ta.value = '';
-            closeBoard();
-            showToast('✅ ' + savedCount + ' ကွက် သိမ်းပြီးပြီ');
-        }
-        updateSyncPill();
-    } catch (e) {
-        console.error('[agent] saveBoard failed', e);
-        showToast('❌ သိမ်းမရပါ: ' + e.message);
-    } finally {
-        saveInFlight = false;
-    }
-};
-
-/* ================= Records list ================= */
-
-async function renderRecords() {
-    const listEl = document.getElementById('recordsList');
-    const emptyEl = document.getElementById('recordsEmpty');
-    if (!currentSessionId) {
-        listEl.innerHTML = '';
-        emptyEl.hidden = false;
-        document.getElementById('recordCount').textContent = '0';
-        document.getElementById('totalAmount').textContent = '0';
-        document.getElementById('totalCount').textContent = '0';
-        return;
-    }
-    let recs = [];
-    try {
-        recs = await db.query('lottery_records', 'by_session', currentSessionId);
-    } catch (e) {
-        console.warn('[agent] renderRecords query failed', e);
-    }
-    // This agent's records only, newest first.
-    recs = recs
-        .filter((r) => (r.agent_name || '') === agentName)
-        .sort((a, b) => (b.created || 0) - (a.created || 0));
-
-    document.getElementById('recordCount').textContent = recs.length;
-    const total = recs.reduce((s, r) => s + (Number(r.amount) || 0), 0);
-    document.getElementById('totalAmount').textContent = formatMoney(total);
-    document.getElementById('totalCount').textContent = recs.length;
-
-    if (!recs.length) {
-        listEl.innerHTML = '';
-        emptyEl.hidden = false;
-        return;
-    }
-    emptyEl.hidden = true;
-    listEl.innerHTML = recs.map((r) =>
-        '<div class="record-row">' +
-            '<span class="rec-no">' + escHtml(r.number) +
-                (r.player_name ? '<span class="rec-player">' + escHtml(r.player_name) + '</span>' : '') +
-            '</span>' +
-            '<span class="rec-amt">' + formatMoney(r.amount) + '</span>' +
-            '<span class="rec-actions">' +
-                '<button class="rec-edit" onclick="openEditRecord(\'' + r.id + '\')" title="ပြင်မည်">✏️</button>' +
-                '<button class="rec-del" onclick="deleteRecord(\'' + r.id + '\')" title="ဖျက်မည်">🗑️</button>' +
-            '</span>' +
-        '</div>'
-    ).join('');
-}
-
-window.deleteRecord = async function deleteRecord(id) {
-    const rec = await db.get('lottery_records', id);
-    if (!rec) return;
-    if (!confirm(rec.number + ' (' + formatMoney(rec.amount) + ') ဖျက်မှာလား?')) return;
-    await sync.mutate('delete', 'lottery_records', { id });
-    await renderRecords();
-    refreshActiveScreen();
-    refreshVoucherDetail();
-    showToast('🗑️ ဖျက်ပြီးပြီ');
-};
-
-/* ================= Edit record (အမှားပြင်ရန်) ================= */
-
-let editingRecordId = null;
-
-window.openEditRecord = async function openEditRecord(id) {
-    const rec = await db.get('lottery_records', id);
-    if (!rec) return;
-    editingRecordId = id;
-    document.getElementById('editNumberInput').value = rec.number || '';
-    document.getElementById('editAmountInput').value = rec.amount || '';
-    document.getElementById('editModal').hidden = false;
-    setTimeout(() => document.getElementById('editAmountInput').focus(), 100);
-};
-
-window.closeEditModal = function closeEditModal() {
-    document.getElementById('editModal').hidden = true;
-    editingRecordId = null;
-};
-
-window.saveEditRecord = async function saveEditRecord() {
-    if (!editingRecordId) return;
-    const num = document.getElementById('editNumberInput').value.trim();
-    const amt = Number(document.getElementById('editAmountInput').value);
-    if (!/^\d{1,2}$/.test(num)) { showToast('နံပါတ် မှန်အောင်ထည့်ပါ (0-99)'); return; }
-    if (!amt || amt <= 0) { showToast('ငွေ ထည့်ပါ'); return; }
-    try {
-        const existing = (await db.get('lottery_records', editingRecordId)) || {};
-        await sync.mutate('update', 'lottery_records', Object.assign({}, existing, {
-            id: editingRecordId,
-            number: num.padStart(2, '0'),
-            amount: amt
-        }));
-        closeEditModal();
-        await renderRecords();
-        refreshActiveScreen();
-        refreshVoucherDetail();
-        updateSyncPill();
-        showToast('✅ ပြင်ပြီးပြီ');
-    } catch (e) {
-        showToast('❌ သိမ်းမရပါ: ' + e.message);
-    }
-};
-
-/* ================= Settings & sync ================= */
-
-window.openSettings = function openSettings() {
-    document.getElementById('settingsSyncState').textContent =
-        pb.isLoggedIn() ? '✅ ' + (sync.isOnline() ? 'Online' : 'Offline') : '📴 Local only';
-    document.getElementById('settingsModal').hidden = false;
-};
-
-window.closeSettings = function closeSettings() {
-    document.getElementById('settingsModal').hidden = true;
-};
-
-window.syncNowManual = async function syncNowManual() {
-    updateSyncPill('working');
-    try {
-        const res = await sync.syncNow();
-        const pushed = (res.push && res.push.pushed) || 0;
-        const pulled = (res.pull && res.pull.pulled) || 0;
-        showToast('🔄 Sync ပြီးပြီ (↑' + pushed + ' ↓' + pulled + ')');
-        await refreshSession();
-        await renderRecords();
-        refreshActiveScreen();
-    } catch (e) {
-        showToast('❌ Sync မရပါ: ' + e.message);
-    }
-    updateSyncPill();
-};
-
-function updateSyncPill(force) {
-    const pill = document.getElementById('syncPill');
-    if (!pill) return;
-    pill.classList.remove('online', 'offline', 'working');
-    if (force === 'working' || sync.isSyncing()) {
-        pill.classList.add('working');
-        pill.textContent = '🟡';
-        pill.title = 'Syncing…';
-    } else if (!sync.isOnline()) {
-        pill.classList.add('offline');
-        pill.textContent = '🔴';
-        pill.title = 'Offline — local only';
-    } else if (pb.isLoggedIn()) {
-        pill.classList.add('online');
-        pill.textContent = '🟢';
-        pill.title = 'Online & synced';
-    } else {
-        pill.classList.add('offline');
-        pill.textContent = '⚪';
-        pill.title = 'Local only (no sync account)';
+        return [];
     }
 }
 
-// Close modals on backdrop tap
-document.addEventListener('click', (e) => {
-    if (e.target && e.target.classList && e.target.classList.contains('modal')) {
-        e.target.hidden = true;
+/** This agent's records in a session, entry order (oldest first). */
+async function getSessionRecords(sessId) {
+    try {
+        const recs = await db.query('lottery_records', 'by_session', sessId);
+        return recs
+            .filter((r) => (r.agent_name || '') === agentName)
+            .sort((a, b) => (a.created || 0) - (b.created || 0));
+    } catch (e) {
+        return [];
     }
-});
+}
 
 /* ================= Screens (home menu navigation) ================= */
 
 let activeScreen = 'home';
 
-/** Open a feature screen (players / voucher / daily / weekly). */
+/** Open a feature screen. */
 window.openScreen = function openScreen(name) {
     activeScreen = name;
     document.querySelectorAll('.screenpane').forEach((p) => { p.hidden = true; });
     const pane = document.getElementById('screen-' + name);
     if (pane) pane.hidden = false;
-    // Always start at the top of the new screen.
     window.scrollTo(0, 0);
     refreshActiveScreen();
 };
@@ -470,7 +217,7 @@ window.goHome = function goHome() {
     refreshActiveScreen();
 };
 
-/** Floating scroll-to-top button: show only when scrolled down. */
+/** Floating scroll-to-top button. */
 window.scrollToTop = function scrollToTop() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
 };
@@ -480,16 +227,16 @@ window.addEventListener('scroll', () => {
     if (btn) btn.hidden = window.scrollY < 300;
 }, { passive: true });
 
-/** Re-render whichever screen is currently visible (after data changes). */
+/** Re-render whichever screen is currently visible. */
 function refreshActiveScreen() {
-    if (activeScreen === 'home') { renderRecords(); updateMenuSubs(); }
+    if (activeScreen === 'home') { updateMenuSubs(); }
+    else if (activeScreen === 'entry') refreshEntryScreen();
+    else if (activeScreen === 'records') renderRecordsView();
     else if (activeScreen === 'players') renderPlayers();
-    else if (activeScreen === 'voucher') renderVoucher();
     else if (activeScreen === 'daily') renderDaily();
     else if (activeScreen === 'weekly') renderWeekly();
 }
 
-/** Update the small subtitles on home menu cards (e.g. player count). */
 async function updateMenuSubs() {
     try {
         const players = await getPlayers();
@@ -502,7 +249,6 @@ async function updateMenuSubs() {
 
 let editingPlayerId = null;
 
-/** This agent's players, sorted by name. */
 async function getPlayers() {
     try {
         const all = await db.query('players', 'by_tenant', tenantId);
@@ -580,13 +326,9 @@ async function renderPlayers() {
     const emptyEl = document.getElementById('playersEmpty');
     const players = await getPlayers();
 
-    // Current-session totals per player (for quick reference).
     let sessRecs = [];
     if (currentSessionId) {
-        try {
-            sessRecs = (await db.query('lottery_records', 'by_session', currentSessionId))
-                .filter((r) => (r.agent_name || '') === agentName);
-        } catch (e) { /* ignore */ }
+        sessRecs = (await getSessionRecords(currentSessionId));
     }
     const totals = {};
     sessRecs.forEach((r) => {
@@ -615,81 +357,264 @@ async function renderPlayers() {
     }).join('');
 }
 
-/* ================= Custom keyboard ================= */
+/* ================= ENTRY SCREEN (စာရင်းသွင်းရန်) ================= */
 
-window.toggleKeyboard = function toggleKeyboard() {
-    const kb = document.getElementById('boardKeyboard');
-    kb.hidden = !kb.hidden;
+let activeBox = 'no'; // 'no' | 'amt' | 'rev'
+
+function $(id) { return document.getElementById(id); }
+function boxNo() { return $('boxNo'); }
+function boxAmt() { return $('boxAmt'); }
+function boxRev() { return $('boxRev'); }
+
+window.setFocusBox = function setFocusBox(boxName) {
+    activeBox = boxName;
+    boxNo().classList.remove('active-box');
+    boxAmt().classList.remove('active-box');
+    boxRev().classList.remove('active-box');
+    if (boxName === 'no') boxNo().classList.add('active-box');
+    else if (boxName === 'amt') boxAmt().classList.add('active-box');
+    else if (boxName === 'rev') boxRev().classList.add('active-box');
 };
 
-/** Insert key at cursor (or handle BS/CLR). */
-window.kbPress = function kbPress(k) {
-    const ta = document.getElementById('boardTextarea');
-    if (k === 'BS') {
-        const s = ta.selectionStart || ta.value.length;
-        const e = ta.selectionEnd || ta.value.length;
-        if (s !== e) ta.value = ta.value.slice(0, s) + ta.value.slice(e);
-        else ta.value = ta.value.slice(0, Math.max(0, s - 1)) + ta.value.slice(s);
-        const pos = Math.max(0, (s !== e ? s : s - 1));
-        ta.setSelectionRange(pos, pos);
-    } else if (k === 'CLR') {
-        ta.value = '';
-    } else {
-        const s = ta.selectionStart != null ? ta.selectionStart : ta.value.length;
-        const e = ta.selectionEnd != null ? ta.selectionEnd : ta.value.length;
-        ta.value = ta.value.slice(0, s) + k + ta.value.slice(e);
-        const pos = s + k.length;
-        ta.setSelectionRange(pos, pos);
+window.appendNum = function appendNum(val) {
+    if (activeBox === 'no') boxNo().value += val;
+    else if (activeBox === 'amt') boxAmt().value += val;
+    else if (activeBox === 'rev') boxRev().value += val;
+};
+
+window.backspaceNum = function backspaceNum() {
+    if (activeBox === 'no') boxNo().value = boxNo().value.slice(0, -1);
+    else if (activeBox === 'amt') boxAmt().value = boxAmt().value.slice(0, -1);
+    else if (activeBox === 'rev') boxRev().value = boxRev().value.slice(0, -1);
+};
+
+window.clearInputs = function clearInputs() {
+    boxNo().value = ''; boxAmt().value = ''; boxRev().value = '';
+    setFocusBox('no');
+};
+
+/**
+ * Keyboard formula buttons (screenshot layout).
+ * Labels insert into the ဂဏန်း box exactly as shown; known formulas
+ * map to their parser spelling. Then focus moves to the ဒဲ့ box.
+ */
+const FORMULA_INSERT = {
+    'ခွေ': 'ခွေ',
+    'နောက်': 'နောက်',
+    'ပတ်': 'ပတ်',
+    'အပူ': 'အပူး',
+    'ပါဝါ': 'ပါဝါ',
+    'အစုံ': 'စုံစုံ',
+    'ရွေ': 'ရွေ',
+    'ချေးပါ': 'ချေးပါ',
+    'နက္ခတ်': 'နက္ခတ်',
+    'ထိပ်': 'ထိပ်',
+    'ပူး': 'ပူး',
+    'ဖုံ': 'ဖုံ',
+    'ယုံ': 'ယုံ',
+    'ညီအစ်ကို': 'ညီအစ်ကို'
+};
+
+window.applyFormula = function applyFormula(fName) {
+    const insert = FORMULA_INSERT[fName] || fName;
+    const cur = boxNo().value.trim();
+    boxNo().value = cur ? cur + insert : insert;
+    setFocusBox('amt');
+};
+
+window.toggleRVal = function toggleRVal() {
+    boxRev().value = boxRev().value.trim() ? '' : 'R';
+};
+
+/** Refresh the entry screen: player select, session select, table, totals. */
+async function refreshEntryScreen() {
+    // Player select (preserve selection)
+    const pSel = $('entryPlayerSelect');
+    const prevPlayer = pSel.value;
+    const players = await getPlayers();
+    pSel.innerHTML = '<option value="">-- ထိုးသား ရွေးပါ --</option>' +
+        players.map((p) => '<option value="' + escHtml(p.name) + '">' + escHtml(p.name) + '</option>').join('');
+    if (prevPlayer && Array.from(pSel.options).some((o) => o.value === prevPlayer)) {
+        pSel.value = prevPlayer;
     }
-    ta.focus();
-    updateBoardPreview();
+
+    // Session select
+    const sSel = $('entrySessionSelect');
+    const sessions = await getAgentSessions();
+    const prevSess = sSel.value;
+    sSel.innerHTML = sessions.map((s) =>
+        '<option value="' + s.id + '">' + escHtml(s.name || 'Session') + '</option>').join('') ||
+        '<option value="">Session မရှိပါ</option>';
+    if (prevSess && Array.from(sSel.options).some((o) => o.value === prevSess)) {
+        sSel.value = prevSess;
+    } else if (currentSessionId) {
+        sSel.value = currentSessionId;
+    }
+
+    await renderEntryTable();
+}
+
+window.onEntrySessionChange = function onEntrySessionChange(sel) {
+    if (!sel.value) return;
+    currentSessionId = sel.value;
+    localStorage.setItem(LS_SESSION, currentSessionId);
+    refreshEntryScreen();
 };
 
-/* ================= Voucher (တဦးချင်းဘောက်ချာ) ================= */
+/** Entry table: this agent's current-session records in entry order. */
+async function renderEntryTable() {
+    const tbody = $('entryTableBody');
+    if (!currentSessionId) {
+        tbody.innerHTML = '<tr><td colspan="4" class="empty-cell">Session မရှိသေးပါ။</td></tr>';
+        $('entryTotal').textContent = '0';
+        $('entryCount').textContent = '0';
+        return;
+    }
+    const recs = await getSessionRecords(currentSessionId);
+    const total = recs.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+    $('entryTotal').textContent = formatMoney(total);
+    $('entryCount').textContent = recs.length;
 
-/** Last rendered voucher context — used by Copy/Print/Share and detail view. */
-let lastVoucher = null;
-/** Number currently open in the voucher detail modal (for refresh after edit/delete). */
-let voucherDetailNumber = null;
+    if (!recs.length) {
+        tbody.innerHTML = '<tr><td colspan="4" class="empty-cell">စာရင်း မရှိသေးပါ။</td></tr>';
+        return;
+    }
+    tbody.innerHTML = recs.map((r) =>
+        '<tr>' +
+            '<td>' + escHtml(r.player_name || 'ကိုယ်တိုင်') + '</td>' +
+            '<td class="cell-no">' + escHtml(r.number) + '</td>' +
+            '<td class="cell-amt">' + formatMoney(r.amount) + '</td>' +
+            '<td class="cell-del"><button class="rec-del" onclick="deleteRecord(\'' + r.id + '\')" title="ဖျက်မည်">🗑️</button></td>' +
+        '</tr>'
+    ).join('');
+}
 
-/** Group records by number → { number, amount, count }, sorted by number. */
-function groupByNumber(recs) {
+/** Next batch number for (agent, session, player). */
+async function getNextBatchNo(playerName) {
+    const recs = currentSessionId ? await getSessionRecords(currentSessionId) : [];
+    let max = 0;
+    recs.forEach((r) => {
+        if ((r.player_name || '') === (playerName || '')) {
+            const b = Number(r.batch_no) || 0;
+            if (b > max) max = b;
+        }
+    });
+    return max + 1;
+}
+
+/**
+ * ထည့်မည် — expand the number-box formula, save as one new batch.
+ * Line format fed to the parser: "<no>=<amt>" + ("r<rev>" | "r<amt>" for R).
+ */
+window.submitEntry = async function submitEntry() {
+    if (saveInFlight) return;
+    if (!currentSessionId) { showToast('⚠️ Session မရှိသေးပါ'); return; }
+
+    const playerName = $('entryPlayerSelect').value || null;
+    const noText = boxNo().value.trim();
+    const amtText = boxAmt().value.trim().replace(/[^\d]/g, '');
+    const revText = boxRev().value.trim();
+
+    if (!noText) { showToast('❌ ဂဏန်း (သို့) ဖော်မြူလာ ထည့်ပါ'); setFocusBox('no'); return; }
+    const mainAmt = parseInt(amtText, 10) || 0;
+    if (mainAmt <= 0) { showToast('❌ ပမာဏ ထည့်ပါ'); setFocusBox('amt'); return; }
+
+    let line = noText + '=' + mainAmt;
+    if (revText) {
+        if (/^r$/i.test(revText)) line += 'r' + mainAmt;
+        else {
+            const revAmt = parseInt(revText.replace(/[^\d]/g, ''), 10) || 0;
+            if (revAmt > 0) line += 'r' + revAmt;
+        }
+    }
+
+    const { items, invalidLines } = parseBoardReport(line);
+    // Guard: the parser can echo unknown formula text into "numbers"
+    // (e.g. 12ဖုံ → "12ဖုံ"). Only accept real 2-digit numbers.
+    const validItems = items.filter((it) => /^\d{2}$/.test(String(it.number)));
+    if (!validItems.length) {
+        showToast('❌ ဖော်မြူလာ မသိပါ (ဂဏန်း မှားနေတယ်)' + (invalidLines.length ? ': ' + invalidLines[0] : ''));
+        return;
+    }
+
+    saveInFlight = true;
+    try {
+        const batchNo = await getNextBatchNo(playerName);
+        for (const it of validItems) {
+            await sync.mutate('create', 'lottery_records', {
+                id: uid(),
+                tenant: tenantId,
+                session: currentSessionId,
+                number: it.number,
+                amount: it.amount,
+                agent_name: agentName,
+                player_name: playerName,
+                record_type: 'pos',
+                batch_no: batchNo,
+                created: Date.now()
+            });
+        }
+        clearInputs();
+        await renderEntryTable();
+        updateSyncPill();
+        showToast('✅ No' + batchNo + ' — ' + validItems.length + ' ကွက် ထည့်ပြီးပြီ' +
+            (invalidLines.length || items.length !== validItems.length ? ' (⚠️ ' + (invalidLines.length + (items.length - validItems.length)) + ' လိုင်း ကျန်)' : ''));
+    } catch (e) {
+        console.error('[agent] submitEntry failed', e);
+        showToast('❌ သိမ်းမရပါ: ' + e.message);
+    } finally {
+        saveInFlight = false;
+    }
+};
+
+/* ================= RECORDS VIEW (စာရင်းများ — batches) ================= */
+
+let lastVoucher = null; // for Copy/Print/Share
+let batchDetailCtx = null; // {sessId, playerKey, batchNo} for the open detail modal
+
+/**
+ * Group records by number, preserving FIRST-APPEARANCE (entry) order.
+ * Never numerically re-sorted — matches what was sent.
+ */
+function groupByNumberKeepOrder(recs) {
+    const order = [];
     const map = {};
     recs.forEach((r) => {
         const n = String(r.number || '');
-        if (!map[n]) map[n] = { number: n, amount: 0, count: 0 };
+        if (!map[n]) { map[n] = { number: n, amount: 0, count: 0 }; order.push(n); }
         map[n].amount += Number(r.amount) || 0;
         map[n].count += 1;
     });
-    return Object.values(map).sort((a, b) => a.number.localeCompare(b.number, undefined, { numeric: true }));
+    return order.map((n) => map[n]);
 }
 
-async function getAgentSessions() {
-    try {
-        const sessions = await db.query('sessions', 'by_tenant', tenantId);
-        return sessions.sort((a, b) => (b.created || 0) - (a.created || 0));
-    } catch (e) {
-        return [];
-    }
+function batchLabel(b) {
+    return b > 0 ? 'No' + b : 'အရင်';
 }
 
-window.renderVoucher = async function renderVoucher() {
-    const playerSel = document.getElementById('voucherPlayer');
-    const sessSel = document.getElementById('voucherSession');
-    const content = document.getElementById('voucherContent');
+function playerLabel(key) {
+    return key ? key : '🧍 ကိုယ်တိုင်';
+}
+
+window.renderRecordsView = async function renderRecordsView() {
+    const playerSel = $('recordsPlayer');
+    const sessSel = $('recordsSession');
+    const content = $('recordsViewContent');
 
     const players = await getPlayers();
     const sessions = await getAgentSessions();
 
-    // Preserve selections across re-renders.
     const prevPlayer = playerSel.value;
     const prevSess = sessSel.value;
 
-    let pHtml = '<option value="">🧍 ကိုယ်တိုင်</option>';
+    let pHtml = '<option value="__all">-- အားလုံး --</option>';
+    pHtml += '<option value="">🧍 ကိုယ်တိုင်</option>';
     pHtml += players.map((p) => '<option value="' + escHtml(p.name) + '">' + escHtml(p.name) + '</option>').join('');
     playerSel.innerHTML = pHtml;
     if (prevPlayer !== undefined && Array.from(playerSel.options).some((o) => o.value === prevPlayer)) {
         playerSel.value = prevPlayer;
+    } else {
+        playerSel.value = '__all';
     }
 
     sessSel.innerHTML = sessions.map((s) =>
@@ -700,7 +625,7 @@ window.renderVoucher = async function renderVoucher() {
         sessSel.value = currentSessionId;
     }
 
-    const selPlayer = playerSel.value; // '' = self (no player_name)
+    const selPlayer = playerSel.value; // '__all' | '' (self) | name
     const sessId = sessSel.value;
     if (!sessId) {
         lastVoucher = null;
@@ -708,64 +633,107 @@ window.renderVoucher = async function renderVoucher() {
         return;
     }
 
-    let recs = [];
-    try {
-        recs = await db.query('lottery_records', 'by_session', sessId);
-    } catch (e) { /* ignore */ }
-    recs = recs.filter((r) =>
-        (r.agent_name || '') === agentName &&
-        (selPlayer ? (r.player_name || '') === selPlayer : !(r.player_name || ''))
-    );
-
+    let recs = await getSessionRecords(sessId);
+    if (selPlayer !== '__all') {
+        recs = recs.filter((r) => (r.player_name || '') === (selPlayer === '' ? '' : selPlayer));
+    }
     if (!recs.length) {
         lastVoucher = null;
         content.innerHTML = '<div class="empty-state">စာရင်း မရှိသေးပါ</div>';
         return;
     }
 
-    const grouped = groupByNumber(recs);
-    const totalAmt = grouped.reduce((s, g) => s + g.amount, 0);
-    const totalCount = grouped.reduce((s, g) => s + g.count, 0);
+    // Group: player (entry order of first appearance) → batch_no asc → numbers keep order
+    const playerOrder = [];
+    const byPlayer = {};
+    recs.forEach((r) => {
+        const k = r.player_name || '';
+        if (!byPlayer[k]) { byPlayer[k] = []; playerOrder.push(k); }
+        byPlayer[k].push(r);
+    });
 
-    // Save context for Copy/Print/Share + detail modal.
     const sessName = (sessions.find((s) => s.id === sessId) || {}).name || 'Session';
+    const voucherPlayers = [];
+    let grandAmt = 0, grandCount = 0;
+
+    playerOrder.forEach((k) => {
+        const pRecs = byPlayer[k]; // already entry order
+        const batchOrder = [];
+        const byBatch = {};
+        pRecs.forEach((r) => {
+            const b = Number(r.batch_no) || 0;
+            if (!byBatch[b]) { byBatch[b] = []; batchOrder.push(b); }
+            byBatch[b].push(r);
+        });
+        batchOrder.sort((a, b) => a - b);
+
+        const batches = batchOrder.map((b) => {
+            const groups = groupByNumberKeepOrder(byBatch[b]);
+            const tAmt = groups.reduce((s, g) => s + g.amount, 0);
+            const tCount = groups.reduce((s, g) => s + g.count, 0);
+            return { no: b, label: batchLabel(b), groups, totalAmt: tAmt, totalCount: tCount };
+        });
+        const pAmt = batches.reduce((s, b) => s + b.totalAmt, 0);
+        const pCount = batches.reduce((s, b) => s + b.totalCount, 0);
+        grandAmt += pAmt;
+        grandCount += pCount;
+        voucherPlayers.push({ key: k, label: playerLabel(k), batches, totalAmt: pAmt, totalCount: pCount });
+    });
+
     lastVoucher = {
-        playerName: selPlayer,
-        playerLabel: selPlayer || 'ကိုယ်တိုင်',
+        players: voucherPlayers,
+        playerFilter: selPlayer,
         sessId,
         sessionName: sessName,
         dateLabel: formatDateStr(new Date()),
-        groups: grouped,
-        totalAmt,
-        totalCount
+        totalAmt: grandAmt,
+        totalCount: grandCount
     };
 
-    content.innerHTML =
-        '<div class="voucher-head">🧾 ' + escHtml(selPlayer || 'ကိုယ်တိုင်') +
-        ' — <b>' + grouped.length + '</b> မျိုး, <b>' + formatMoney(totalAmt) + '</b></div>' +
-        grouped.map((g) =>
-            '<div class="voucher-row" onclick="openVoucherDetail(\'' + escHtml(g.number) + '\')" title="အသေးစိတ် ကြည့်ရန် / ပြင်ရန်">' +
-                '<span class="v-no">' + escHtml(g.number) + '</span>' +
-                '<span class="v-amt">' + formatMoney(g.amount) + '</span>' +
-                '<span class="v-count">' + g.count + ' ကြိမ်</span>' +
-            '</div>'
-        ).join('') +
-        '<div class="voucher-total"><span>စုစုပေါင်း</span><b>' + formatMoney(totalAmt) +
-        ' (' + totalCount + ' ကွက်)</b></div>';
+    let html = '';
+    voucherPlayers.forEach((p) => {
+        html += '<div class="v-player-block">' +
+            '<div class="v-player-head"><span>👤 ' + escHtml(p.label) + '</span>' +
+            '<b>' + formatMoney(p.totalAmt) + ' <span class="muted-sm">(' + p.totalCount + ' ကွက်)</span></b></div>';
+        p.batches.forEach((b) => {
+            html += '<div class="v-batch">' +
+                '<div class="v-batch-head" onclick="openBatchDetail(\'' + escHtml(p.key) + '\',' + b.no + ')" title="အသေးစိတ် ကြည့်ရန်">' +
+                    '<span class="v-batch-no">' + escHtml(b.label) + '</span>' +
+                    '<span class="v-batch-total">' + formatMoney(b.totalAmt) + '</span>' +
+                '</div>';
+            b.groups.forEach((g) => {
+                html += '<div class="voucher-row">' +
+                    '<span class="v-no">' + escHtml(g.number) + '</span>' +
+                    '<span class="v-amt">' + formatMoney(g.amount) + '</span>' +
+                    '<span class="v-count">' + g.count + ' ကြိမ်</span>' +
+                '</div>';
+            });
+            html += '</div>';
+        });
+        html += '</div>';
+    });
+    html += '<div class="voucher-total"><span>စုစုပေါင်း</span><b>' + formatMoney(grandAmt) +
+        ' (' + grandCount + ' ကွက်)</b></div>';
+    content.innerHTML = html;
 };
 
 /* ================= Voucher actions: Copy / Print / Share ================= */
 
-/** Build the paper-receipt text for the current voucher. */
 function buildVoucherText() {
     const v = lastVoucher;
-    if (!v) return '';
+    if (!v || !v.players.length) return '';
     const lines = [];
-    lines.push('🧾 ဘောက်ချာ - ' + v.playerLabel);
+    lines.push('🧾 ဘောက်ချာ' + (v.playerFilter === '__all' ? ' - အားလုံး' : ' - ' + v.players[0].label));
     lines.push('📅 ' + v.dateLabel + ' | ' + v.sessionName);
     lines.push('─────────────');
-    v.groups.forEach((g) => {
-        lines.push(g.number + ' - ' + formatMoney(g.amount) + ' (' + g.count + ' ကြိမ်)');
+    v.players.forEach((p) => {
+        lines.push('👤 ' + p.label);
+        p.batches.forEach((b) => {
+            lines.push('  ' + b.label);
+            b.groups.forEach((g) => {
+                lines.push('  ' + g.number + ' - ' + formatMoney(g.amount) + ' (' + g.count + ' ကြိမ်)');
+            });
+        });
     });
     lines.push('─────────────');
     lines.push('စုစုပေါင်း: ' + formatMoney(v.totalAmt) + ' (' + v.totalCount + ' ကွက်)');
@@ -777,7 +745,6 @@ async function copyTextToClipboard(text) {
         await navigator.clipboard.writeText(text);
         return true;
     } catch (e) {
-        // Fallback for older browsers / non-secure contexts.
         try {
             const ta = document.createElement('textarea');
             ta.value = text;
@@ -803,18 +770,24 @@ window.copyVoucher = async function copyVoucher() {
 
 window.printVoucher = function printVoucher() {
     const v = lastVoucher;
-    if (!v) { showToast('ဘောက်ချာ မရှိသေးပါ'); return; }
-    const area = document.getElementById('printArea');
+    if (!v || !v.players.length) { showToast('ဘောက်ချာ မရှိသေးပါ'); return; }
+    const area = $('printArea');
+    let body = '';
+    v.players.forEach((p) => {
+        body += '<div class="pr-player">👤 ' + escHtml(p.label) + '</div>';
+        p.batches.forEach((b) => {
+            body += '<div class="pr-batch">' + escHtml(b.label) + '</div>';
+            b.groups.forEach((g) => {
+                body += '<div class="pr-row"><span>' + escHtml(g.number) + '</span>' +
+                    '<span>' + formatMoney(g.amount) + ' (' + g.count + ' ကြိမ်)</span></div>';
+            });
+        });
+    });
     area.innerHTML =
         '<div class="print-receipt">' +
             '<div class="pr-title">🧾 ဘောက်ချာ</div>' +
-            '<div class="pr-sub">' + escHtml(v.playerLabel) + '</div>' +
             '<div class="pr-sub">' + escHtml(v.dateLabel) + ' | ' + escHtml(v.sessionName) + '</div>' +
-            '<div class="pr-line"></div>' +
-            v.groups.map((g) =>
-                '<div class="pr-row"><span>' + escHtml(g.number) + '</span>' +
-                '<span>' + formatMoney(g.amount) + ' (' + g.count + ' ကြိမ်)</span></div>'
-            ).join('') +
+            '<div class="pr-line"></div>' + body +
             '<div class="pr-line"></div>' +
             '<div class="pr-total"><span>စုစုပေါင်း</span><span>' + formatMoney(v.totalAmt) +
             ' (' + v.totalCount + ' ကွက်)</span></div>' +
@@ -826,38 +799,27 @@ window.shareVoucher = async function shareVoucher() {
     const text = buildVoucherText();
     if (!text) { showToast('ဘောက်ချာ မရှိသေးပါ'); return; }
     if (navigator.share) {
-        try {
-            await navigator.share({ title: '🧾 ဘောက်ချာ', text });
-        } catch (e) {
-            // User cancelled — no toast needed.
-        }
+        try { await navigator.share({ title: '🧾 ဘောက်ချာ', text }); } catch (e) { /* cancelled */ }
     } else {
-        // No Web Share API → fall back to copy.
         const ok = await copyTextToClipboard(text);
         showToast(ok ? '✅ ကူးပြီးပြီ (share မရလို့)' : '❌ မျှဝေမရပါ');
     }
 };
 
-/* ================= Voucher group detail (per-number edit/delete) ================= */
+/* ================= Batch detail (per-batch edit/delete) ================= */
 
-window.openVoucherDetail = async function openVoucherDetail(number) {
+window.openBatchDetail = async function openBatchDetail(playerKey, batchNo) {
     const v = lastVoucher;
     if (!v) return;
-    voucherDetailNumber = number;
+    batchDetailCtx = { sessId: v.sessId, playerKey: String(playerKey), batchNo: Number(batchNo) };
 
-    let recs = [];
-    try {
-        recs = await db.query('lottery_records', 'by_session', v.sessId);
-    } catch (e) { /* ignore */ }
-    recs = recs.filter((r) =>
-        (r.agent_name || '') === agentName &&
-        (v.playerName ? (r.player_name || '') === v.playerName : !(r.player_name || '')) &&
-        String(r.number) === String(number)
-    ).sort((a, b) => (b.created || 0) - (a.created || 0));
+    const recs = (await getSessionRecords(v.sessId))
+        .filter((r) => (r.player_name || '') === batchDetailCtx.playerKey &&
+                       (Number(r.batch_no) || 0) === batchDetailCtx.batchNo);
 
-    document.getElementById('voucherDetailTitle').textContent = '🧾 ' + number +
-        ' (' + recs.length + ' ကြိမ်)';
-    document.getElementById('voucherDetailList').innerHTML = recs.length ? recs.map((r) =>
+    $('batchDetailTitle').textContent = '🧾 ' + playerLabel(batchDetailCtx.playerKey) +
+        ' — ' + batchLabel(batchDetailCtx.batchNo) + ' (' + recs.length + ' ကွက်)';
+    $('batchDetailList').innerHTML = recs.length ? recs.map((r) =>
         '<div class="record-row">' +
             '<span class="rec-no">' + escHtml(r.number) + '</span>' +
             '<span class="rec-amt">' + formatMoney(r.amount) + '</span>' +
@@ -867,44 +829,252 @@ window.openVoucherDetail = async function openVoucherDetail(number) {
             '</span>' +
         '</div>'
     ).join('') : '<div class="empty-state">စာရင်း မရှိပါ</div>';
-    document.getElementById('voucherDetailModal').hidden = false;
+    $('batchDetailModal').hidden = false;
 };
 
-window.closeVoucherDetail = function closeVoucherDetail() {
-    document.getElementById('voucherDetailModal').hidden = true;
-    voucherDetailNumber = null;
+window.closeBatchDetail = function closeBatchDetail() {
+    $('batchDetailModal').hidden = true;
+    batchDetailCtx = null;
 };
 
-/** Re-render the open detail modal after an edit/delete inside it. */
-async function refreshVoucherDetail() {
-    const modal = document.getElementById('voucherDetailModal');
-    if (!modal || modal.hidden || voucherDetailNumber == null) return;
-    await openVoucherDetail(voucherDetailNumber);
+async function refreshBatchDetail() {
+    if (!$('batchDetailModal') || !$('batchDetailModal').hidden || !batchDetailCtx) return;
+    await openBatchDetail(batchDetailCtx.playerKey, batchDetailCtx.batchNo);
 }
 
-/* ================= Daily (တနေ့စာစာရင်း) ================= */
+/* ================= Records: edit / delete ================= */
+
+window.deleteRecord = async function deleteRecord(id) {
+    const rec = await db.get('lottery_records', id);
+    if (!rec) return;
+    if (!confirm(rec.number + ' (' + formatMoney(rec.amount) + ') ဖျက်မှာလား?')) return;
+    await sync.mutate('delete', 'lottery_records', { id });
+    await renderEntryTable();
+    if (activeScreen === 'records') await renderRecordsView();
+    await refreshBatchDetail();
+    showToast('🗑️ ဖျက်ပြီးပြီ');
+};
+
+let editingRecordId = null;
+
+window.openEditRecord = async function openEditRecord(id) {
+    const rec = await db.get('lottery_records', id);
+    if (!rec) return;
+    editingRecordId = id;
+    $('editNumberInput').value = rec.number || '';
+    $('editAmountInput').value = rec.amount || '';
+    $('editModal').hidden = false;
+    setTimeout(() => $('editAmountInput').focus(), 100);
+};
+
+window.closeEditModal = function closeEditModal() {
+    $('editModal').hidden = true;
+    editingRecordId = null;
+};
+
+window.saveEditRecord = async function saveEditRecord() {
+    if (!editingRecordId) return;
+    const num = $('editNumberInput').value.trim();
+    const amt = Number($('editAmountInput').value);
+    if (!/^\d{1,2}$/.test(num)) { showToast('နံပါတ် မှန်အောင်ထည့်ပါ (0-99)'); return; }
+    if (!amt || amt <= 0) { showToast('ငွေ ထည့်ပါ'); return; }
+    try {
+        const existing = (await db.get('lottery_records', editingRecordId)) || {};
+        await sync.mutate('update', 'lottery_records', Object.assign({}, existing, {
+            id: editingRecordId,
+            number: num.padStart(2, '0'),
+            amount: amt
+        }));
+        closeEditModal();
+        await renderEntryTable();
+        if (activeScreen === 'records') await renderRecordsView();
+        await refreshBatchDetail();
+        updateSyncPill();
+        showToast('✅ ပြင်ပြီးပြီ');
+    } catch (e) {
+        showToast('❌ သိမ်းမရပါ: ' + e.message);
+    }
+};
+
+/* ================= Digital board modal (paste/type alternative) ================= */
+
+window.openBoard = function openBoard() {
+    if (!currentSessionId) {
+        showToast('⚠️ Session မရှိသေးပါ');
+        return;
+    }
+    populateBoardPlayer();
+    $('boardModal').hidden = false;
+    $('boardPreview').hidden = true;
+    const ta = $('boardTextarea');
+    ta.value = '';
+    setTimeout(() => ta.focus(), 100);
+};
+
+async function populateBoardPlayer() {
+    const sel = $('boardPlayer');
+    const players = await getPlayers();
+    sel.innerHTML = '<option value="">🧍 ကိုယ်တိုင်</option>' +
+        players.map((p) => '<option value="' + escHtml(p.name) + '">' + escHtml(p.name) + '</option>').join('');
+    sel.value = players.length ? players[0].name : '';
+}
+
+window.closeBoard = function closeBoard() {
+    $('boardModal').hidden = true;
+};
+
+window.pasteToBoard = async function pasteToBoard() {
+    try {
+        const text = await navigator.clipboard.readText();
+        const ta = $('boardTextarea');
+        ta.value = (ta.value ? ta.value + '\n' : '') + text;
+        updateBoardPreview();
+    } catch (e) {
+        showToast('📋 Paste ခွင့်မရှိပါ — ကိုယ်တိုင် paste လုပ်ပါ');
+    }
+};
+
+const updateBoardPreview = debounce(() => {
+    const text = $('boardTextarea').value;
+    const box = $('boardPreview');
+    if (!text.trim()) { box.hidden = true; return; }
+    const { items, invalidLines } = parseBoardReport(text);
+    box.hidden = false;
+    box.innerHTML = '✅ <b>' + items.length + '</b> ကွက် ဝင်မယ်' +
+        (invalidLines.length ? ' &nbsp; <span class="warn">⚠️ ' + invalidLines.length + ' လိုင်း ပြင်ရန်</span>' : '');
+}, 400);
+
+document.addEventListener('input', (e) => {
+    if (e.target && e.target.id === 'boardTextarea') updateBoardPreview();
+});
+
+/** Board save → one new batch for the selected player. */
+window.saveBoard = async function saveBoard() {
+    if (saveInFlight) return;
+    const ta = $('boardTextarea');
+    const text = ta.value;
+    if (!text.trim()) { showToast('စာရွက် လွတ်နေတယ်'); return; }
+    if (!currentSessionId) { showToast('⚠️ Session မရှိသေးပါ'); return; }
+
+    saveInFlight = true;
+    try {
+        const { items, invalidLines } = parseBoardReport(text);
+        const playerName = $('boardPlayer').value || null;
+        // Guard: only accept real 2-digit numbers (parser can echo unknown
+        // formula text into "numbers", e.g. 12ဖုံ → "12ဖုံ").
+        const validItems = items.filter((it) => /^\d{2}$/.test(String(it.number)));
+        if (!validItems.length) {
+            showToast('❌ ဝင်မယ့် လိုင်း မရှိပါ');
+            saveInFlight = false;
+            return;
+        }
+        const batchNo = await getNextBatchNo(playerName);
+        for (const it of validItems) {
+            await sync.mutate('create', 'lottery_records', {
+                id: uid(),
+                tenant: tenantId,
+                session: currentSessionId,
+                number: it.number,
+                amount: it.amount,
+                agent_name: agentName,
+                player_name: playerName,
+                record_type: 'pos',
+                batch_no: batchNo,
+                created: Date.now()
+            });
+        }
+        ta.value = '';
+        closeBoard();
+        await renderEntryTable();
+        if (activeScreen === 'records') await renderRecordsView();
+        updateSyncPill();
+        const skipped = invalidLines.length + (items.length - validItems.length);
+        showToast('✅ No' + batchNo + ' — ' + validItems.length + ' ကွက် သိမ်းပြီးပြီ' +
+            (skipped ? ' (⚠️ ' + skipped + ' လိုင်း ကျန်)' : ''));
+    } catch (e) {
+        console.error('[agent] saveBoard failed', e);
+        showToast('❌ သိမ်းမရပါ: ' + e.message);
+    } finally {
+        saveInFlight = false;
+    }
+};
+
+/* ================= Settings & sync ================= */
+
+window.openSettings = function openSettings() {
+    $('settingsSyncState').textContent =
+        pb.isLoggedIn() ? '✅ ' + (sync.isOnline() ? 'Online' : 'Offline') : '📴 Local only';
+    $('settingsModal').hidden = false;
+};
+
+window.closeSettings = function closeSettings() {
+    $('settingsModal').hidden = true;
+};
+
+window.syncNowManual = async function syncNowManual() {
+    updateSyncPill('working');
+    try {
+        const res = await sync.syncNow();
+        const pushed = (res.push && res.push.pushed) || 0;
+        const pulled = (res.pull && res.pull.pulled) || 0;
+        showToast('🔄 Sync ပြီးပြီ (↑' + pushed + ' ↓' + pulled + ')');
+        await refreshSession();
+        refreshActiveScreen();
+    } catch (e) {
+        showToast('❌ Sync မရပါ: ' + e.message);
+    }
+    updateSyncPill();
+};
+
+function updateSyncPill(force) {
+    const pill = $('syncPill');
+    if (!pill) return;
+    pill.classList.remove('online', 'offline', 'working');
+    const entryPill = $('entrySyncPill');
+    const setPill = (el, cls, txt, title) => {
+        if (!el) return;
+        el.classList.remove('online', 'offline', 'working');
+        el.classList.add(cls);
+        el.textContent = txt;
+        el.title = title;
+    };
+    if (force === 'working' || sync.isSyncing()) {
+        setPill(pill, 'working', '🟡', 'Syncing…');
+        setPill(entryPill, 'working', '🟡 REST ပုံစံဖြင့် အလုပ်လုပ်နေသည်', 'Syncing…');
+    } else if (!sync.isOnline()) {
+        setPill(pill, 'offline', '🔴', 'Offline — local only');
+        setPill(entryPill, 'offline', '🔴', 'Offline');
+    } else if (pb.isLoggedIn()) {
+        setPill(pill, 'online', '🟢', 'Online & synced');
+        setPill(entryPill, 'online', '🟢', 'Online');
+    } else {
+        setPill(pill, 'offline', '⚪', 'Local only (no sync account)');
+        setPill(entryPill, 'offline', '⚪', 'Local only');
+    }
+}
+
+// Close modals on backdrop tap
+document.addEventListener('click', (e) => {
+    if (e.target && e.target.classList && e.target.classList.contains('modal')) {
+        e.target.hidden = true;
+    }
+});
+
+/* ================= Daily (တနေ့စာ) ================= */
 
 const BURMESE_DAYS = ['တနင်္ဂနွေ', 'တနင်္လာ', 'အင်္ဂါ', 'ဗုဒ္ဓဟူး', 'ကြာသပတေး', 'သောကြာ', 'စနေ'];
 
 function pad2(n) { return String(n).padStart(2, '0'); }
 
-/** Local date key "YYYY-MM-DD" for a timestamp. */
 function dateKey(ts) {
     const d = new Date(Number(ts) || 0);
     return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
 }
 
-/** "YYYY-MM-DD" for a Date (for <input type=date>). */
 function toISODate(d) {
     return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
 }
 
-/** Display label for a player key ('' = self). */
-function playerLabel(key) {
-    return key ? key : '🧍 ကိုယ်တိုင်';
-}
-
-/** All of this agent's records in this tenant. */
 async function getAgentRecords() {
     try {
         const all = await db.query('lottery_records', 'by_tenant', tenantId);
@@ -915,8 +1085,8 @@ async function getAgentRecords() {
 }
 
 window.renderDaily = async function renderDaily() {
-    const dateInput = document.getElementById('dailyDate');
-    const content = document.getElementById('dailyContent');
+    const dateInput = $('dailyDate');
+    const content = $('dailyContent');
     if (!dateInput.value) dateInput.value = toISODate(new Date());
     const key = dateInput.value;
 
@@ -925,24 +1095,25 @@ window.renderDaily = async function renderDaily() {
 };
 
 /**
- * Render records grouped by player → per-player number groups + totals,
- * plus a grand total. Shared by daily & weekly views.
+ * Records grouped by player → per-player number groups (entry order) + totals.
+ * Shared by daily & weekly views.
  */
 function renderPlayerGroups(recs, emptyMsg) {
     if (!recs.length) return '<div class="empty-state">' + escHtml(emptyMsg || 'စာရင်း မရှိပါ') + '</div>';
 
     const byPlayer = {};
+    const order = [];
     recs.forEach((r) => {
         const k = r.player_name || '';
-        (byPlayer[k] = byPlayer[k] || []).push(r);
+        if (!byPlayer[k]) { byPlayer[k] = []; order.push(k); }
+        byPlayer[k].push(r);
     });
 
-    const playerKeys = Object.keys(byPlayer).sort((a, b) => a.localeCompare(b));
     let grandAmt = 0, grandCount = 0;
     let html = '';
 
-    playerKeys.forEach((k) => {
-        const grouped = groupByNumber(byPlayer[k]);
+    order.forEach((k) => {
+        const grouped = groupByNumberKeepOrder(byPlayer[k]);
         const pAmt = grouped.reduce((s, g) => s + g.amount, 0);
         const pCount = grouped.reduce((s, g) => s + g.count, 0);
         grandAmt += pAmt;
@@ -965,7 +1136,7 @@ function renderPlayerGroups(recs, emptyMsg) {
     return html;
 }
 
-/* ================= Weekly (တပတ်စာစာရင်း) ================= */
+/* ================= Weekly (တပတ်စာ) ================= */
 
 let weekOffset = 0; // 0 = this week, -1 = last week, +1 = next week
 
@@ -975,8 +1146,8 @@ window.changeWeek = function changeWeek(d) {
 };
 
 window.renderWeekly = async function renderWeekly() {
-    const label = document.getElementById('weekLabel');
-    const content = document.getElementById('weeklyContent');
+    const label = $('weekLabel');
+    const content = $('weeklyContent');
 
     const base = new Date();
     base.setDate(base.getDate() + weekOffset * 7);
@@ -1011,15 +1182,15 @@ window.renderWeekly = async function renderWeekly() {
             '<b>' + formatMoney(dayAmt) + ' <span class="muted-sm">(' + dayRecs.length + ' ကွက်)</span></b></div>';
 
         if (dayRecs.length) {
-            // Per-player totals for the day.
             const perPlayer = {};
+            const pOrder = [];
             dayRecs.forEach((r) => {
                 const k = r.player_name || '';
-                perPlayer[k] = perPlayer[k] || { amount: 0, count: 0 };
+                if (!perPlayer[k]) { perPlayer[k] = { amount: 0, count: 0 }; pOrder.push(k); }
                 perPlayer[k].amount += Number(r.amount) || 0;
                 perPlayer[k].count += 1;
             });
-            html += Object.keys(perPlayer).sort((a, b) => a.localeCompare(b)).map((k) =>
+            html += pOrder.map((k) =>
                 '<div class="day-player"><span>👤 ' + escHtml(playerLabel(k)) + '</span>' +
                 '<span>' + formatMoney(perPlayer[k].amount) + ' <span class="muted-sm">(' + perPlayer[k].count + ' ကွက်)</span></span></div>'
             ).join('');
