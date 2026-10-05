@@ -30,6 +30,15 @@ document.addEventListener('DOMContentLoaded', init);
 
 async function init() {
     pb.loadAuth();
+    // Auto-login as shared agent account for PocketBase sync (if not already logged in)
+    if (!pb.isLoggedIn()) {
+        try {
+            await pb.login('agent@2dpro.local', 'Agent2DPro2026Sync!');
+        } catch (e) {
+            // Sync will work offline; login failure is non-fatal
+            console.warn('Agent auto-login failed:', e.message);
+        }
+    }
     try {
         await db.openDB();
     } catch (e) {
