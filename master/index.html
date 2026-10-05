@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="my">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#0b0f17">
+<title>2D Master Pro v2</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+
+  <!-- ============ LOGIN ============ -->
+  <div id="page-login" class="page active">
+    <div class="login-card">
+      <h1>🎯 2D Master Pro</h1>
+      <p class="sub">v2 — အသစ်</p>
+      <input id="loginEmail" type="email" placeholder="Email" autocomplete="username">
+      <input id="loginPass" type="password" placeholder="Password" autocomplete="current-password">
+      <button id="loginBtn" class="btn block">ဝင်မည်</button>
+      <div id="loginError"></div>
+    </div>
+  </div>
+
+  <!-- ============ MAIN ============ -->
+  <div id="page-main" class="page">
+    <header class="topbar">
+      <span class="title">🎯 2D Master Pro</span>
+      <span id="syncPill" class="off">⏳</span>
+    </header>
+    <nav class="tabs">
+      <button data-tab="sessions" class="active">📋 ပွဲများ</button>
+      <button data-tab="ledger">📊 လယ်ဂျာ</button>
+      <button data-tab="agents">👥 Agent</button>
+      <button data-tab="settings">⚙️ ဆက်တင်</button>
+    </nav>
+    <main>
+      <section id="tab-sessions" class="tabpane active">
+        <div id="sessionList"></div>
+        <button id="fabSession" class="fab">+</button>
+      </section>
+      <section id="tab-ledger" class="tabpane">
+        <div id="ledgerHead"></div>
+        <div class="ledger-summary">
+          <div class="sumbox"><div class="lbl">စုစုပေါင်း</div><div class="val" id="ledgerTotal">0</div></div>
+          <div class="sumbox"><div class="lbl">အကွက်</div><div class="val" id="ledgerBoxes">0</div></div>
+        </div>
+        <div id="ledgerGrid"></div>
+        <div class="card mt">
+          <div class="row"><b>မှတ်တမ်းများ</b><span class="muted small" id="recCount"></span></div>
+          <div id="recordList" class="mt"></div>
+        </div>
+      </section>
+      <section id="tab-agents" class="tabpane">
+        <div class="card"><div class="row"><b>Agent စာရင်း</b><button id="addAgentBtn" class="btn small">+ အသစ်</button></div></div>
+        <div id="agentList" class="card"></div>
+      </section>
+      <section id="tab-settings" class="tabpane">
+        <div class="card">
+          <div class="set-row"><span>🚫 Limit (အကျွံ)</span><input id="setLimit" type="number" inputmode="numeric"></div>
+          <div class="set-row"><span>📦 Box rate (အကွက်)</span><input id="setRate" type="number" inputmode="numeric"></div>
+          <div class="set-row"><span>🔗 Agent Link Code</span></div>
+          <div class="code-box" id="linkCode">—</div>
+          <div class="small muted mt">Agent app မှာ ဒီ code ထည့်ပြီး ချိတ်ပါ</div>
+        </div>
+        <div class="card">
+          <div class="set-row"><span>☁️ Cloud Sync</span><button id="syncNowBtn" class="btn small gray">Sync လုပ်မယ်</button></div>
+          <div class="set-row"><span>⏳ ပို့ဖို့ကျန်</span><span id="pendingCount" class="muted">0</span></div>
+        </div>
+        <div class="card">
+          <button id="logoutBtn" class="btn red block">ထွက်မည်</button>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- ============ MODALS ============ -->
+
+  <!-- New session -->
+  <div id="modal-session" class="modal">
+    <div class="sheet">
+      <button class="close-x" data-close>×</button>
+      <h2>ပွဲအသစ်</h2>
+      <div class="field"><label>နေ့</label><input id="nsDate" type="date"></div>
+      <div class="field"><label>အချိန်</label>
+        <select id="nsTime">
+          <option value="မနက်ပိုင်း">မနက်ပိုင်း (AM)</option>
+          <option value="ညနေပိုင်း">ညနေပိုင်း (PM)</option>
+        </select>
+      </div>
+      <button id="nsSave" class="btn block">ဖန်တီးမည်</button>
+    </div>
+  </div>
+
+  <!-- Digital board -->
+  <div id="modal-board" class="modal">
+    <div class="sheet">
+      <button class="close-x" data-close>×</button>
+      <h2 id="boardTitle">ထိုးကွက်</h2>
+      <div class="field"><label>ထိုးသား</label><select id="boardTarget"></select></div>
+      <div class="field"><textarea id="boardText" placeholder="ဥပမာ:&#10;12=500&#10;6ထိပ်7000&#10;34567ခွေ"></textarea></div>
+      <div class="board-preview" id="boardPreview">စာရိုက်ပါ…</div>
+      <div class="btn-grid">
+        <button id="boardBack" class="btn gray">Back</button>
+        <button id="boardPaste" class="btn gray">Paste</button>
+        <button id="boardSave" class="btn green">သိမ်းမည်</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Winning number -->
+  <div id="modal-winning" class="modal">
+    <div class="sheet">
+      <button class="close-x" data-close>×</button>
+      <h2 id="winTitle">ပေါက်သီး</h2>
+      <div class="field"><label>ပေါက်ဂဏန်း (၂ လုံး)</label>
+        <input id="winNumber" type="text" inputmode="numeric" maxlength="2" placeholder="ဥပမာ 57">
+      </div>
+      <button id="winSave" class="btn block green">သိမ်းမည်</button>
+    </div>
+  </div>
+
+  <!-- Agent add/edit -->
+  <div id="modal-agent" class="modal">
+    <div class="sheet">
+      <button class="close-x" data-close>×</button>
+      <h2 id="agentModalTitle">Agent အသစ်</h2>
+      <div class="field"><label>အမည်</label><input id="agName" type="text"></div>
+      <div class="field"><label>ဖုန်း</label><input id="agPhone" type="tel"></div>
+      <div class="field"><label>ကော်မရှင် %</label><input id="agComm" type="number" inputmode="decimal" value="0"></div>
+      <div class="field"><label>အလျော်နှုန်း</label><input id="agPayout" type="number" inputmode="numeric" value="80"></div>
+      <button id="agSave" class="btn block green">သိမ်းမည်</button>
+    </div>
+  </div>
+
+  <!-- Generic sheet (daily, remaining digits, etc.) -->
+  <div id="modal-generic" class="modal">
+    <div class="sheet">
+      <button class="close-x" data-close>×</button>
+      <h2 id="genTitle"></h2>
+      <div id="genBody"></div>
+    </div>
+  </div>
+
+</div>
+<script type="module" src="app.js"></script>
+</body>
+</html>
