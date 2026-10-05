@@ -221,45 +221,27 @@ window.goHome = function goHome() {
     refreshActiveScreen();
 };
 
-/** Entry-screen keypad: hidden by default so the records table stays visible. */
+/** Entry-screen keypad: hidden by default. It is a pure overlay layer —
+ *  fixed to the phone bottom, never moves, never pushes content.
+ *  Close it to scroll the records sheet underneath. */
 function hideEntryKeyboard() {
     const kp = document.getElementById('entryKeypad');
     if (kp) kp.hidden = true;
     const btn = document.getElementById('entryKbToggle');
     if (btn) btn.classList.remove('active');
-    const pane = document.getElementById('screen-entry');
-    if (pane) pane.style.paddingBottom = '';
-}
-
-/** Keep entry-screen content visible above the fixed bottom keypad. */
-function syncKeypadPadding() {
-    const kp = document.getElementById('entryKeypad');
-    const pane = document.getElementById('screen-entry');
-    if (!pane) return;
-    if (kp && !kp.hidden) {
-        pane.style.paddingBottom = (kp.offsetHeight + 12) + 'px';
-    } else {
-        pane.style.paddingBottom = '';
-    }
 }
 
 /** Toggle the entry-screen keypad (⌨️ button next to the player select).
- *  The keypad is a fixed bottom panel: it overlays the screen bottom and
- *  never pushes content up; closing it hides it completely. */
+ *  The keypad is a fixed bottom overlay: it sticks to the screen bottom
+ *  and stays dead still (never moves when records are added);
+ *  closing it hides it completely (display:none). */
 window.toggleEntryKeyboard = function toggleEntryKeyboard() {
     const kp = document.getElementById('entryKeypad');
     if (!kp) return;
     kp.hidden = !kp.hidden;
     const btn = document.getElementById('entryKbToggle');
     if (btn) btn.classList.toggle('active', !kp.hidden);
-    syncKeypadPadding();
 };
-
-// Re-measure the fixed keypad on rotate/resize so content stays visible.
-window.addEventListener('resize', () => {
-    const kp = document.getElementById('entryKeypad');
-    if (kp && !kp.hidden && activeScreen === 'entry') syncKeypadPadding();
-});
 
 /** Floating scroll-to-top button. */
 window.scrollToTop = function scrollToTop() {
