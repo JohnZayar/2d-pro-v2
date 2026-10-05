@@ -118,15 +118,30 @@ async function doLogout() {
 
 async function enterApp() {
     showPage('page-main');
-    await ensureTenant();
-    updateSyncPill('busy', '⏳ Sync…');
-    await fullSync();
+    // Load local data FIRST (offline-first) - don't block on network
     await loadSessions();
     await loadAgents();
     await loadSettingsIntoUI();
     renderSessions();
     renderAgents();
     if (state.activeSessionId) renderLedger();
+    updateSyncPill('busy', '⏳ Sync…');
+    // Background: ensure tenant and sync (non-blocking)
+    (async () => {
+        try {
+            await ensureTenant();
+            await fullSync();
+            await loadSessions();
+            await loadAgents();
+            await loadSettingsIntoUI();
+            renderSessions();
+            renderAgents();
+            if (state.activeSessionId) renderLedger();
+        } catch (e) {
+            console.warn('Background sync failed:', e.message);
+        }
+        updateSyncPill();
+    })();
     // background sync every 45s + on reconnect
     clearInterval(state.syncTimer);
     state.syncTimer = setInterval(() => { if (pb.isLoggedIn()) fullSync(); }, 45000);
