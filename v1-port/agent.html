@@ -369,10 +369,15 @@ const PB = {
         for (let i = 0; i < records.length; i += chunkSize) {
             chunks.push(records.slice(i, i + chunkSize));
         }
-        for (let i = 0; i < chunks.length; i++) {
-            const chunkKey = key + '_chunk_' + String(i).padStart(3, '0');
-            const jsonVal = JSON.stringify(chunks[i]);
-            await this.setSettingRaw(chunkKey, jsonVal);
+        // Save chunks in parallel batches of 10 (much faster than sequential)
+        for (let b = 0; b < chunks.length; b += 10) {
+            const batch = chunks.slice(b, b + 10);
+            await Promise.all(batch.map((chunk, j) => {
+                const idx = b + j;
+                const chunkKey = key + '_chunk_' + String(idx).padStart(3, '0');
+                const jsonVal = JSON.stringify(chunk);
+                return this.setSettingRaw(chunkKey, jsonVal);
+            }));
         }
         await this.setSettingRaw(key + '_chunks', JSON.stringify({ count: chunks.length, total: records.length }));
         try {
@@ -446,7 +451,7 @@ PB.loadAuth();
 
         /* ---- Tenant scoping ---- */
         let __tenantId = null;
-        function setTenantId(id) { __tenantId = id || null; }
+        function setTenantId(id) { __tenantId = id || null; if (typeof PB !== 'undefined' && PB) PB.tenantId = id || null; }
         function getTenantId() { return __tenantId; }
         function tp(key) {
             // Resolve a data key to its full DB path.
