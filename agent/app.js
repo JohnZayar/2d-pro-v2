@@ -26,6 +26,7 @@ let tenantId = null;
 let agentName = null;
 let currentSessionId = null;
 let saveInFlight = false; // double-tap guard
+let pendingEntries = []; // typed but NOT yet saved: [{player_name, number, amount}]
 
 /* ================= Boot ================= */
 
@@ -461,33 +462,33 @@ window.onEntrySessionChange = function onEntrySessionChange(sel) {
     refreshEntryScreen();
 };
 
-/** Entry table: this agent's current-session records in entry order. */
+/** Entry table: PENDING entries (typed, not saved yet).
+ *  Press ထည့်မည် to add to this table; press 💾 Save (top) to store as a batch. */
 async function renderEntryTable() {
     const tbody = $('entryTableBody');
-    if (!currentSessionId) {
-        tbody.innerHTML = '<tr><td colspan="4" class="empty-cell">Session မရှိသေးပါ။</td></tr>';
-        $('entryTotal').textContent = '0';
-        $('entryCount').textContent = '0';
-        return;
-    }
-    const recs = await getSessionRecords(currentSessionId);
-    const total = recs.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+    const total = pendingEntries.reduce((s, e) => s + (Number(e.amount) || 0), 0);
     $('entryTotal').textContent = formatMoney(total);
-    $('entryCount').textContent = recs.length;
+    $('entryCount').textContent = pendingEntries.length;
 
-    if (!recs.length) {
+    if (!pendingEntries.length) {
         tbody.innerHTML = '<tr><td colspan="4" class="empty-cell">စာရင်း မရှိသေးပါ။</td></tr>';
         return;
     }
-    tbody.innerHTML = recs.map((r) =>
+    tbody.innerHTML = pendingEntries.map((e, i) =>
         '<tr>' +
-            '<td>' + escHtml(r.player_name || 'ကိုယ်တိုင်') + '</td>' +
-            '<td class="cell-no">' + escHtml(r.number) + '</td>' +
-            '<td class="cell-amt">' + formatMoney(r.amount) + '</td>' +
-            '<td class="cell-del"><button class="rec-del" onclick="deleteRecord(\'' + r.id + '\')" title="ဖျက်မည်">🗑️</button></td>' +
+            '<td>' + escHtml(e.player_name || 'ကိုယ်တိုင်') + '</td>' +
+            '<td class="cell-no">' + escHtml(e.number) + '</td>' +
+            '<td class="cell-amt">' + formatMoney(e.amount) + '</td>' +
+            '<td class="cell-del"><button class="rec-del" onclick="deletePendingEntry(' + i + ')" title="ဖျက်မည်">🗑️</button></td>' +
         '</tr>'
     ).join('');
 }
+
+/** Remove one pending (unsaved) entry. */
+window.deletePendingEntry = function deletePendingEntry(i) {
+    pendingEntries.splice(i, 1);
+    renderEntryTable();
+};
 
 /** Next batch number for (agent, session, player). */
 async function getNextBatchNo(playerName) {
@@ -503,13 +504,10 @@ async function getNextBatchNo(playerName) {
 }
 
 /**
- * ထည့်မည် — expand the number-box formula, save as one new batch.
- * Line format fed to the parser: "<no>=<amt>" + ("r<rev>" | "r<amt>" for R).
+ * ထည့်မည် — expand the number-box formula and add to the PENDING table.
+ * Nothing is saved yet; press 💾 Save (top button) to store as a new batch.
  */
 window.submitEntry = async function submitEntry() {
-    if (saveInFlight) return;
-    if (!currentSessionId) { showToast('⚠️ Session မရှိသေးပါ'); return; }
-
     const playerName = $('entryPlayerSelect').value || null;
     const noText = boxNo().value.trim();
     const amtText = boxAmt().value.trim().replace(/[^\d]/g, '');
@@ -537,30 +535,62 @@ window.submitEntry = async function submitEntry() {
         return;
     }
 
+    validItems.forEach((it) => {
+        pendingEntries.push({ player_name: playerName, number: it.number, amount: it.amount });
+    });
+    clearInputs();
+    await renderEntryTable();
+    const skipped = invalidLines.length + (items.length - validItems.length);
+    showToast('✅ ' + validItems.length + ' ကွက် ထည့်ပြီးပြီ' +
+        (skipped ? ' (⚠️ ' + skipped + ' လိုင်း ကျန်)' : ''));
+};
+
+/**
+ * 💾 Save (top button) — persist all pending entries as NEW batches
+ * (one batch number per player), then clear the table and reset the total.
+ */
+window.savePendingBatch = async function savePendingBatch() {
+    if (saveInFlight) return;
+    if (!pendingEntries.length) { showToast('စာရင်း မရှိသေးပါ'); return; }
+    if (!currentSessionId) { showToast('⚠️ Session မရှိသေးပါ'); return; }
+
     saveInFlight = true;
     try {
-        const batchNo = await getNextBatchNo(playerName);
-        for (const it of validItems) {
-            await sync.mutate('create', 'lottery_records', {
-                id: uid(),
-                tenant: tenantId,
-                session: currentSessionId,
-                number: it.number,
-                amount: it.amount,
-                agent_name: agentName,
-                player_name: playerName,
-                record_type: 'pos',
-                batch_no: batchNo,
-                created: Date.now()
-            });
+        // Group pending by player, preserving first-appearance order
+        const order = [];
+        const byPlayer = {};
+        pendingEntries.forEach((e) => {
+            const k = e.player_name || '';
+            if (!byPlayer[k]) { byPlayer[k] = []; order.push(k); }
+            byPlayer[k].push(e);
+        });
+        const batchNos = {};
+        for (const k of order) batchNos[k] = await getNextBatchNo(k || null);
+
+        let count = 0;
+        for (const k of order) {
+            for (const e of byPlayer[k]) {
+                await sync.mutate('create', 'lottery_records', {
+                    id: uid(),
+                    tenant: tenantId,
+                    session: currentSessionId,
+                    number: e.number,
+                    amount: e.amount,
+                    agent_name: agentName,
+                    player_name: e.player_name,
+                    record_type: 'pos',
+                    batch_no: batchNos[k],
+                    created: Date.now()
+                });
+                count++;
+            }
         }
-        clearInputs();
+        pendingEntries = [];
         await renderEntryTable();
         updateSyncPill();
-        showToast('✅ No' + batchNo + ' — ' + validItems.length + ' ကွက် ထည့်ပြီးပြီ' +
-            (invalidLines.length || items.length !== validItems.length ? ' (⚠️ ' + (invalidLines.length + (items.length - validItems.length)) + ' လိုင်း ကျန်)' : ''));
+        showToast('✅ ' + count + ' ကွက် သိမ်းပြီးပြီ');
     } catch (e) {
-        console.error('[agent] submitEntry failed', e);
+        console.error('[agent] savePendingBatch failed', e);
         showToast('❌ သိမ်းမရပါ: ' + e.message);
     } finally {
         saveInFlight = false;
@@ -589,7 +619,18 @@ function groupByNumberKeepOrder(recs) {
 }
 
 function batchLabel(b) {
-    return b > 0 ? 'No' + b : 'အရင်';
+    return b > 0 ? 'No-' + b : 'အရင်';
+}
+
+/** "02:28 PM" style timestamp for voucher batch headers (v1 format). */
+function fmtTime12(ts) {
+    if (!ts) return '';
+    const d = new Date(ts);
+    let h = d.getHours();
+    const m = String(d.getMinutes()).padStart(2, '0');
+    const ap = h >= 12 ? 'PM' : 'AM';
+    h = h % 12 || 12;
+    return String(h).padStart(2, '0') + ':' + m + ' ' + ap;
 }
 
 function playerLabel(key) {
@@ -668,10 +709,10 @@ window.renderRecordsView = async function renderRecordsView() {
         batchOrder.sort((a, b) => a - b);
 
         const batches = batchOrder.map((b) => {
-            const groups = groupByNumberKeepOrder(byBatch[b]);
-            const tAmt = groups.reduce((s, g) => s + g.amount, 0);
-            const tCount = groups.reduce((s, g) => s + g.count, 0);
-            return { no: b, label: batchLabel(b), groups, totalAmt: tAmt, totalCount: tCount };
+            const items = byBatch[b]; // entry order — NEVER re-sorted, matches what was sent
+            const tAmt = items.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+            const t0 = items.length && items[0].created ? items[0].created : 0;
+            return { no: b, label: batchLabel(b), items, totalAmt: tAmt, totalCount: items.length, time: fmtTime12(t0) };
         });
         const pAmt = batches.reduce((s, b) => s + b.totalAmt, 0);
         const pCount = batches.reduce((s, b) => s + b.totalCount, 0);
@@ -698,17 +739,17 @@ window.renderRecordsView = async function renderRecordsView() {
         p.batches.forEach((b) => {
             html += '<div class="v-batch">' +
                 '<div class="v-batch-head" onclick="openBatchDetail(\'' + escHtml(p.key) + '\',' + b.no + ')" title="အသေးစိတ် ကြည့်ရန်">' +
-                    '<span class="v-batch-no">' + escHtml(b.label) + '</span>' +
-                    '<span class="v-batch-total">' + formatMoney(b.totalAmt) + '</span>' +
+                    '<span class="v-batch-no">' + escHtml(p.label) + ' (' + escHtml(b.label) + ')</span>' +
+                    '<span class="v-batch-time">' + escHtml(b.time) + '</span>' +
                 '</div>';
-            b.groups.forEach((g) => {
+            b.items.forEach((r) => {
                 html += '<div class="voucher-row">' +
-                    '<span class="v-no">' + escHtml(g.number) + '</span>' +
-                    '<span class="v-amt">' + formatMoney(g.amount) + '</span>' +
-                    '<span class="v-count">' + g.count + ' ကြိမ်</span>' +
+                    '<span class="v-no">ဂဏန်း: ' + escHtml(r.number) + '</span>' +
+                    '<span class="v-amt">' + formatMoney(r.amount) + ' ကျပ်</span>' +
                 '</div>';
             });
-            html += '</div>';
+            html += '<div class="v-batch-foot"><span>Total</span><b>' + formatMoney(b.totalAmt) + '</b></div>' +
+                '</div>';
         });
         html += '</div>';
     });
@@ -727,12 +768,12 @@ function buildVoucherText() {
     lines.push('📅 ' + v.dateLabel + ' | ' + v.sessionName);
     lines.push('─────────────');
     v.players.forEach((p) => {
-        lines.push('👤 ' + p.label);
         p.batches.forEach((b) => {
-            lines.push('  ' + b.label);
-            b.groups.forEach((g) => {
-                lines.push('  ' + g.number + ' - ' + formatMoney(g.amount) + ' (' + g.count + ' ကြိမ်)');
+            lines.push(p.label + ' (' + b.label + ')' + (b.time ? '  ' + b.time : ''));
+            b.items.forEach((r) => {
+                lines.push('  ဂဏန်း: ' + r.number + ' — ' + formatMoney(r.amount) + ' ကျပ်');
             });
+            lines.push('  Total ' + formatMoney(b.totalAmt));
         });
     });
     lines.push('─────────────');
@@ -774,13 +815,14 @@ window.printVoucher = function printVoucher() {
     const area = $('printArea');
     let body = '';
     v.players.forEach((p) => {
-        body += '<div class="pr-player">👤 ' + escHtml(p.label) + '</div>';
         p.batches.forEach((b) => {
-            body += '<div class="pr-batch">' + escHtml(b.label) + '</div>';
-            b.groups.forEach((g) => {
-                body += '<div class="pr-row"><span>' + escHtml(g.number) + '</span>' +
-                    '<span>' + formatMoney(g.amount) + ' (' + g.count + ' ကြိမ်)</span></div>';
+            body += '<div class="pr-batch">' + escHtml(p.label) + ' (' + escHtml(b.label) + ')' +
+                (b.time ? ' <span class="pr-time">' + escHtml(b.time) + '</span>' : '') + '</div>';
+            b.items.forEach((r) => {
+                body += '<div class="pr-row"><span>ဂဏန်း: ' + escHtml(r.number) + '</span>' +
+                    '<span>' + formatMoney(r.amount) + ' ကျပ်</span></div>';
             });
+            body += '<div class="pr-batch-total"><span>Total</span><span>' + formatMoney(b.totalAmt) + '</span></div>';
         });
     });
     area.innerHTML =
@@ -818,7 +860,7 @@ window.openBatchDetail = async function openBatchDetail(playerKey, batchNo) {
                        (Number(r.batch_no) || 0) === batchDetailCtx.batchNo);
 
     $('batchDetailTitle').textContent = '🧾 ' + playerLabel(batchDetailCtx.playerKey) +
-        ' — ' + batchLabel(batchDetailCtx.batchNo) + ' (' + recs.length + ' ကွက်)';
+        ' (' + batchLabel(batchDetailCtx.batchNo) + ') — ' + recs.length + ' ကွက်';
     $('batchDetailList').innerHTML = recs.length ? recs.map((r) =>
         '<div class="record-row">' +
             '<span class="rec-no">' + escHtml(r.number) + '</span>' +
@@ -849,7 +891,6 @@ window.deleteRecord = async function deleteRecord(id) {
     if (!rec) return;
     if (!confirm(rec.number + ' (' + formatMoney(rec.amount) + ') ဖျက်မှာလား?')) return;
     await sync.mutate('delete', 'lottery_records', { id });
-    await renderEntryTable();
     if (activeScreen === 'records') await renderRecordsView();
     await refreshBatchDetail();
     showToast('🗑️ ဖျက်ပြီးပြီ');
@@ -886,7 +927,6 @@ window.saveEditRecord = async function saveEditRecord() {
             amount: amt
         }));
         closeEditModal();
-        await renderEntryTable();
         if (activeScreen === 'records') await renderRecordsView();
         await refreshBatchDetail();
         updateSyncPill();

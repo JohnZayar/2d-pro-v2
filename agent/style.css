@@ -506,19 +506,20 @@ select.field-input { appearance: auto; }
 .pos-table .cell-del { text-align: center; }
 .pos-table .empty-cell { text-align: center; color: var(--muted); padding: 24px; font-size: 13px; }
 
-/* ---------- Color formula keypad (screenshot layout) ---------- */
+/* ---------- Color formula keypad (screenshot layout, compact) ---------- */
 .keypad-panel {
     background: var(--card2); border: 1px solid var(--border);
-    border-radius: var(--radius); padding: 10px;
+    border-radius: var(--radius); padding: 8px;
     box-shadow: var(--shadow);
-    display: flex; flex-direction: column; gap: 10px;
+    display: flex; flex-direction: column; gap: 8px;
+    margin-top: 14px; /* clear space between entries table and keypad */
 }
 .quick-btns-grid {
-    display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px;
+    display: grid; grid-template-columns: repeat(6, 1fr); gap: 5px;
 }
 .q-btn {
-    border: none; border-radius: 10px;
-    padding: 12px 2px; font-size: 13px; font-weight: 800;
+    border: none; border-radius: 8px;
+    padding: 8px 2px; font-size: 12px; font-weight: 800;
     color: #fff; cursor: pointer; font-family: inherit;
     box-shadow: 0 3px 8px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.25);
     transition: transform .08s ease, filter .08s ease;
@@ -543,7 +544,7 @@ select.field-input { appearance: auto; }
 .input-row-3box { display: flex; gap: 8px; align-items: stretch; }
 .box-wrap { flex: 1; min-width: 0; }
 .mbox {
-    width: 100%; padding: 12px 8px; font-size: 16px; font-weight: 800;
+    width: 100%; padding: 9px 6px; font-size: 15px; font-weight: 800;
     background: #0a0f1a; color: var(--text);
     border: 2px solid var(--border); border-radius: 10px;
     text-align: center; outline: none; font-family: inherit;
@@ -567,18 +568,18 @@ select.field-input { appearance: auto; }
 .num-btn {
     background: linear-gradient(160deg, #1e3a5f 0%, #14294a 100%);
     border: 1px solid #2b4a7a; color: #fff;
-    border-radius: 10px; padding: 14px 4px;
-    font-size: 19px; font-weight: 800; cursor: pointer;
+    border-radius: 10px; padding: 10px 4px;
+    font-size: 17px; font-weight: 800; cursor: pointer;
     font-family: inherit;
     box-shadow: 0 3px 8px rgba(0,0,0,.35);
     transition: transform .08s ease;
 }
 .num-btn:active { transform: scale(.93); background: #2b4a7a; }
 .submit-btn {
-    width: 96px; flex-shrink: 0;
+    width: 88px; flex-shrink: 0;
     background: linear-gradient(160deg, #0ea5e9 0%, #0369a1 100%);
     border: 1px solid rgba(255,255,255,.25);
-    font-size: 17px; line-height: 1.4;
+    font-size: 16px; line-height: 1.4;
     box-shadow: 0 6px 16px rgba(2,132,199,.45), inset 0 1px 0 rgba(255,255,255,.25);
 }
 
@@ -626,12 +627,34 @@ select.field-input { appearance: auto; }
     border: 1px solid rgba(56,189,248,.4);
     padding: 3px 12px; border-radius: 16px;
 }
+.v-batch-time { font-size: 12px; color: #fbbf24; font-weight: 700; }
 .v-batch-total { font-size: 13px; color: var(--green); font-weight: 700; }
+.v-batch-foot {
+    display: flex; justify-content: flex-end; align-items: center; gap: 10px;
+    border-top: 1px dashed var(--border);
+    margin-top: 4px; padding: 6px 6px 2px;
+    font-size: 14px; font-weight: 700; color: var(--green);
+}
+.v-batch-foot b { font-size: 16px; }
+/* v1-style simple rows inside a batch (ဂဏန်း: NN | N ကျပ်) */
+.v-batch .voucher-row {
+    background: none; border: none; border-radius: 0;
+    box-shadow: none; padding: 3px 6px; cursor: default;
+}
+.v-batch .voucher-row:active { transform: none; border-color: transparent; }
+.v-batch .voucher-row .v-no { font-size: 15px; color: var(--text); font-weight: 600; letter-spacing: 0; }
+.v-batch .voucher-row .v-amt { font-size: 14px; }
 
 /* ---------- Print: batch structure ---------- */
 @media print {
     .pr-player { font-size: 16px; font-weight: 800; margin-top: 6px; }
     .pr-batch { font-size: 13px; font-weight: 700; margin-top: 4px; color: #333; }
+    .pr-time { font-size: 11px; color: #666; font-weight: 400; }
+    .pr-batch-total {
+        display: flex; justify-content: space-between;
+        font-size: 13px; font-weight: 800; color: #000;
+        border-top: 1px dashed #000; margin-top: 2px; padding-top: 2px;
+    }
 }
 
 
