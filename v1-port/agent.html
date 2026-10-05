@@ -1,0 +1,2263 @@
+<!DOCTYPE html>
+<html lang="my">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>2D Agent Pro - Ultra Fast Edition</title>
+    <link rel="manifest" href="manifest-agent.json">
+    <meta name="theme-color" content="#121622">
+
+    <!-- Firebase App (Core SDK) -->
+    <!-- Firebase Realtime Database SDK -->
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: sans-serif; -webkit-tap-highlight-color: transparent; }
+        html, body { width: 100vw; height: 100vh; height: 100dvh; overflow: hidden; background-color: #050505; color: #fff; display: flex; justify-content: center; align-items: center; }
+        
+        .phone-frame { width: 100%; max-width: 480px; height: 100%; max-height: 100vh; background-color: #121622; display: flex; flex-direction: column; border: 1px solid #1f2937; position: relative; overflow: hidden; box-shadow: 0 0 30px rgba(0,0,0,0.8); }
+
+        #customAlert { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: #38bdf8; color: #000; padding: 12px 20px; border-radius: 10px; font-weight: bold; font-size: 13px; z-index: 99999; display: none; box-shadow: 0 4px 15px rgba(0,0,0,0.6); text-align: center; max-width: 90%; }
+
+        /* Security Lock Screen CSS */
+        #lockScreenOverlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: #0b0f17; z-index: 999999; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 20px; text-align: center; }
+        .lock-card { background: #1a202c; width: 100%; max-width: 340px; border-radius: 14px; padding: 24px; border: 1px solid #374151; box-shadow: 0 10px 25px rgba(0,0,0,0.8); display: flex; flex-direction: column; gap: 14px; }
+        .lock-card h3 { color: #38bdf8; font-size: 18px; margin-bottom: 4px; }
+        .lock-card p { color: #9ca3af; font-size: 12px; line-height: 1.5; }
+        .lock-input { width: 100%; background: #111827; color: #fff; border: 1px solid #374151; padding: 10px; border-radius: 6px; font-size: 14px; font-weight: bold; text-align: center; outline: none; }
+        .lock-btn { background: #38bdf8; color: #000; border: none; padding: 10px; border-radius: 6px; font-weight: bold; font-size: 14px; cursor: pointer; }
+        .lock-btn:active { background: #0284c7; color: #fff; }
+
+        /* Login Screen Style */
+        #loginOverlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: #0b0f17; z-index: 999998; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 20px; text-align: center; }
+        /* Main link overlay (multi-tenant v217) — sits above the agent login until linked */
+        #linkOverlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: #0b0f17; z-index: 1000000; display: none; flex-direction: column; justify-content: center; align-items: center; padding: 20px; text-align: center; }
+        #linkErr { color: #f87171; font-size: 12px; min-height: 16px; }
+        .login-card { background: #1a202c; width: 100%; max-width: 340px; border-radius: 14px; padding: 24px; border: 1px solid #374151; box-shadow: 0 10px 25px rgba(0,0,0,0.8); display: flex; flex-direction: column; gap: 14px; position: relative; z-index: 999999; }
+        .login-card h3 { color: #38bdf8; font-size: 18px; margin-bottom: 4px; }
+        .login-card p { color: #9ca3af; font-size: 12px; line-height: 1.5; }
+        .login-input { width: 100%; background: #111827; color: #fff; border: 1px solid #374151; padding: 10px; border-radius: 6px; font-size: 14px; font-weight: bold; text-align: center; outline: none; }
+        .login-btn { background: #16a34a; color: #fff; border: none; padding: 10px; border-radius: 6px; font-weight: bold; font-size: 14px; cursor: pointer; }
+
+        .top-bar { height: 48px; padding: 0 10px; background: #1a202c; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #2d3748; flex-shrink: 0; z-index: 10; }
+        .session-title { font-size: 12px; color: #38bdf8; font-weight: bold; }
+        .top-actions { display: flex; gap: 4px; align-items: center; }
+        .top-btn { background: #111827; border: 1px solid #374151; color: #38bdf8; font-size: 11px; padding: 5px 8px; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        .top-btn-logout { color: #f43f5e; }
+
+        .content-body { flex: 1; display: flex; flex-direction: column; overflow: hidden; background: #0b0f17; position: relative; -webkit-overflow-scrolling: touch; }
+        .page-view { display: none; flex: 1; flex-direction: column; overflow: hidden; height: 100%; }
+        .page-view.active { display: flex; }
+
+        /* Homepage Grid */
+        .home-grid { padding: 20px; display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; align-content: start; flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+        .home-card { background: linear-gradient(135deg, #1e293b, #0f172a); border: 1px solid #334155; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; cursor: pointer; text-align: center; min-height: 120px; }
+        .home-card:active { background: #253047; border-color: #38bdf8; }
+        .home-card span:first-child { font-size: 30px; }
+        .home-card span:last-child { font-size: 12px; font-weight: bold; color: #f1c40f; }
+
+        .table-container { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; background: #0b0f17; padding: 10px; }
+        .pos-table { width: 100%; border-collapse: collapse; }
+        .pos-table th { background: #161b22; color: #9ca3af; font-size: 12px; padding: 10px; text-align: left; border-bottom: 1px solid #2d3748; position: sticky; top: 0; }
+        .pos-table td { padding: 10px; border-bottom: 1px solid #131a26; font-size: 14px; font-weight: bold; color: #fff; }
+
+        /* Keypad Panel */
+        .keypad-panel { background: #161b22; border-top: 1px solid #2d3748; display: flex; flex-direction: column; flex-shrink: 0; }
+        .keypad-panel.collapsed { display: none !important; }
+        
+        .quick-btns-grid { padding: 4px; display: grid; grid-template-columns: repeat(6, 1fr); gap: 3px; background: #111827; border-bottom: 1px solid #2d3748; }
+        .q-btn { border: none; color: #fff; font-size: 10px; font-weight: bold; padding: 8px 2px; text-align: center; border-radius: 4px; cursor: pointer; }
+        
+        .btn-col-1 { background: #2563eb; }
+        .btn-col-2 { background: #1d4ed8; }
+        .btn-col-3 { background: #059669; }
+        .btn-col-4 { background: #dc2626; }
+        .btn-col-5 { background: #7c3aed; }
+        .btn-col-6 { background: #9333ea; }
+        .btn-col-7 { background: #db2777; }
+        .btn-col-8 { background: #e11d48; }
+        .btn-col-9 { background: #ca8a04; }
+        .btn-col-10 { background: #d97706; }
+        .btn-col-11 { background: #ea580c; }
+        .btn-col-12 { background: #16a34a; }
+        .btn-col-13 { background: #0284c7; }
+        .btn-col-14 { background: #0d9488; }
+        .btn-col-15 { background: #4f46e5; }
+
+        .input-row-3box { padding: 4px 8px; display: flex; gap: 6px; align-items: center; background: #161b22; }
+        .box-wrap { flex: 1; display: flex; flex-direction: column; }
+        .box-wrap input { width: 100%; background: #0b0f17; border: 1.5px solid #374151; color: #38bdf8; padding: 7px 4px; border-radius: 6px; font-size: 13px; font-weight: bold; text-align: center; outline: none; }
+        .box-wrap input.active-box { border-color: #38bdf8; background: #171c28; }
+        .btn-r-box { background: #0284c7; color: white; border: none; padding: 7px 12px; border-radius: 6px; font-weight: bold; font-size: 13px; cursor: pointer; height: 34px; }
+
+        .numpad-grid-wrapper { display: flex; background: #0b0f17; padding: 2px; gap: 2px; }
+        .numpad { flex: 3; display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; }
+        .num-btn { background: #1f2937; border: 1px solid #374151; color: #fff; font-size: 14px; font-weight: bold; padding: 8px 0; border-radius: 4px; cursor: pointer; text-align: center; }
+        .submit-btn { background: #0284c7; border: none; font-size: 14px; font-weight: bold; flex: 1; display: flex; align-items: center; justify-content: center; border-radius: 4px; color: #fff; cursor: pointer; }
+
+        .footer-bar { height: 36px; padding: 0 10px; background: #16a34a; display: flex; justify-content: space-between; align-items: center; font-size: 12px; font-weight: bold; color: #fff; flex-shrink: 0; }
+
+        /* Modal & Guide Style */
+        .modal { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0, 0, 0, 0.85); display: none; align-items: center; justify-content: center; z-index: 99999; backdrop-filter: blur(4px); padding: 10px; }
+        .custom-card { background: #1a202c; width: 92%; max-width: 380px; border-radius: 12px; padding: 20px; border: 1px solid #374151; box-shadow: 0 15px 35px rgba(0,0,0,0.9); display: flex; flex-direction: column; gap: 12px; max-height: 85vh; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; color: #38bdf8; font-size: 16px; font-weight: bold; }
+        .modal-header span:last-child { cursor: pointer; font-size: 20px; color: #9ca3af; padding: 4px; }
+        .receipt-box { background: #111827; color: #34d399; font-family: monospace; padding: 12px; border-radius: 8px; font-size: 13px; white-space: pre-wrap; line-height: 1.5; border: 1px dashed #374151; max-height: 250px; overflow-y: auto; }
+        .btn-modal-action { background: #38bdf8; border: none; color: #000; font-size: 14px; font-weight: bold; text-align: center; width: 100%; padding: 10px; border-radius: 6px; cursor: pointer; }
+        .btn-copy { background: #16a34a; color: #fff; }
+        .form-group { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+        .form-group label { font-size: 11px; color: #9ca3af; font-weight: bold; }
+        .form-group input, .form-group select { width: 100%; background: #111827; color: #fff; border: 1px solid #374151; padding: 8px; border-radius: 6px; font-weight: bold; font-size: 13px; outline: none; }
+        
+        .weekly-grid-table { width: 100%; border-collapse: collapse; background: #121622; min-width: 500px; }
+        .weekly-grid-table th, .weekly-grid-table td { border: 1px solid #374151; padding: 8px; text-align: center; font-size: 12px; color: #fff; }
+        .weekly-grid-table th { background: #1a202c; color: #38bdf8; }
+    </style>
+</head>
+<body>
+
+    <!-- Firebase SDK Setup with True Local-First Hybrid Engine (No-VPN Speed Booster) -->
+    <script>
+        /* ============ PocketBase (replaces Firebase) ============ */
+/**
+ * PocketBase adapter for v1 2D apps.
+ * Replaces Firebase SDK + cloudSync with PocketBase REST API.
+ * Uses app_settings collection as blob storage for v1's 2d_* keys.
+ */
+
+const PB_BASE = 'https://sought-slides-douglas-wagner.trycloudflare.com';
+const PB_AUTH_KEY = 'pb_v1_auth'; // localStorage key for {token, userId, tenantId}
+
+/* ============ PocketBase HTTP client ============ */
+const PB = {
+    baseUrl: PB_BASE,
+    token: null,
+    userId: null,
+    tenantId: null,
+
+    loadAuth() {
+        try {
+            const raw = localStorage.getItem(PB_AUTH_KEY);
+            if (raw) {
+                const a = JSON.parse(raw);
+                this.token = a.token || null;
+                this.userId = a.userId || null;
+                this.tenantId = a.tenantId || null;
+            }
+        } catch (e) {}
+    },
+
+    saveAuth(token, userId, tenantId) {
+        this.token = token;
+        this.userId = userId;
+        this.tenantId = tenantId;
+        try {
+            localStorage.setItem(PB_AUTH_KEY, JSON.stringify({ token, userId, tenantId }));
+        } catch (e) {}
+        // Also sync with v1's tenant system
+        if (typeof setTenantId === 'function' && tenantId) setTenantId(tenantId);
+    },
+
+    clearAuth() {
+        this.token = null;
+        this.userId = null;
+        this.tenantId = null;
+        try { localStorage.removeItem(PB_AUTH_KEY); } catch (e) {}
+    },
+
+    isLoggedIn() { return !!(this.token && this.userId); },
+
+    async req(method, path, body) {
+        const headers = { 'Content-Type': 'application/json' };
+        if (this.token) headers['Authorization'] = this.token;
+        const opts = { method, headers };
+        if (body !== undefined) opts.body = JSON.stringify(body);
+
+        const controller = new AbortController();
+        const tid = setTimeout(() => controller.abort(), 15000);
+        opts.signal = controller.signal;
+
+        try {
+            const res = await fetch(this.baseUrl + path, opts);
+            clearTimeout(tid);
+            let data = null;
+            try { data = await res.json(); } catch (e) {}
+            if (!res.ok) {
+                const err = new Error((data && data.message) || ('PB ' + res.status));
+                err.code = res.status;
+                err.data = data;
+                throw err;
+            }
+            return data;
+        } catch (e) {
+            clearTimeout(tid);
+            if (e.name === 'AbortError') {
+                const err = new Error('Request timed out');
+                err.code = 'TIMEOUT';
+                throw err;
+            }
+            throw e;
+        }
+    },
+
+    async login(email, password) {
+        const data = await this.req('POST', '/api/collections/users/auth-with-password', {
+            identity: email,
+            password: password
+        });
+        // data.token, data.record (user)
+        const user = data.record;
+        let tenantId = user.tenant || null;
+        
+        // If user has no tenant, try to find or create one
+        if (!tenantId) {
+            tenantId = await this.ensureUserTenant(user.id, user.name || user.email);
+        }
+        
+        this.saveAuth(data.token, user.id, tenantId);
+        return { user, tenantId };
+    },
+
+    async register(email, password, name) {
+        const data = await this.req('POST', '/api/collections/users/records', {
+            email: email,
+            password: password,
+            passwordConfirm: password,
+            name: name || email,
+            verified: true,
+            emailVisibility: true
+        });
+        // Now login
+        return this.login(email, password);
+    },
+
+    async ensureUserTenant(userId, name) {
+        // Try to find existing tenant for this user, or create one
+        try {
+            const list = await this.req('GET', '/api/collections/tenants/records?perPage=1');
+            // For simplicity, if user has no tenant, create a new one
+            // (In practice, the admin would have set this up)
+            const t = await this.req('POST', '/api/collections/tenants/records', {
+                name: name || 'My Shop'
+            });
+            // Link tenant to user
+            await this.req('PATCH', '/api/collections/users/records/' + userId, {
+                tenant: t.id
+            });
+            return t.id;
+        } catch (e) {
+            console.warn('ensureUserTenant failed:', e.message);
+            return userId; // fallback: use userId as tenantId
+        }
+    },
+
+    async refreshAuth() {
+        if (!this.token) throw new Error('Not logged in');
+        const data = await this.req('POST', '/api/collections/users/auth-refresh');
+        const user = data.record;
+        this.saveAuth(data.token, user.id, user.tenant || this.tenantId);
+        return user;
+    },
+
+    logout() {
+        this.clearAuth();
+    },
+
+    /* ============ app_settings blob storage ============ */
+    // Maps v1's 2d_* keys to PocketBase app_settings records
+
+    async getSetting(key) {
+        if (!this.tenantId) return null;
+        try {
+            const filter = encodeURIComponent('tenant="' + this.tenantId + '" && key="' + key + '"');
+            const data = await this.req('GET', '/api/collections/app_settings/records?filter=' + filter + '&perPage=1');
+            if (data.items && data.items.length > 0) {
+                const val = data.items[0].value;
+                try { return JSON.parse(val); } catch (e) { return val; }
+            }
+            return null;
+        } catch (e) {
+            console.warn('PB getSetting failed:', key, e.message);
+            return null;
+        }
+    },
+
+    async setSetting(key, value) {
+        if (!this.tenantId) throw new Error('No tenant');
+        const jsonVal = typeof value === 'string' ? value : JSON.stringify(value);
+        try {
+            const filter = encodeURIComponent('tenant="' + this.tenantId + '" && key="' + key + '"');
+            const data = await this.req('GET', '/api/collections/app_settings/records?filter=' + filter + '&perPage=1');
+            if (data.items && data.items.length > 0) {
+                // Update existing
+                await this.req('PATCH', '/api/collections/app_settings/records/' + data.items[0].id, {
+                    value: jsonVal
+                });
+            } else {
+                // Create new
+                await this.req('POST', '/api/collections/app_settings/records', {
+                    tenant: this.tenantId,
+                    key: key,
+                    value: jsonVal
+                });
+            }
+            return true;
+        } catch (e) {
+            console.warn('PB setSetting failed:', key, e.message);
+            throw e;
+        }
+    }
+};
+
+// Load auth on script start
+PB.loadAuth();
+
+        // Stub for legacy firebase references (prevents crashes)
+        const firebase = undefined;
+        let db = null;
+        let firebaseSdkOk = false;
+        const FIREBASE_PROXY = null;
+        const DIRECT_BASE = '';
+
+        // (Firebase init removed - using PocketBase)
+
+        /* =====================================================================
+           Multi-tenant connection engine v217.
+           - Tenant isolation: every key is scoped under mains/{tenantId}/
+             once a tenant is set. Keys starting with '/' are absolute.
+           - Transport priority: Firebase realtime SDK -> REST (plain HTTPS).
+           - REST calls carry the Firebase Auth ID token (?auth=) so they
+             keep working after per-tenant security rules are locked down.
+           - Pill: realtime online / REST mode / offline / SDK-missing.
+           ===================================================================== */
+        const __memStore = {};
+        function safeGetItem(k) {
+            try { const v = localStorage.getItem(k); if (v !== null && v !== undefined) return v; } catch(e) {}
+            return (__memStore[k] !== undefined) ? __memStore[k] : null;
+        }
+        function safeSetItem(k, v) {
+            try { localStorage.setItem(k, v); } catch(e) {}
+            try { __memStore[k] = v; } catch(e2) {}
+        }
+        function safeRemoveItem(k) {
+            try { localStorage.removeItem(k); } catch(e) {}
+            try { delete __memStore[k]; } catch(e2) {}
+        }
+
+        /* ---- Tenant scoping ---- */
+        let __tenantId = null;
+        function setTenantId(id) { __tenantId = id || null; }
+        function getTenantId() { return __tenantId; }
+        function tp(key) {
+            // Resolve a data key to its full DB path.
+            // Leading '/' = absolute path (no tenant prefix). '.info/' untouched.
+            if (!key) return key;
+            if (key.charAt(0) === '/') return key.slice(1);
+            if (key.indexOf('.info/') === 0) return key;
+            return __tenantId ? ('mains/' + __tenantId + '/' + key) : key;
+        }
+
+        /* ---- Auth ID token for REST calls ---- */
+        let __idToken = null, __tokenExp = 0;
+        function refreshIdToken(force) { return Promise.resolve(null); } // PB: no-op
+        // (Firebase auth listener removed - using PB)
+        function withAuth(url, tok) {
+            if (!tok) return url;
+            return url + (url.indexOf('?') >= 0 ? '&auth=' : '?auth=') + encodeURIComponent(tok);
+        }
+
+        // (Firebase proxy config removed)
+
+        /* v218.12: smart base selection — test proxy at startup; if it serves
+           "Hello World!" (code not installed) or is unreachable, use direct URL (works with VPN) */
+        let __activeRestBase = DIRECT_BASE;
+        const REST_BASE = DIRECT_BASE; /* fallback for early calls */
+        function getRestBase() { return __activeRestBase || DIRECT_BASE; }
+        try {
+            fetch(FIREBASE_PROXY.replace(/\/+$/, '') + '/.json', { cache: 'no-store' })
+                .then(r => r.text()).then(t => {
+                    const isHello = /hello world/i.test(t.trim());
+                    __activeRestBase = isHello ? DIRECT_BASE : FIREBASE_PROXY.replace(/\/+$/, '');
+                    try { refreshPillDetail(); } catch(e) {}
+                }).catch(() => { __activeRestBase = DIRECT_BASE; });
+        } catch(e) { __activeRestBase = DIRECT_BASE; }
+
+        window.__restOk = null;
+        window.__socketOk = null;
+
+        function restGet(key, callback) {
+            const pkey = tp(key);
+            const go = (tok) => {
+                try {
+                    if (!getRestBase()) { window.__restOk = false; try { refreshPillDetail(); } catch(e) {} callback(null); return; }
+                    const ctrl = new AbortController();
+                    const timer = setTimeout(() => { try { ctrl.abort(); } catch(e) {} }, 12000);
+                    fetch(withAuth(getRestBase() + '/' + pkey + '.json', tok), { signal: ctrl.signal, cache: 'no-store' })
+                        .then(r => {
+                            clearTimeout(timer);
+                            window.__restOk = (r.status === 200);
+                            try { refreshPillDetail(); } catch(e) {}
+                            if (!r.ok) throw 0;
+                            return r.json();
+                        })
+                        .then(v => callback(v === undefined ? null : v))
+                        .catch(() => callback(null));
+                } catch(e) { callback(null); }
+            };
+            try { refreshIdToken(false).then(go).catch(() => go(__idToken)); } catch(e) { go(__idToken); }
+        }
+        function restSet(key, value, callback) {
+            const pkey = tp(key);
+            const go = (tok) => {
+                try {
+                    if (!getRestBase()) { if (callback) callback(false); return; }
+                    const ctrl = new AbortController();
+                    const timer = setTimeout(() => { try { ctrl.abort(); } catch(e) {} }, 12000);
+                    fetch(withAuth(getRestBase() + '/' + pkey + '.json', tok), {
+                        method: 'PUT', signal: ctrl.signal, cache: 'no-store',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(value === undefined ? null : value)
+                    }).then(r => { clearTimeout(timer); if (callback) callback(r.ok); })
+                      .catch(() => { if (callback) callback(false); });
+                } catch(e) { if (callback) callback(false); }
+            };
+            try { refreshIdToken(false).then(go).catch(() => go(__idToken)); } catch(e) { go(__idToken); }
+        }
+        function restDelete(fullPath, callback) {
+            // fullPath: already-resolved DB path (no tenant prefixing here)
+            const go = (tok) => {
+                try {
+                    if (!getRestBase()) { if (callback) callback(false); return; }
+                    fetch(withAuth(getRestBase() + '/' + fullPath + '.json', tok), { method: 'DELETE', cache: 'no-store' })
+                        .then(r => { if (callback) callback(r.ok); })
+                        .catch(() => { if (callback) callback(false); });
+                } catch(e) { if (callback) callback(false); }
+            };
+            try { refreshIdToken(false).then(go).catch(() => go(__idToken)); } catch(e) { go(__idToken); }
+        }
+
+        function runRestCheck(cb) {
+            const done = (ok) => {
+                window.__restOk = ok;
+                try { refreshPillDetail(); } catch(e) {}
+                if (typeof cb === 'function') { try { cb(ok); } catch(e) {} }
+            };
+            try {
+                if (!getRestBase()) { done(false); return; }
+                const target = __tenantId ? ('mains/' + __tenantId + '/public') : '';
+                const urlPath = target ? ('/' + target + '.json') : '/.json';
+                const ctrl = new AbortController();
+                const timer = setTimeout(() => { try { ctrl.abort(); } catch(e) {} }, 9000);
+                const go = (tok) => {
+                    fetch(withAuth(getRestBase() + urlPath + '?shallow=true', tok), { signal: ctrl.signal, cache: 'no-store' })
+                        .then(r => { clearTimeout(timer); done(r.status === 200); })
+                        .catch(() => { clearTimeout(timer); done(false); });
+                };
+                try { refreshIdToken(false).then(go).catch(() => go(__idToken)); } catch(e) { go(__idToken); }
+            } catch(e) { done(false); }
+        }
+
+        function setConnStatus(state) {
+            // state: 'online' | 'restmode' | 'offline' | 'connecting' | 'sdkmissing'
+            const pills = document.querySelectorAll('.conn-pill');
+            pills.forEach((el) => {
+                el.dataset.state = state;
+                if (state === 'online') {
+                    el.textContent = '🟢 ချိတ်ဆက်ထားသည်';
+                    el.style.background = '#064e3b'; el.style.color = '#6ee7b7'; el.style.borderColor = '#10b981';
+                } else if (state === 'restmode') {
+                    el.textContent = '🟡 REST မုဒ်ဖြင့် အလုပ်လုပ်နေသည်';
+                    el.style.background = '#78350f'; el.style.color = '#fcd34d'; el.style.borderColor = '#f59e0b';
+                } else if (state === 'offline') {
+                    el.textContent = '🔴 ချိတ်ဆက်မှုပြတ်နေသည်';
+                    el.style.background = '#7f1d1d'; el.style.color = '#fca5a5'; el.style.borderColor = '#ef4444';
+                } else if (state === 'sdkmissing') {
+                    el.textContent = '🔴 Firebase SDK တင်မရပါ (internet စစ်ပါ)';
+                    el.style.background = '#7f1d1d'; el.style.color = '#fca5a5'; el.style.borderColor = '#ef4444';
+                } else {
+                    el.textContent = '🟡 ချိတ်ဆက်နေသည်…';
+                    el.style.background = '#78350f'; el.style.color = '#fcd34d'; el.style.borderColor = '#f59e0b';
+                }
+            });
+            try { refreshPillDetail(); } catch(e) {}
+        }
+
+        function refreshPillDetail() {
+            document.querySelectorAll('.conn-pill').forEach((el) => {
+                const st = el.dataset.state;
+                if (st === 'restmode') {
+                    if (window.__restOk === false) el.textContent = '🔴 ဆာဗာကို လုံးဝ မရောက်ဘူး';
+                    else el.textContent = '🟡 REST မုဒ်ဖြင့် အလုပ်လုပ်နေသည်';
+                } else if (st === 'offline') {
+                    if (window.__restOk === true) el.textContent = '🔴 ဆာဗာ ရောက်တယ် · socket ပိတ်နေပုံရတယ်';
+                    else if (window.__restOk === false) el.textContent = '🔴 ဆာဗာကို လုံးဝ မရောက်ဘူး';
+                } else if (st === 'sdkmissing') {
+                    if (window.__restOk === true) el.textContent = '🔴 SDK တင်မရပါ · ဆာဗာတော့ ရောက်တယ်';
+                    else if (window.__restOk === false) el.textContent = '🔴 SDK တင်မရပါ · ဆာဗာလည်း မရောက်ဘူး';
+                }
+            });
+        }
+
+        const cloudSync = {
+            get(key, callback) {
+                const pkey = tp(key);
+                let localData = safeGetItem('cache_' + pkey);
+                let answered = false;
+                let done = false;
+                let safetyTimer = null;
+                const finish = (val) => {
+                    if (done) return;
+                    done = true;
+                    try { clearTimeout(safetyTimer); } catch(e) {}
+                    callback(val);
+                };
+                if (localData) {
+                    answered = true;
+                    try { callback(JSON.parse(localData)); } catch(e) {}
+                }
+
+                const deliverRest = () => {
+                    if (!getRestBase()) { if (!answered) { answered = true; finish(null); } return; }
+                    setConnStatus(window.__restOk === false ? 'offline' : 'restmode');
+                    restGet(key, (val) => {
+                        if (val !== null && val !== undefined) {
+                            const strVal = JSON.stringify(val);
+                            safeSetItem('cache_' + pkey, strVal);
+                            if (localData !== strVal || !answered) { answered = true; finish(val); }
+                        } else if (!answered) { answered = true; finish(null); }
+                    });
+                };
+
+                /* PocketBase: fetch from app_settings */
+                setConnStatus('connecting');
+                // Extract the 2d_* key from pkey (remove mains/{tenant}/ prefix if present)
+                let pbKey = key;
+                if (pkey.indexOf('mains/') === 0) {
+                    const parts = pkey.split('/');
+                    pbKey = parts.slice(2).join('/');
+                }
+                // Skip absolute paths like /deviceApprovals/ (not tenant-scoped)
+                if (key.charAt(0) === '/') {
+                    if (!answered) { answered = true; finish(null); }
+                    return;
+                }
+                PB.getSetting(pbKey).then((val) => {
+                    try { clearTimeout(safetyTimer); } catch(e) {}
+                    if (val !== null && val !== undefined) {
+                        const strVal = JSON.stringify(val);
+                        safeSetItem('cache_' + pkey, strVal);
+                        if (localData !== strVal || !answered) { answered = true; finish(val); }
+                    } else if (!answered) { answered = true; finish(null); }
+                    setConnStatus(PB.isLoggedIn() ? 'online' : 'offline');
+                }).catch(() => {
+                    try { clearTimeout(safetyTimer); } catch(e) {}
+                    if (!answered) { answered = true; finish(null); }
+                    setConnStatus('offline');
+                });
+            },
+            set(key, value, callback) {
+                // Safety net: deduplicate lottery records by (sessionId,target,no,amt,batchNo),
+                // keeping the first occurrence. Prevents double-saves from creating duplicates.
+                if ((key === '2d_list_data' || key === '2d_akan_data') && Array.isArray(value)) {
+                    const seen = new Set();
+                    value = value.filter(item => {
+                        if (!item || typeof item !== 'object') return true;
+                        const sig = [item.sessionId, item.target, item.no, item.amt, item.batchNo].join('|');
+                        if (seen.has(sig)) return false;
+                        seen.add(sig);
+                        return true;
+                    });
+                }
+                const pkey = tp(key);
+                safeSetItem('cache_' + pkey, JSON.stringify(value));
+                const socketUp = (window.__socketOk === true);
+                // Report cloud-write result; warn visibly on failure.
+                const finish = (ok) => {
+                    if (callback) { try { callback(!!ok); } catch(e) {} }
+                    if (!ok) {
+                        setTimeout(() => { try { showMessage("⚠️ Cloud မရောက်ပါ — ကွန်နက်ရှင်/အကောင့်စစ်ပြီး ပြန်သိမ်းပါ"); } catch(e) {} }, 400);
+                    }
+                };
+                /* PocketBase: save to app_settings */
+                let pbKey = key;
+                if (pkey.indexOf('mains/') === 0) {
+                    const parts = pkey.split('/');
+                    pbKey = parts.slice(2).join('/');
+                }
+                if (key.charAt(0) === '/') { finish(true); return; }
+                let done = false;
+                const t = setTimeout(() => { if (!done) { done = true; finish(false); } }, 15000);
+                PB.setSetting(pbKey, value).then(() => {
+                    if (!done) { done = true; clearTimeout(t); finish(true); }
+                    setConnStatus('online');
+                }).catch(() => {
+                    if (!done) { done = true; clearTimeout(t); finish(false); }
+                    setConnStatus('offline');
+                });
+            }
+        };
+
+        /* v219: LocalDB — synchronous local-first data access.
+           UI reads from here INSTANTLY (memory → localStorage); cloud sync
+           happens in background via cloudSync. No network wait for UI. */
+        const LocalDB = {
+            _mem: {},
+            get(key, fallback) {
+                if (key in this._mem) return this._mem[key] !== null ? this._mem[key] : fallback;
+                try {
+                    const raw = safeGetItem('cache_' + tp(key));
+                    const val = raw ? JSON.parse(raw) : fallback;
+                    this._mem[key] = val;
+                    return val;
+                } catch(e) { return fallback; }
+            },
+            set(key, value) {
+                this._mem[key] = value;
+                try { safeSetItem('cache_' + tp(key), JSON.stringify(value)); } catch(e) {}
+                /* Background cloud sync — fire and forget */
+                try { cloudSync.set(key, value, () => {}); } catch(e) {}
+            },
+            /* Pull fresh data from cloud in background, update local + re-render */
+            refresh(key, onDone) {
+                try {
+                    cloudSync.get(key, (val) => {
+                        if (val !== null && val !== undefined) {
+                            this._mem[key] = val;
+                            try { safeSetItem('cache_' + tp(key), JSON.stringify(val)); } catch(e) {}
+                        }
+                        if (onDone) { try { onDone(this.get(key)); } catch(e) {} }
+                    });
+                } catch(e) { if (onDone) { try { onDone(this.get(key)); } catch(e2) {} } }
+            },
+            invalidate(key) { try { delete this._mem[key]; } catch(e) {} }
+        };
+
+        /* Realtime socket monitor + REST reachability. */
+        let __cloudWasOnline = false;
+        function resyncCloudData() {
+            try { if (typeof refreshHomeSessions === 'function') { refreshHomeSessions(); } } catch(e) {}
+        }
+
+        function startCloudMonitor() {
+            if (window.__monitorStarted) return;
+            window.__monitorStarted = true;
+            try {
+                if (!firebaseSdkOk || !db) {
+                    runRestCheck((ok) => setConnStatus(ok ? 'restmode' : 'offline'));
+                } else {
+                    setConnStatus('connecting');
+                    /* PB: periodic health check instead of Firebase .info/connected */
+                    window.__socketOk = true;
+                    setConnStatus(PB.isLoggedIn() ? 'online' : 'offline');
+                    setInterval(() => {
+                        fetch(PB.baseUrl + '/api/health').then(r => {
+                            const online = r.ok;
+                            if (online !== window.__socketOk) {
+                                window.__socketOk = online;
+                                setConnStatus(online ? 'online' : 'offline');
+                                if (online && !__cloudWasOnline) { try { resyncCloudData(); } catch(e) {} }
+                                __cloudWasOnline = online;
+                            }
+                        }).catch(() => {
+                            window.__socketOk = false;
+                            setConnStatus('offline');
+                        });
+                    }, 30000);
+                    window.addEventListener('offline', () => { window.__socketOk = false; setConnStatus('offline'); });
+                    window.addEventListener('online', () => setConnStatus('connecting'));
+                }
+            } catch(e) { setConnStatus('offline'); }
+            try { runRestCheck(); } catch(e) {}
+        }
+    </script>
+
+    <div id="customAlert"></div>
+
+    <!-- Security Lock / Formula Key Activation Screen -->
+    <div id="lockScreenOverlay" style="display: none;">
+        <div class="lock-card">
+            <h3>🔒 Device Formula Security</h3>
+            <p>ဤအပလီကေးရှင်းကို အသုံးပြုရန် သင့်ဖုန်း၏ Device ID ကို အက်မန်ထံ ပေးပို့ပြီး Key ယူပါ။</p>
+            <div style="background: #111827; padding: 8px; border-radius: 6px; border: 1px dashed #38bdf8; font-size: 14px; color: #38bdf8; font-weight: bold;" id="myDeviceIDDisplay">Loading...</div>
+            <input type="text" id="adminActivationKeyInput" class="lock-input" placeholder="Activation Key ထည့်ပါ">
+            <button class="lock-btn" onclick="verifyDynamicActivationKey()">အစစ်ဆေးခံမည် (Activate)</button>
+        </div>
+    </div>
+
+    <!-- Main Link Screen (multi-tenant v217) -->
+    <div id="linkOverlay">
+        <div class="login-card">
+            <h3>🔗 Main ချိတ်ဆက်ရန်</h3>
+            <p>သင့်ဒိုင် (Master) ဆီက ရတဲ့ <b>ချိတ်ဆက်ကုဒ်</b> ကို ထည့်ပါ။<br>တစ်ခါထည့်ရင် နောက်ပိုင်း auto-ချိတ်မယ်။</p>
+            <input type="text" id="linkCodeInput" class="login-input" placeholder="ချိတ်ဆက်ကုဒ်">
+            <div id="linkErr"></div>
+            <button class="login-btn" onclick="submitLinkCode()">ချိတ်ဆက်မည်</button>
+        </div>
+    </div>
+
+    <!-- Login Screen -->
+    <div id="loginOverlay">
+        <div class="login-card">
+            <h3>🔐 Agent အကောင့် ဝင်ရန်</h3>
+            <p>Master တွင် မှတ်ပုံတင်ထားသော Agent အမည်နှင့် ကုဒ်နံပါတ်ကို ထည့်သွင်းပါ။</p>
+            <input type="text" id="loginName" class="login-input" placeholder="Agent အမည်">
+            <input type="password" id="loginCode" class="login-input" placeholder="ကုဒ်နံပါတ် (Code)">
+            <button class="login-btn" onclick="portalLogin()">အကောင့်ဝင်မည်</button>
+        </div>
+    </div>
+
+    <!-- Receipt Modal -->
+    <div class="modal" id="receiptModal">
+        <div class="custom-card">
+            <div class="modal-header">
+                <span>📄 စာရင်းစာရွက် (Receipt)</span>
+                <span onclick="closeReceiptModal()">✕</span>
+            </div>
+            <div class="receipt-box" id="receiptTextContent"></div>
+            <div style="display: flex; gap: 8px;">
+                <button class="btn-modal-action btn-copy" onclick="copyReceiptText()">📋 Copy ကူးမည်</button>
+                <button class="btn-modal-action" onclick="saveAndConfirmBatch()">💾 Save (အတည်ပြုမည်)</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Formula Guide Modal with Full Formulas -->
+    <div class="modal" id="guideModal">
+        <div class="custom-card">
+            <div class="modal-header">
+                <span>📖 v213.0 ဖော်မြူလာ လမ်းညွှန် အပြည့်အစုံ</span>
+                <span onclick="closeGuideModal()">✕</span>
+            </div>
+            <div style="font-size:12px; color:#d1d5db; display:flex; flex-direction:column; gap:6px; line-height:1.5; max-height: 60vh; overflow-y: auto;">
+                <div><b>1. ထိပ် (ဥပမာ - 5ထိပ်):</b> 50 မှ 59 ထိ (၁၀ ကွက်)။</div>
+                <div><b>2. နောက် (ဥပမာ - 5နောက်):</b> 05 မှ 95 ထိ (၁၀ ကွက်)။</div>
+                <div><b>3. ပတ် (ဥပမာ - 5ပတ်):</b> ထိပ်နှင့်နောက် အားလုံး (၁၉ ကွက်)။</div>
+                <div><b>4. အပူး / ပူး:</b> 00, 11, 22, 33, 44, 55, 66, 77, 88, 99 (၁၀ ကွက်)။</div>
+                <div><b>5. ပါဝါ:</b> 05, 50, 16, 61, 27, 72, 38, 83, 49, 94 (၁၀ ကွက်)။</div>
+                <div><b>6. ဘရိတ် (ဥပမာ - 2ဘရိတ်):</b> ပေါင်းခြင်း ၂ သို့မဟုတ် ၁၂ ဖြစ်သော ဂဏန်းများ။</div>
+                <div><b>7. ခွေ (ဥပမာ - 123ခွေ):</b> ရွေးထားသောဂဏန်းများဖြင့် အပြန်အလှန် (၆ ကွက်)။</div>
+                <div><b>8. ခွေပူးပါ (ဥပမာ - 123ခွေပူးပါ):</b> အပူးများပါ အပါအဝင် (၉ ကွက်)။</div>
+                <div><b>9. နက္ခတ်:</b> 07, 18, 24, 53, 69, 70, 81, 42, 35, 96 (၁၀ ကွက်)။</div>
+                <div><b>10. စုံစုံ / မမ / စုံမ / မစုံ:</b> သက်ဆိုင်ရာ စုံ/မ ဂဏန်းစုံများ။</div>
+                <div><b>11. ညီအစ်ကို:</b> 01, 12, 23 ကဲ့သို့ ဂဏန်းကပ် ကွက်များ။</div>
+                <div><b>12. အသွားအပြန် (R / r / အာ):</b> ဥပမာ - 12R ဟုထည့်လျှင် 12 နှင့် 21 နှစ်ကွက်စလုံး ဝင်မည်။ ဒဲ့နှင့်အပြန် သီးသန့်ပေးလိုလျှင် 12=500r200 ဟု သုံးနိုင်သည်။</div>
+            </div>
+            <button class="btn-modal-action" onclick="closeGuideModal()">ပိတ်မည်</button>
+        </div>
+    </div>
+
+    <!-- Add Sub-User Modal -->
+    <div class="modal" id="addSubUserModal">
+        <div class="custom-card">
+            <div class="modal-header">
+                <span>👥 ထိုးသားအသစ် ထည့်ရန်</span>
+                <span onclick="closeAddSubUserModal()">✕</span>
+            </div>
+            <div class="form-group">
+                <label>ထိုးသား အမည်</label>
+                <input type="text" id="inputSubUserName" placeholder="ဥပမာ - ကိုအောင်">
+            </div>
+            <div class="form-group">
+                <label>ဖုန်းနံပါတ်</label>
+                <input type="text" id="inputSubUserPhone" placeholder="09xxxxxxxxx">
+            </div>
+            <button class="btn-modal-action" onclick="saveSubUser()">ထိုးသား သိမ်းဆည်းမည်</button>
+        </div>
+    </div>
+
+    <!-- Winning Number Modal -->
+    <div class="modal" id="winningModal">
+        <div class="custom-card">
+            <div class="modal-header">
+                <span>🎯 ပေါက်သီး (Winning Number)</span>
+                <span onclick="closeWinningModal()">✕</span>
+            </div>
+            <div id="winningDisplayContent" style="font-size: 16px; color: #f1c40f; font-weight: bold; text-align: center; padding: 15px;"></div>
+            <button class="btn-modal-action" onclick="closeWinningModal()">ပိတ်မည်</button>
+        </div>
+    </div>
+
+    <div class="phone-frame">
+        <!-- Top Bar -->
+        <div class="top-bar">
+            <div class="session-title" id="agentSessionTitle">Agent: <span id="currentAgentName" style="color:#f1c40f;">-</span></div>
+            <div class="top-actions">
+                <button class="top-btn" onclick="switchPortalPage('Home')">🏠 ပင်မ</button>
+                <button class="top-btn" onclick="openGuideModal()">📖 လမ်းညွှန်</button>
+                <button class="top-btn" onclick="unlinkMain()" title="Main ချိတ်ဆက်မှုဖျက်ရန်">🔗</button>
+                <button class="top-btn top-btn-logout" onclick="portalLogout()">ထွက်</button>
+            </div>
+        </div>
+
+        <!-- Content Body -->
+        <div class="content-body">
+            <!-- PAGE: HOME -->
+            <div class="page-view active" id="pageHome">
+                <div style="padding: 10px; background: #161b22; border-bottom: 1px solid #2d3748; display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                    <span style="font-size:12px; color:#38bdf8; font-weight:bold; white-space:nowrap;">📅 ပွဲစဉ်:</span>
+                    <select id="homeSessionSelect" onchange="onHomeSessionChange(this)" style="background:#111827; color:#f1c40f; border:1px solid #374151; padding:6px; border-radius:6px; font-weight:bold; font-size:12px; flex:1; min-width:0;"></select>
+                    <span class="conn-pill" style="font-size:10px; font-weight:bold; padding:4px 8px; border-radius:20px; border:1px solid #f59e0b; background:#78350f; color:#fcd34d; white-space:nowrap;">🟡 ချိတ်ဆက်နေသည်…</span>
+                </div>
+                <div class="home-grid">
+                    <div class="home-card" onclick="switchPortalPage('POS')">
+                        <span>📝</span>
+                        <span>စာရင်းသွင်းရန်</span>
+                    </div>
+                    <div class="home-card" onclick="switchPortalPage('SubUsers')">
+                        <span>👥</span>
+                        <span>ထိုးသားစာရင်းများ</span>
+                    </div>
+                    <div class="home-card" onclick="switchPortalPage('History')">
+                        <span>📊</span>
+                        <span>ကိုယ်ပိုင်စာရင်းချုပ်</span>
+                    </div>
+                    <div class="home-card" onclick="switchPortalPage('Weekly')">
+                        <span>📅</span>
+                        <span>၇ ရက်စာ အချုပ်</span>
+                    </div>
+                    <div class="home-card" onclick="openReceiptModal()">
+                        <span>📄</span>
+                        <span>စာရွက်ထုတ်ရန်/Save</span>
+                    </div>
+                    <div class="home-card" onclick="openWinningModal()">
+                        <span>🎯</span>
+                        <span>ပေါက်သီး စစ်ဆေးရန်</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- PAGE: POS ENTRY -->
+            <div class="page-view" id="pagePOS">
+                <div style="padding: 6px 10px; background: #161b22; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #2d3748;">
+                    <select id="posSubUserSelect" style="background:#111827; color:#38bdf8; border:1px solid #374151; padding:4px; border-radius:6px; font-weight:bold; font-size:11px; width:45%;">
+                        <option value="">-- ထိုးသား ရွေးပါ --</option>
+                    </select>
+                    <div style="display: flex; gap: 4px; align-items: center;">
+                        <button class="top-btn" onclick="toggleKeypad()" title="ကီးဘုတ် ပိတ်/ဖွင့်">⌨️</button>
+                        <button class="top-btn" onclick="openDigitalBoard()" title="Digital Board">📋</button>
+                        <button class="top-btn" onclick="openWinningModal()" title="ပေါက်သီး">⭐</button>
+                        <button class="top-btn" style="background:#0284c7; color:#fff;" onclick="openReceiptModal()">Save</button>
+                    </div>
+                </div>
+
+                <div class="table-container">
+                    <table class="pos-table">
+                        <thead>
+                            <tr>
+                                <th style="width: 30%;">ထိုးသား</th>
+                                <th style="width: 35%;">ဂဏန်း</th>
+                                <th style="width: 30%;">ပမာဏ</th>
+                                <th style="width: 15%; text-align: center;">🗑️</th>
+                            </tr>
+                        </thead>
+                        <tbody id="portalTableBody">
+                            <tr><td colspan="4" style="text-align:center; color:#6b7280; padding:20px;">စာရင်း မရှိသေးပါ။</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Color Keypad Panel -->
+                <div class="keypad-panel" id="portalKeypad">
+                    <div class="quick-btns-grid">
+                        <button class="q-btn btn-col-1" type="button" onclick="applyFormula('ထိပ်')">ထိပ်</button>
+                        <button class="q-btn btn-col-2" type="button" onclick="applyFormula('နောက်')">နောက်</button>
+                        <button class="q-btn btn-col-3" type="button" onclick="applyFormula('ပတ်')">ပတ်</button>
+                        <button class="q-btn btn-col-4" type="button" onclick="applyFormula('ပူး')">ပူး</button>
+                        <button class="q-btn btn-col-5" type="button" onclick="applyFormula('ပါဝါ')">ပါဝါ</button>
+                        <button class="q-btn btn-col-6" type="button" onclick="applyFormula('နက္ခတ်')">နက္ခတ်</button>
+                        <button class="q-btn btn-col-7" type="button" onclick="applyFormula('ဘရိတ်')">ဘရိတ်</button>
+                        <button class="q-btn btn-col-8" type="button" onclick="applyFormula('ခွေ')">ခွေ</button>
+                        <button class="q-btn btn-col-9" type="button" onclick="applyFormula('ခွေပူးပါ')">ခွေပူးပါ</button>
+                        <button class="q-btn btn-col-10" type="button" onclick="applyFormula('ညီအစ်ကို')">ညီအစ်ကို</button>
+                        <button class="q-btn btn-col-11" type="button" onclick="applyFormula('စုံစုံ')">စုံစုံ</button>
+                        <button class="q-btn btn-col-12" type="button" onclick="applyFormula('မမ')">မမ</button>
+                        <button class="q-btn btn-col-13" type="button" onclick="applyFormula('စုံမ')">စုံမ</button>
+                        <button class="q-btn btn-col-14" type="button" onclick="applyFormula('မစုံ')">မစုံ</button>
+                        <button class="q-btn btn-col-15" type="button" onclick="clearInputs()">C</button>
+                    </div>
+
+                    <div class="input-row-3box">
+                        <div class="box-wrap">
+                            <input type="text" id="boxNo" class="active-box" placeholder="ဂဏန်း" readonly onclick="setFocusBox('no')">
+                        </div>
+                        <div class="box-wrap">
+                            <input type="text" id="boxAmt" placeholder="ဒဲ့" readonly onclick="setFocusBox('amt')">
+                        </div>
+                        <div class="box-wrap">
+                            <input type="text" id="boxRev" placeholder="အပြန်" readonly onclick="setFocusBox('rev')">
+                        </div>
+                        <button class="btn-r-box" type="button" onclick="toggleRVal()">R</button>
+                    </div>
+
+                    <div class="numpad-grid-wrapper">
+                        <div class="numpad">
+                            <button class="num-btn" type="button" onclick="appendNum('1')">1</button>
+                            <button class="num-btn" type="button" onclick="appendNum('2')">2</button>
+                            <button class="num-btn" type="button" onclick="appendNum('3')">3</button>
+                            <button class="num-btn" type="button" onclick="appendNum('4')">4</button>
+                            <button class="num-btn" type="button" onclick="appendNum('5')">5</button>
+                            <button class="num-btn" type="button" onclick="appendNum('6')">6</button>
+                            <button class="num-btn" type="button" onclick="appendNum('7')">7</button>
+                            <button class="num-btn" type="button" onclick="appendNum('8')">8</button>
+                            <button class="num-btn" type="button" onclick="appendNum('9')">9</button>
+                            <button class="num-btn" type="button" onclick="appendNum('00')">00</button>
+                            <button class="num-btn" type="button" onclick="appendNum('0')">0</button>
+                            <button class="num-btn" type="button" onclick="backspaceNum()">⌫</button>
+                        </div>
+                        <button class="num-btn submit-btn" type="button" onclick="submitPortalData()">ထည့်မည်</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- PAGE: SUB USERS MANAGEMENT -->
+            <div class="page-view" id="pageSubUsers">
+                <div style="padding: 10px; display: flex; justify-content: flex-end;">
+                    <button class="top-btn" style="background:#0284c7; color:#fff;" onclick="openAddSubUserModal()">+ ထိုးသားအသစ်</button>
+                </div>
+                <div class="table-container" id="subUserListContainer"></div>
+            </div>
+
+            <!-- PAGE: HISTORY / SUMMARY -->
+            <div class="page-view" id="pageHistory">
+                <div style="padding: 6px 10px; background: #161b22; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #2d3748;">
+                    <span style="font-size:12px; color:#38bdf8; font-weight:bold;">👥 ထိုးသား ရွေးရန်:</span>
+                    <select id="historySubUserSelect" onchange="renderAgentHistory()" style="background:#111827; color:#34d399; border:1px solid #374151; padding:4px; border-radius:6px; font-weight:bold; font-size:12px; width:60%;">
+                        <option value="ALL">-- အားလုံးပေါင်းချုပ် --</option>
+                    </select>
+                </div>
+                <div class="table-container" id="agentHistoryContainer"></div>
+            </div>
+
+            <!-- PAGE: WEEKLY REPORT -->
+            <div class="page-view" id="pageWeekly">
+                <div class="table-container" id="weeklyReportContainer" style="overflow-x:auto;"></div>
+            </div>
+        </div>
+
+        <div class="footer-bar">
+            <span>ကွက်ရေ: <span id="portalCount">0</span></span>
+            <span id="portalTotalAmt">0 ကျပ်</span>
+        </div>
+    </div>
+
+    <!-- Digital Board Modal -->
+    <!-- v218.1: bigger modern digital board -->
+    <style>
+        #digitalBoardModal .board-card { background: linear-gradient(160deg, #1e293b 0%, #0f172a 100%); width: 97%; max-width: 620px; border-radius: 18px; padding: 20px; border: 1px solid #3b82f6; box-shadow: 0 20px 50px rgba(0,0,0,0.9); display: flex; flex-direction: column; gap: 14px; max-height: 94vh; overflow-y: auto; }
+        #digitalBoardModal .board-title { color: #fff; font-size: 18px; font-weight: 800; text-align: center; display: flex; justify-content: space-between; align-items: center; }
+        #digitalBoardModal .board-title .close-x { cursor: pointer; color: #93a4bd; font-size: 20px; padding: 4px 8px; }
+        #digitalBoardModal .board-textarea-wrap { background: #0a0f1a; border: 2px solid #3b82f6; border-radius: 12px; padding: 14px; box-shadow: inset 0 2px 8px rgba(0,0,0,0.5); }
+        #digitalBoardBox { width: 100%; height: 320px; background: transparent; color: #fff; border: none; font-size: 17px; font-weight: 600; resize: none; outline: none; line-height: 1.7; font-family: 'Courier New', monospace; box-sizing: border-box; }
+        #digitalBoardBox::placeholder { color: #475569; }
+        #digitalBoardModal .board-btns { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+        #digitalBoardModal .board-btns button { padding: 8px 4px; border-radius: 8px; font-weight: 600; font-size: 12px; cursor: pointer; border: none; text-align: center; }
+        #digitalBoardModal .btn-back { background: #374151; color: #d1d5db; }
+        #digitalBoardModal .btn-paste { background: #374151; color: #d1d5db; }
+        #digitalBoardModal .btn-save { background: linear-gradient(135deg, #0284c7, #0369a1); color: #fff; box-shadow: 0 4px 12px rgba(2,132,199,0.4); }
+    </style>
+    <div class="modal" id="digitalBoardModal">
+        <div class="board-card">
+            <div class="board-title">
+                <span>📋 အမြန်ထိုး</span>
+                <span class="close-x" onclick="closeDigitalBoard()">✕</span>
+            </div>
+            <div class="board-textarea-wrap">
+                <textarea id="digitalBoardBox" placeholder="ဥပမာ: 12-13-500 သို့မဟုတ် 12=500r200"></textarea>
+            </div>
+            <div class="board-btns">
+                <button class="btn-back" onclick="closeDigitalBoard()">Back</button>
+                <button class="btn-paste" onclick="pasteToDigitalBoard()">Paste</button>
+                <button class="btn-save" onclick="processDigitalBoardData()">Save</button>
+            </div>
+        </div>
+    </div>
+    <script>
+        async function pasteToDigitalBoard() {
+            try {
+                let text = await navigator.clipboard.readText();
+                if (text) { document.getElementById('digitalBoardBox').value = text; }
+                else { showMessage("❌ Clipboard မှာ စာမရှိပါ။"); }
+            } catch(e) { showMessage("❌ Clipboard ဖတ်မရပါ။"); }
+        }
+    </script>
+
+    <script>
+        function generateValidKey(deviceIdNum) {
+            let num = parseInt(deviceIdNum, 10) || 1000;
+            let result = 2 * (num + 35);
+            return result.toString();
+        }
+
+        function checkDeviceSecurity() {
+            let deviceIdNum = safeGetItem('2d_device_id_num');
+            if (!deviceIdNum) {
+                deviceIdNum = Math.floor(1000 + Math.random() * 9000).toString();
+                safeSetItem('2d_device_id_num', deviceIdNum);
+            }
+            
+            document.getElementById('myDeviceIDDisplay').innerText = "Device ID: " + deviceIdNum;
+
+            /* v221: Pho's master approval — most secure. Check local, then Firebase. */
+            let isApproved = safeGetItem('2d_device_approved');
+            let isActivated = safeGetItem('2d_app_activated'); /* backward compat */
+
+            if (isApproved === 'true' || isActivated === 'true') {
+                document.getElementById('lockScreenOverlay').style.display = 'none';
+            } else {
+                document.getElementById('lockScreenOverlay').style.display = 'flex';
+                checkDeviceApprovalFromCloud(deviceIdNum);
+            }
+        }
+
+        function checkDeviceApprovalFromCloud(deviceId) {
+            try {
+                cloudSync.get('/deviceApprovals/' + deviceId, (data) => {
+                    if (data && data.approved === true) {
+                        safeSetItem('2d_device_approved', 'true');
+                        document.getElementById('lockScreenOverlay').style.display = 'none';
+                        showMessage("✅ Device အတည်ပြုပြီးပါပြီ");
+                    } else {
+                        /* v221.1: auto-register as pending — Pho sees it in admin panel */
+                        cloudSync.set('/deviceApprovals/' + deviceId, {
+                            approved: false,
+                            pending: true,
+                            firstSeen: new Date().toISOString(),
+                            userAgent: (navigator.userAgent || '').substring(0, 100)
+                        }, () => {});
+                    }
+                });
+            } catch(e) {}
+        }
+
+        /* v220: cloud-based device password — matches Master app */
+        function getDevicePassword() {
+            try {
+                const cfg = JSON.parse(safeGetItem('cache_' + tp('2d_config')) || '{}');
+                if (cfg.devicePassword) return cfg.devicePassword;
+            } catch(e) {}
+            return safeGetItem('2d_device_password') || null;
+        }
+
+        function verifyDynamicActivationKey() {
+            let enteredKey = document.getElementById('adminActivationKeyInput').value.trim();
+            let correctKey = getDevicePassword();
+
+            if (!correctKey) {
+                let deviceIdNum = safeGetItem('2d_device_id_num');
+                correctKey = generateValidKey(deviceIdNum);
+            }
+
+            if (enteredKey === correctKey && enteredKey.length > 0) {
+                safeSetItem('2d_app_activated', 'true');
+                document.getElementById('lockScreenOverlay').style.display = 'none';
+                showMessage("✅ App အောင်မြင်စွာ ဖွင့်လှစ်ပြီးပါပြီ။");
+            } else {
+                showMessage("❌ ထည့်သွင်းလိုက်သော Key မှန်ကန်မှု မရှိပါ။");
+            }
+        }
+
+        let loggedAgent = safeGetItem('2d_logged_agent') || null;
+        let activeSessionId = null;
+        let activeBox = 'no';
+        let boxNo = document.getElementById('boxNo');
+        let boxAmt = document.getElementById('boxAmt');
+        let boxRev = document.getElementById('boxRev');
+
+        function showMessage(msg) {
+            let alertBox = document.getElementById('customAlert');
+            alertBox.innerText = msg;
+            alertBox.style.display = 'block';
+            setTimeout(() => { alertBox.style.display = 'none'; }, 2000);
+        }
+
+        function checkLoginState() {
+            checkDeviceSecurity();
+            if (loggedAgent) {
+                document.getElementById('loginOverlay').style.display = 'none';
+                document.getElementById('currentAgentName').innerText = loggedAgent;
+                refreshHomeSessions();
+                switchPortalPage('Home');
+            } else {
+                document.getElementById('loginOverlay').style.display = 'flex';
+            }
+        }
+
+        // 🌟 Master ဖိုင်ကဲ့သို့ အချိန်ကျော်လွန်မှုကို စစ်ဆေးသော Logic (မနက် ၁၁:၅၅ နှင့် ညနေ ၃:၅၅)
+        function isSessionTimeExpired(sessionObj) {
+            if (!sessionObj || !sessionObj.name) return false;
+            let name = sessionObj.name;
+            let parts = name.split(' ');
+            if (parts.length < 1) return false;
+            
+            let datePart = parts[0];
+            let dParts = datePart.split('.');
+            if (dParts.length !== 3) return false;
+
+            let day = parseInt(dParts[0], 10);
+            let month = parseInt(dParts[1], 10) - 1;
+            let year = parseInt(dParts[2], 10);
+
+            let targetHour = 11;
+            let targetMin = 55;
+
+            if (name.includes('15:55') || name.includes('3:55') || name.includes('ညနေ')) {
+                targetHour = 15;
+                targetMin = 55;
+            } else if (name.includes('11:55') || name.includes('မနက်')) {
+                targetHour = 11;
+                targetMin = 55;
+            }
+
+            let sessionDeadline = new Date(year, month, day, targetHour, targetMin, 0);
+            let now = new Date();
+            return now > sessionDeadline;
+        }
+
+        function refreshHomeSessions() {
+            cloudSync.get('2d_sessions', (sessions) => {
+                sessions = sessions || [];
+                cloudSync.get('2d_winning', (winningNumbers) => {
+                    winningNumbers = winningNumbers || {};
+                    let select = document.getElementById('homeSessionSelect');
+                    if(sessions.length === 0) {
+                        select.innerHTML = '<option value="">-- ပွဲစဉ် မရှိသေးပါ။ --</option>';
+                        activeSessionId = null;
+                        return;
+                    }
+                    let html = '';
+                    sessions.slice().reverse().forEach(s => {
+                        let isExpired = isSessionTimeExpired(s);
+                        let isWon = winningNumbers[s.id] || isExpired;
+                        let badgeText = winningNumbers[s.id] ? ' 🎯 [ပေါက်ပြီး]' : (isExpired ? ' 🔒 [အချိန်ကုန်]' : '');
+                        html += `<option value="${s.id}">${s.name}${badgeText}</option>`;
+                    });
+                    select.innerHTML = html;
+                    if(!activeSessionId || !sessions.some(s => Number(s.id) === Number(activeSessionId))) {
+                        activeSessionId = Number(sessions[sessions.length - 1].id);
+                    }
+                    select.value = activeSessionId;
+                });
+            });
+        }
+
+        function onHomeSessionChange(el) {
+            activeSessionId = Number(el.value);
+        }
+
+        function portalLogin() {
+            let nameInput = document.getElementById('loginName').value.trim();
+            let codeInput = document.getElementById('loginCode').value.trim();
+            if (!nameInput) { showMessage("❌ အမည် ထည့်ပါ။"); return; }
+
+            showMessage("🔄 စစ်ဆေးနေပါသည်...");
+            cloudSync.get('2d_profiles', (profiles) => {
+                profiles = profiles || [];
+                let matchedUser = profiles.find(p => p.name.toLowerCase() === nameInput.toLowerCase());
+                if (!matchedUser) { showMessage("❌ ဤအမည်ဖြင့် အကောင့်မရှိပါ။"); return; }
+                if (matchedUser.code && matchedUser.code !== codeInput) { showMessage("❌ ကုဒ်နံပါတ် မှန်ကန်မှု မရှိပါ။"); return; }
+
+                safeSetItem('2d_logged_agent', matchedUser.name);
+                loggedAgent = matchedUser.name;
+                checkLoginState();
+                showMessage(`✅ ကြိုဆိုပါတယ် - ${matchedUser.name}`);
+            });
+        }
+
+        function portalLogout() {
+            safeRemoveItem('2d_logged_agent');
+            loggedAgent = null;
+            checkLoginState();
+            showMessage("✅ အကောင့်မှ ထွက်ပြီးပါပြီ။");
+        }
+
+        function toggleKeypad() {
+            document.getElementById('portalKeypad').classList.toggle('collapsed');
+        }
+
+        function switchPortalPage(pageName) {
+            cloudSync.get('2d_sessions', (sessions) => {
+                sessions = sessions || [];
+                if(sessions.length > 0 && !activeSessionId) {
+                    activeSessionId = Number(sessions[sessions.length - 1].id);
+                }
+
+                let currentSession = sessions.find(s => Number(s.id) === Number(activeSessionId));
+                cloudSync.get('2d_winning', (winningNumbers) => {
+                    winningNumbers = winningNumbers || {};
+                    
+                    // 🌟 ပေါက်သီးထည့်ထားလျှင် သို့မဟုတ် သတ်မှတ်ချိန် (၁၁:၅၅ / ၃:၅၅) ကျော်လွန်မှသာ စာရင်းသွင်းခွင့် ပိတ်မည်
+                    if(pageName === 'POS' && currentSession) {
+                        let winNum = winningNumbers[activeSessionId];
+                        if (winNum || isSessionTimeExpired(currentSession)) {
+                            showMessage("🔒 သတ်မှတ်ချိန် ကျော်လွန်သွားပြီ (သို့) ပွဲပိတ်သွားပြီဖြစ်၍ စာရင်းသွင်းခွင့် ပိတ်ထားပါသည်။");
+                            return;
+                        }
+                    }
+
+                    document.querySelectorAll('.page-view').forEach(p => p.classList.remove('active'));
+                    document.getElementById('page' + pageName).classList.add('active');
+
+                    if(pageName === 'POS') {
+                        refreshSubUserDropdown();
+                        renderPortalTable();
+                    } else if(pageName === 'SubUsers') {
+                        renderSubUsersList();
+                    } else if(pageName === 'History') {
+                        refreshHistorySubUserDropdown();
+                        renderAgentHistory();
+                    } else if(pageName === 'Weekly') {
+                        renderWeeklyReport();
+                    }
+                });
+            });
+        }
+
+        function refreshSubUserDropdown() {
+            let subUsersKey = `2d_subusers_${loggedAgent}`;
+            cloudSync.get(subUsersKey, (subUsers) => {
+                subUsers = subUsers || [];
+                let select = document.getElementById('posSubUserSelect');
+                let html = `<option value="SELF_${loggedAgent}">[ကိုယ်တိုင်]</option>`;
+                
+                let uniqueNames = [];
+                subUsers.forEach(u => {
+                    if(!uniqueNames.includes(u.name)) {
+                        uniqueNames.push(u.name);
+                        html += `<option value="${u.name}">${u.name} (${u.phone || ''})</option>`;
+                    }
+                });
+                select.innerHTML = html;
+                select.selectedIndex = 0;
+            });
+        }
+
+        function refreshHistorySubUserDropdown() {
+            let subUsersKey = `2d_subusers_${loggedAgent}`;
+            cloudSync.get(subUsersKey, (subUsers) => {
+                subUsers = subUsers || [];
+                let select = document.getElementById('historySubUserSelect');
+                let html = `<option value="ALL">-- အားလုံးပေါင်းချုပ် --</option><option value="ကိုယ်တိုင်">[ကိုယ်တိုင်]</option>`;
+                
+                let uniqueNames = [];
+                subUsers.forEach(u => {
+                    if(!uniqueNames.includes(u.name)) {
+                        uniqueNames.push(u.name);
+                        html += `<option value="${u.name}">${u.name}</option>`;
+                    }
+                });
+                select.innerHTML = html;
+                select.selectedIndex = 0;
+            });
+        }
+
+        function openAddSubUserModal() { document.getElementById('addSubUserModal').style.display = 'flex'; }
+        function closeAddSubUserModal() { document.getElementById('addSubUserModal').style.display = 'none'; }
+        function openGuideModal() { document.getElementById('guideModal').style.display = 'flex'; }
+        function closeGuideModal() { document.getElementById('guideModal').style.display = 'none'; }
+
+        function saveSubUser() {
+            let name = document.getElementById('inputSubUserName').value.trim();
+            let phone = document.getElementById('inputSubUserPhone').value.trim();
+            if(!name) { showMessage("❌ ထိုးသားအမည် ထည့်ပါ။"); return; }
+
+            let subUsersKey = `2d_subusers_${loggedAgent}`;
+            cloudSync.get(subUsersKey, (subUsers) => {
+                subUsers = subUsers || [];
+                
+                let existingIndex = subUsers.findIndex(u => u.name.toLowerCase() === name.toLowerCase());
+                if(existingIndex !== -1) {
+                    subUsers[existingIndex].phone = phone || subUsers[existingIndex].phone;
+                } else {
+                    subUsers.push({ id: Date.now(), name, phone });
+                }
+
+                cloudSync.set(subUsersKey, subUsers, () => {
+                    document.getElementById('inputSubUserName').value = '';
+                    document.getElementById('inputSubUserPhone').value = '';
+                    closeAddSubUserModal();
+                    renderSubUsersList();
+                    refreshSubUserDropdown();
+                    showMessage("✅ ထိုးသားစာရင်း သိမ်းဆည်းပြီးပါပြီ။");
+                });
+            });
+        }
+
+        function renderSubUsersList() {
+            let subUsersKey = `2d_subusers_${loggedAgent}`;
+            cloudSync.get(subUsersKey, (subUsers) => {
+                subUsers = subUsers || [];
+                let container = document.getElementById('subUserListContainer');
+                if(subUsers.length === 0) {
+                    container.innerHTML = '<div style="text-align:center; color:#6b7280; padding:30px;">ထိုးသားစာရင်း မရှိသေးပါ။</div>';
+                    return;
+                }
+                
+                let uniqueMap = new Map();
+                subUsers.forEach(u => {
+                    if(!uniqueMap.has(u.name)) uniqueMap.set(u.name, u);
+                });
+                let uniqueUsers = Array.from(uniqueMap.values());
+
+                let html = '<table class="pos-table"><thead><tr><th>အမည်</th><th>ဖုန်း</th><th style="text-align:center;">🗑️</th></tr></thead><tbody>';
+                uniqueUsers.forEach((u) => {
+                    html += `<tr><td><b>${u.name}</b></td><td>${u.phone || '-'}</td><td style="text-align:center;"><button style="background:none; border:none; color:#f43f5e; cursor:pointer;" onclick="deleteSubUser('${u.name}')">🗑️</button></td></tr>`;
+                });
+                html += '</tbody></table>';
+                container.innerHTML = html;
+            });
+        }
+
+        function deleteSubUser(userName) {
+            let subUsersKey = `2d_subusers_${loggedAgent}`;
+            cloudSync.get(subUsersKey, (subUsers) => {
+                subUsers = subUsers || [];
+                subUsers = subUsers.filter(u => u.name !== userName);
+                cloudSync.set(subUsersKey, subUsers, () => {
+                    renderSubUsersList();
+                    refreshSubUserDropdown();
+                    showMessage("✅ ဖျက်ပြီးပါပြီ။");
+                });
+            });
+        }
+
+        function setFocusBox(boxName) {
+            activeBox = boxName;
+            boxNo.classList.remove('active-box'); boxAmt.classList.remove('active-box'); boxRev.classList.remove('active-box');
+            if(boxName === 'no') boxNo.classList.add('active-box');
+            else if(boxName === 'amt') boxAmt.classList.add('active-box');
+            else if(boxName === 'rev') boxRev.classList.add('active-box');
+        }
+
+        function appendNum(val) {
+            if(activeBox === 'no') boxNo.value += val;
+            else if(activeBox === 'amt') boxAmt.value += val;
+            else if(activeBox === 'rev') boxRev.value += val;
+        }
+
+        function backspaceNum() {
+            if(activeBox === 'no') boxNo.value = boxNo.value.slice(0, -1);
+            else if(activeBox === 'amt') boxAmt.value = boxAmt.value.slice(0, -1);
+            else if(activeBox === 'rev') boxRev.value = boxRev.value.slice(0, -1);
+        }
+
+        function clearInputs() { boxNo.value = ''; boxAmt.value = ''; boxRev.value = ''; setFocusBox('no'); }
+
+        function applyFormula(fName) {
+            let currentNo = boxNo.value.trim();
+            boxNo.value = currentNo ? currentNo + fName : fName;
+            setFocusBox('amt');
+        }
+
+        function toggleRVal() { boxRev.value = boxRev.value.trim() ? '' : 'R'; }
+
+        function convertMyanmarNumbers(str) {
+            if(!str) return '';
+            let mmNums = ['၀','၁','၂','၃','၄','၅','၆','၇','၈','၉'];
+            let enNums = ['0','1','2','3','4','5','6','7','8','9'];
+            for(let i=0; i<10; i++) {
+                str = str.replace(new RegExp(mmNums[i], 'g'), enNums[i]);
+            }
+            return str;
+        }
+
+        function expandFormulaAdvanced(fullText) {
+            let cleanText = convertMyanmarNumbers(fullText).trim().normalize("NFC");
+            cleanText = cleanText.replace(/အာ/g, 'r').replace(/ရ/g, 'r').replace(/@/g, 'r');
+            let results = [];
+
+            /* v218.4: ခွေ+ပူး combo (e.g. 34567ခွေအပူးပါ → all pairs incl. doubles) */
+            if(cleanText.includes('ခွေ') && cleanText.includes('ပူး')) {
+                let digits = cleanText.replace(/[^\d]/g, '') || '123';
+                let uDigits = Array.from(new Set(digits.split('')));
+                let setN = new Set();
+                uDigits.forEach(a => uDigits.forEach(b => setN.add(`${a}${b}`)));
+                uDigits.forEach(a => setN.add(`${a}${a}`));
+                results = Array.from(setN);
+            } else if(cleanText.includes('ခွေ')) {
+                let digits = cleanText.replace(/[^\d]/g, '') || '123';
+                let uDigits = Array.from(new Set(digits.split('')));
+                let setN = new Set();
+                uDigits.forEach(a => uDigits.forEach(b => { if(a !== b) setN.add(`${a}${b}`); }));
+                results = Array.from(setN);
+            } else if(cleanText.includes('ထိပ်')) {
+                /* v218.7: multi-digit (6.4.5ထိပ် → 6ထိပ်+4ထိပ်+5ထိပ်) */
+                let dPartH = cleanText.replace(/ထိပ်/g, '').trim();
+                let dListH = dPartH.split(/[\.,\-\/\s]+/).filter(x => x);
+                if(dListH.length === 0) dListH = [dPartH.replace(/[^\d]/g, '') || '5'];
+                let seenH = new Set();
+                dListH.forEach(dd => {
+                    let d = dd.replace(/[^\d]/g, '').slice(-1) || '5';
+                    for(let i=0; i<=9; i++) { let nn = `${d}${i}`; if(!seenH.has(nn)) { seenH.add(nn); results.push(nn); } }
+                });
+            } else if(cleanText.includes('နောက်')) {
+                /* v218.7: multi-digit (6.4.5နောက် → 6နောက်+4နောက်+5နောက်) */
+                let dPartN = cleanText.replace(/နောက်/g, '').trim();
+                let dListN = dPartN.split(/[\.,\-\/\s]+/).filter(x => x);
+                if(dListN.length === 0) dListN = [dPartN.replace(/[^\d]/g, '') || '5'];
+                let seenN = new Set();
+                dListN.forEach(dd => {
+                    let d = dd.replace(/[^\d]/g, '').slice(-1) || '5';
+                    for(let i=0; i<=9; i++) { let nn = `${i}${d}`; if(!seenN.has(nn)) { seenN.add(nn); results.push(nn); } }
+                });
+            } else if(cleanText.includes('ပတ်')) {
+                /* v218.4: strip အပတ်/ပတ်, keep only digit (fixes "1အပတ်" → d="1") */
+                let d = cleanText.replace(/အပတ်|ပတ်/g, '').replace(/[^\d]/g, '').slice(-1) || '5';
+                let setN = new Set();
+                for(let i=0; i<=9; i++) { setN.add(`${d}${i}`); setN.add(`${i}${d}`); }
+                results = Array.from(setN);
+            } else if(cleanText.includes('ပူး')) {
+                results = ['00','11','22','33','44','55','66','77','88','99'];
+            } else if(cleanText.includes('ပါဝါ')) {
+                results = ['05','50','16','61','27','72','38','83','49','94'];
+            } else if(cleanText.includes('နက္ခတ်')) {
+                results = ['07','18','24','53','69','70','81','42','35','96'];
+            } else if(cleanText.includes('ဘရိတ်') || cleanText.includes('ရိတ်') || /bk/i.test(cleanText) || cleanText.includes('ဘ')) {
+                /* v218.6: BK = ဘရိတ်; multi-digit (570BK → 5ဘရိတ်+7ဘရိတ်+0ဘရိတ်) */
+                let bkDigitsA = cleanText.replace(/ဘရိတ်|ရိတ်|bk/gi, '').replace(/[^\d]/g, '');
+                if(bkDigitsA.length === 0) bkDigitsA = '2';
+                let bkSeenA = new Set();
+                bkDigitsA.split('').forEach(dd => {
+                    let bTarget = parseInt(dd, 10);
+                    for(let i=0; i<=9; i++) {
+                        for(let j=0; j<=9; j++) {
+                            if((i + j) % 10 === bTarget) {
+                                let bn = `${i}${j}`;
+                                if(!bkSeenA.has(bn)) { bkSeenA.add(bn); results.push(bn); }
+                            }
+                        }
+                    }
+                });
+            } else if(cleanText.includes('ညီအစ်ကို')) {
+                results = ['01','10','12','21','23','32','34','43','45','54','56','65','67','76','78','87','89','98','90','09'];
+            } else if(cleanText.includes('စုံစုံ')) {
+                for(let i=0; i<=9; i+=2) for(let j=0; j<=9; j+=2) results.push(`${i}${j}`);
+            } else if(cleanText.includes('မမ')) {
+                for(let i=1; i<=9; i+=2) for(let j=1; j<=9; j+=2) results.push(`${i}${j}`);
+            } else if(cleanText.includes('စုံမ')) {
+                for(let i=0; i<=9; i+=2) for(let j=1; j<=9; j+=2) results.push(`${i}${j}`);
+            } else if(cleanText.includes('မစုံ')) {
+                for(let i=1; i<=9; i+=2) for(let j=0; j<=9; j+=2) results.push(`${i}${j}`);
+            } else if(cleanText.endsWith('R') || cleanText.endsWith('r')) {
+                /* v218.3: R = reverse (e.g. 12R → 12, 21) */
+                /* v218.4: handle "34r 35r 36r" list — expand each with reverse */
+                let cleanNo = cleanText.replace(/R|r/g, '').trim();
+                let rPartsA = cleanNo.split(/[\s,.\-\/]+/).filter(p => p.length > 0);
+                if(rPartsA.length > 1) {
+                    rPartsA.forEach(p => {
+                        if(p.length === 2) { results.push(p); let rv = p[1]+p[0]; if(rv !== p) results.push(rv); }
+                        else if(p.length > 0) results.push(p);
+                    });
+                } else if(cleanNo.length === 2) { results.push(cleanNo, cleanNo[1] + cleanNo[0]); }
+                else if(cleanNo.length === 3) {
+                    let d = cleanNo.split('');
+                    for(let i=0; i<d.length; i++) for(let j=0; j<d.length; j++) {
+                        if(i !== j) results.push(d[i] + d[j]);
+                    }
+                } else if(cleanNo) { results.push(cleanNo); }
+            } else if(cleanText.includes('အပါ') || cleanText.includes('အပတ်') || cleanText.includes('ပါ')) {
+                /* v218.3: အပါ = wrap digit (e.g. 5ပါ → 50-59, 05-95) */
+                let d = cleanText.replace(/အပါ|အပတ်|ပါ/g, '').replace(/[^\d]/g, '').slice(-1) || '5';
+                let setN = new Set();
+                for(let i=0; i<=9; i++) { setN.add(`${d}${i}`); setN.add(`${i}${d}`); }
+                results = Array.from(setN);
+            } else {
+                let pureDigits = cleanText.replace(/[^\d]/g, '');
+                if(pureDigits.length > 3 && pureDigits.length % 2 === 0 && !cleanText.includes('-') && !cleanText.includes('.') && !cleanText.includes(',')) {
+                    for(let i=0; i<pureDigits.length; i+=2) {
+                        results.push(pureDigits.substr(i, 2));
+                    }
+                } else {
+                    let parts = cleanText.split(/[\.,\-\/\s]+/);
+                    parts.forEach(p => {
+                        if(p) {
+                            /* v218.6: single digit = အပါ (e.g. 4-5-6 → 4အပါ+5အပါ+6အပါ) */
+                            if(/^\d$/.test(p)) {
+                                let sdSeenA = new Set();
+                                for(let i=0; i<=9; i++) { sdSeenA.add(`${p}${i}`); sdSeenA.add(`${i}${p}`); }
+                                sdSeenA.forEach(x => results.push(x));
+                            } else {
+                                results.push(p);
+                            }
+                        }
+                    });
+                }
+            }
+            return results;
+        }
+
+        /* v218.6: reverse of a formula (ထိပ်↔နောက်, 2-digit swap; symmetric formulas → []) */
+        /* v218.7: multi-digit ထိပ်/နောက် (6.4.5ထိပ် → 6နောက်+4နောက်+5နောက်) */
+        function expandReverseFormula(formulaText) {
+            let ct = convertMyanmarNumbers(formulaText).replace(/အာ/g, 'r').replace(/ရ/g, 'r').replace(/@/g, 'r').replace(/[rR]+$/, '').trim();
+            let rev = [];
+            let revSeen = new Set();
+            let pushRev = (x) => { if(!revSeen.has(x)) { revSeen.add(x); rev.push(x); } };
+            if(ct.includes('ထိပ်')) {
+                let dList = ct.replace(/ထိပ်/g, '').trim().split(/[\.,\-\/\s]+/).filter(x => x);
+                if(dList.length === 0) dList = ['5'];
+                dList.forEach(dd => {
+                    let d = dd.replace(/[^\d]/g, '').slice(-1) || '5';
+                    for(let i=0; i<=9; i++) pushRev(`${i}${d}`);
+                });
+            } else if(ct.includes('နောက်')) {
+                let dList = ct.replace(/နောက်/g, '').trim().split(/[\.,\-\/\s]+/).filter(x => x);
+                if(dList.length === 0) dList = ['5'];
+                dList.forEach(dd => {
+                    let d = dd.replace(/[^\d]/g, '').slice(-1) || '5';
+                    for(let i=0; i<=9; i++) pushRev(`${d}${i}`);
+                });
+            } else if(/^\d{2}$/.test(ct)) {
+                let sw = ct[1] + ct[0];
+                if(sw !== ct) rev.push(sw);
+            } else if(/^[\d\.,\-\/\s]+$/.test(ct)) {
+                ct.split(/[\.,\-\/\s]+/).forEach(p => {
+                    if(/^\d{2}$/.test(p)) { let sw = p[1]+p[0]; if(sw !== p && !rev.includes(sw)) rev.push(sw); }
+                });
+            }
+            return rev;
+        }
+
+        function submitPortalData() {
+            if(!loggedAgent) return;
+            cloudSync.get('2d_sessions', (sessions) => {
+                sessions = sessions || [];
+                let currentSession = sessions.find(s => Number(s.id) === Number(activeSessionId));
+                
+                cloudSync.get('2d_winning', (winningNumbers) => {
+                    winningNumbers = winningNumbers || {};
+                    if(winningNumbers[activeSessionId] || (currentSession && isSessionTimeExpired(currentSession))) {
+                        showMessage("🔒 သတ်မှတ်ချိန် ကျော်လွန်သွားပြီ (သို့) ပွဲပိတ်သွားပြီဖြစ်၍ စာရင်းသွင်း၍မရပါ။");
+                        return;
+                    }
+
+                    let subUser = document.getElementById('posSubUserSelect').value;
+                    let noText = convertMyanmarNumbers(boxNo.value.trim());
+                    let amtText = convertMyanmarNumbers(boxAmt.value.trim());
+                    let revText = boxRev.value.trim();
+
+                    if(!noText) { showMessage("❌ ဂဏန်း (သို့) ဖော်မြူလာ ထည့်ပါ။"); setFocusBox('no'); return; }
+                    let mainAmt = parseInt(amtText.replace(/[^\d]/g, ''), 10) || 0;
+                    if(mainAmt <= 0) { showMessage("❌ ပမာဏ ထည့်ပါ။"); setFocusBox('amt'); return; }
+
+                    let generated = expandFormulaAdvanced(noText);
+                    cloudSync.get('2d_list_data', (listData) => {
+                        listData = listData || [];
+                        let targetKey = `USER_${loggedAgent}`;
+                        let now = new Date();
+                        let timeStr = now.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+
+                        let revAmt = revText.toUpperCase() === 'R' ? mainAmt : (parseInt(revText.replace(/[^\d]/g, ''), 10) || 0);
+
+                        generated.forEach(num => {
+                            let subUserName = subUser.startsWith('SELF_') ? 'ကိုယ်တိုင်' : subUser;
+                            listData.push({
+                                id: Number(Date.now() + Math.random()),
+                                sessionId: activeSessionId,
+                                subUser: subUserName,
+                                no: num,
+                                amt: mainAmt,
+                                target: targetKey,
+                                date: now.toLocaleDateString(),
+                                time: timeStr,
+                                batchNo: null
+                            });
+                            if((revAmt > 0 || revText.toUpperCase() === 'R') && num.length === 2) {
+                                let revNum = num[1] + num[0];
+                                if(revNum !== num) {
+                                    listData.push({
+                                        id: Number(Date.now() + Math.random() + 1),
+                                        sessionId: activeSessionId,
+                                        subUser: subUserName,
+                                        no: revNum,
+                                        amt: revAmt,
+                                        target: targetKey,
+                                        date: now.toLocaleDateString(),
+                                        time: timeStr,
+                                        batchNo: null
+                                    });
+                                }
+                            }
+                        });
+
+                        cloudSync.set('2d_list_data', listData, () => {
+                            boxNo.value = ''; boxAmt.value = ''; boxRev.value = '';
+                            setFocusBox('no');
+                            renderPortalTable();
+                            showMessage("✅ စာရင်း ထည့်သွင်းပြီးပါပြီ။");
+                        });
+                    });
+                });
+            });
+        }
+
+        /* v219: local-first — read from LocalDB instantly, refresh in background */
+        function renderPortalTable() {
+            if(!loggedAgent) return;
+            const renderFromLocal = () => {
+                let listData = LocalDB.get('2d_list_data', []) || [];
+                let filtered = listData.filter(i => Number(i.sessionId) === Number(activeSessionId) && i.target === `USER_${loggedAgent}` && !i.batchNo);
+                let totalAmt = filtered.reduce((sum, i) => sum + i.amt, 0);
+
+                document.getElementById('portalCount').innerText = filtered.length;
+                document.getElementById('portalTotalAmt').innerText = totalAmt.toLocaleString() + " ကျပ်";
+
+                let tbody = document.getElementById('portalTableBody');
+                if(filtered.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:#6b7280; padding:20px;">စာရင်း မရှိသေးပါ။</td></tr>';
+                    return;
+                }
+
+                let html = '';
+                filtered.slice().forEach(item => {
+                    let displayName = item.subUser || 'ကိုယ်တိုင်';
+                    html += `<tr class="lp-row" data-rid="${item.id}"><td>${displayName}</td><td><b>${item.no}</b></td><td>${item.amt.toLocaleString()} ကျပ်</td><td style="text-align:center;"><button style="background:none; border:none; color:#f43f5e; cursor:pointer;" onclick="deletePortalItem(${item.id})">🗑️</button></td></tr>`;
+                });
+                tbody.innerHTML = html;
+            };
+            renderFromLocal(); /* instant */
+            LocalDB.refresh('2d_list_data', renderFromLocal); /* background update */
+        }
+
+        function deletePortalItem(itemId) {
+            /* v219: local-first delete */
+            let listData = LocalDB.get('2d_list_data', []) || [];
+            let idx = listData.findIndex(i => Number(i.id) === Number(itemId));
+            if(idx !== -1) {
+                listData.splice(idx, 1);
+                LocalDB.set('2d_list_data', listData);
+                renderPortalTable();
+                showMessage("✅ ဖျက်ပြီးပါပြီ။");
+            }
+        }
+
+        function openDigitalBoard() { document.getElementById('digitalBoardModal').style.display = 'flex'; }
+        function closeDigitalBoard() { document.getElementById('digitalBoardModal').style.display = 'none'; }
+
+        /* v218.10: lag fix — single-pass save: no double-press, no redundant network reads,
+           lock check from local cache, first-response-wins on list_data, button locked during save */
+        let __agentSaving = false;
+        let __agentSaveToken = 0;
+        function processDigitalBoardData() {
+            if (__agentSaving) { showMessage("⏳ သိမ်းနေပါတယ်… ခဏစောင့်ပါ"); return; }
+
+            let textarea = document.getElementById('digitalBoardBox');
+            let text = textarea.value.trim();
+            if(!text) { showMessage("❌ စာရင်းထည့်ပါ။"); return; }
+
+            /* Fast session-lock check from local cache — skips 2 network round-trips */
+            let _sessions = [], _winning = {};
+            try { _sessions = JSON.parse(safeGetItem('cache_' + tp('2d_sessions')) || '[]'); } catch(e) {}
+            try { _winning = JSON.parse(safeGetItem('cache_' + tp('2d_winning')) || '{}'); } catch(e) {}
+            let _curSession = _sessions.find(s => Number(s.id) === Number(activeSessionId));
+            if(_winning[activeSessionId] || (_curSession && isSessionTimeExpired(_curSession))) {
+                showMessage("🔒 သတ်မှတ်ချိန် ကျော်လွန်သွားပြီ (သို့) ပွဲပိတ်သွားပြီဖြစ်၍ စာရင်းသွင်း၍မရပါ။");
+                return;
+            }
+
+            __agentSaving = true;
+            const myToken = ++__agentSaveToken;
+            const saveBtn = document.querySelector('#digitalBoardModal .btn-save');
+            const _origBtnText = saveBtn ? saveBtn.textContent : 'Save';
+            if (saveBtn) { saveBtn.disabled = true; saveBtn.style.opacity = '0.5'; saveBtn.textContent = '⏳...'; }
+            showMessage("⏳ သိမ်းနေပါတယ်…");
+            const finishSave = () => {
+                if (myToken !== __agentSaveToken) return;
+                __agentSaving = false;
+                if (saveBtn) { saveBtn.disabled = false; saveBtn.style.opacity = ''; saveBtn.textContent = _origBtnText; }
+            };
+
+            /* v219: fully synchronous local-first — no network wait at all */
+            if (myToken !== __agentSaveToken) return;
+            let listData = LocalDB.get('2d_list_data', []) || [];
+            const _origLen = listData.length; /* v218.11: count new records for message */
+                        let targetKey = `USER_${loggedAgent}`;
+                        let subUser = document.getElementById('posSubUserSelect').value;
+                        let subUserName = subUser.startsWith('SELF_') ? 'ကိုယ်တိုင်' : subUser;
+                        let now = new Date();
+                        let timeStr = now.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+
+                        let lines = text.split('\n');
+                        let unparsedLines = [];
+
+                        lines.forEach(line => {
+                            let cleanLine = line.trim();
+                            if(!cleanLine) return;
+                            let convertedLine = convertMyanmarNumbers(cleanLine).replace(/အာ/g, 'r').replace(/ရ/g, 'r').replace(/@/g, 'r');
+                            /* v218.3: support / and , as amount separators (12/500 → 12=500, 12,500 → 12=500) */
+                            convertedLine = convertedLine.replace(/^(.+?)[/,](\d{3,})$/, '$1=$2');
+                            let parsedSuccess = false;
+
+                            let rMatch = convertedLine.match(/^(.+?)\s*=\s*(\d+)\s*[rR]\s*(\d+)$/);
+                            if(rMatch) {
+                                let leftPart = rMatch[1].trim();
+                                let mainAmt = parseInt(rMatch[2], 10);
+                                let rAmt = parseInt(rMatch[3], 10);
+                                let expanded = expandFormulaAdvanced(leftPart);
+                                if(expanded && expanded.length > 0) {
+                                    expanded.forEach(numStr => {
+                                        listData.push({ id: Number(Date.now() + Math.random()), sessionId: activeSessionId, subUser: subUserName, no: numStr, amt: mainAmt, target: targetKey, date: now.toLocaleDateString(), time: timeStr, batchNo: null });
+                                        if(numStr.length === 2) {
+                                            let revNum = numStr[1] + numStr[0];
+                                            if(revNum !== numStr) {
+                                                listData.push({ id: Number(Date.now() + Math.random() + 1), sessionId: activeSessionId, subUser: subUserName, no: revNum, amt: rAmt, target: targetKey, date: now.toLocaleDateString(), time: timeStr, batchNo: null });
+                                            }
+                                        }
+                                    });
+                                    parsedSuccess = true;
+                                }
+                            } else {
+                                let parts = convertedLine.split(/=/);
+                                if(parts.length === 2) {
+                                    let left = parts[0].trim(), right = parts[1].trim();
+                                    let hasR = right.toLowerCase().includes('r') || left.toLowerCase().includes('r');
+                                    let amtMatch = right.match(/\d+/);
+                                    let amt = amtMatch ? parseInt(amtMatch[0], 10) : 0;
+                                    if(amt > 0) {
+                                        expandFormulaAdvanced(left).forEach(n => {
+                                            listData.push({ id: Number(Date.now() + Math.random()), sessionId: activeSessionId, subUser: subUserName, no: n, amt, target: targetKey, date: now.toLocaleDateString(), time: timeStr, batchNo: null });
+                                            if(hasR && n.length === 2) {
+                                                let rev = n[1] + n[0];
+                                                if(rev !== n) listData.push({ id: Number(Date.now() + Math.random() + 1), sessionId: activeSessionId, subUser: subUserName, no: rev, amt, target: targetKey, date: now.toLocaleDateString(), time: timeStr, batchNo: null });
+                                            }
+                                        });
+                                        parsedSuccess = true;
+                                    }
+                                } else {
+                                    /* v218.4: "numbers amount r reverseAmount" e.g. "12,13,14 500r100" */
+                                    let spaceRMatchA = convertedLine.match(/^(.+?)\s+(\d+)\s*[rR]\s*(\d+)$/);
+                                    if (spaceRMatchA) {
+                                        let formulaPart = spaceRMatchA[1].trim();
+                                        let mainAmt = parseInt(spaceRMatchA[2], 10);
+                                        let rAmt = parseInt(spaceRMatchA[3], 10);
+                                        let exp = expandFormulaAdvanced(formulaPart);
+                                        if (exp.length > 0 && mainAmt > 0) {
+                                            exp.forEach(n => {
+                                                listData.push({ id: Number(Date.now() + Math.random()), sessionId: activeSessionId, subUser: subUserName, no: n, amt: mainAmt, target: targetKey, date: now.toLocaleDateString(), time: timeStr, batchNo: null });
+                                                if (n.length === 2) {
+                                                    let rev = n[1] + n[0];
+                                                    if (rev !== n) listData.push({ id: Number(Date.now() + Math.random() + 1), sessionId: activeSessionId, subUser: subUserName, no: rev, amt: rAmt, target: targetKey, date: now.toLocaleDateString(), time: timeStr, batchNo: null });
+                                                }
+                                            });
+                                            parsedSuccess = true;
+                                        }
+                                    } else {
+                                    /* v218.6: jammed "formulaAmount r reverseAmount" e.g. "6ထိပ်7000r3000" */
+                                    let jammedRMatchA = convertedLine.match(/^(.+?[^0-9\s,.\-\/])(\d{2,})[rR](\d{2,})$/);
+                                    if (jammedRMatchA) {
+                                        let formulaPart = jammedRMatchA[1].trim();
+                                        let mainAmt = parseInt(jammedRMatchA[2], 10);
+                                        let rAmt = parseInt(jammedRMatchA[3], 10);
+                                        let exp = expandFormulaAdvanced(formulaPart);
+                                        let revExp = expandReverseFormula(formulaPart);
+                                        if (exp.length > 0 && mainAmt > 0) {
+                                            exp.forEach(n => {
+                                                listData.push({ id: Number(Date.now() + Math.random()), sessionId: activeSessionId, subUser: subUserName, no: n, amt: mainAmt, target: targetKey, date: now.toLocaleDateString(), time: timeStr, batchNo: null });
+                                            });
+                                            revExp.forEach(rn => {
+                                                listData.push({ id: Number(Date.now() + Math.random() + 1), sessionId: activeSessionId, subUser: subUserName, no: rn, amt: rAmt, target: targetKey, date: now.toLocaleDateString(), time: timeStr, batchNo: null });
+                                            });
+                                            parsedSuccess = true;
+                                        }
+                                    } else {
+                                    /* v218.6: r as amount separator e.g. "4-5-6r1000", "12r500" */
+                                    let rSepMatchA = convertedLine.match(/^(.+?)[rR](\d+)$/);
+                                    if (rSepMatchA) {
+                                        let formulaPart = rSepMatchA[1].trim();
+                                        let amt = parseInt(rSepMatchA[2], 10);
+                                        let exp = expandFormulaAdvanced(formulaPart);
+                                        let isPlainNums = !/ထိပ်|နောက်|ပတ်|ပါ|ဘရိတ်|ရိတ်|ခွေ|ပူး|ပါဝါ|နက္ခတ်|စုံ|ညီအစ်ကို|bk/i.test(formulaPart);
+                                        if (exp.length > 0 && amt > 0) {
+                                            exp.forEach(n => {
+                                                listData.push({ id: Number(Date.now() + Math.random()), sessionId: activeSessionId, subUser: subUserName, no: n, amt, target: targetKey, date: now.toLocaleDateString(), time: timeStr, batchNo: null });
+                                                if (isPlainNums && n.length === 2) {
+                                                    let rev = n[1] + n[0];
+                                                    if (rev !== n) listData.push({ id: Number(Date.now() + Math.random() + 1), sessionId: activeSessionId, subUser: subUserName, no: rev, amt, target: targetKey, date: now.toLocaleDateString(), time: timeStr, batchNo: null });
+                                                }
+                                            });
+                                            parsedSuccess = true;
+                                        }
+                                    } else {
+                                    let spaceParts = cleanLine.split(/\s+/);
+                                    if(spaceParts.length >= 2) {
+                                        let amt = parseInt(spaceParts[spaceParts.length - 1], 10) || 0;
+                                        let formula = spaceParts.slice(0, spaceParts.length - 1).join(' ');
+                                        if(amt > 0) {
+                                            expandFormulaAdvanced(formula).forEach(n => {
+                                                listData.push({ id: Number(Date.now() + Math.random()), sessionId: activeSessionId, subUser: subUserName, no: n, amt, target: targetKey, date: now.toLocaleDateString(), time: timeStr, batchNo: null });
+                                            });
+                                            parsedSuccess = true;
+                                        }
+                                    }
+                                    }
+                                    }
+                                    }
+                                }
+                            }
+
+                            if(!parsedSuccess) {
+                                unparsedLines.push(cleanLine);
+                            }
+                        });
+
+                        /* v219: LocalDB.set writes locally instantly + syncs to cloud in background */
+                        const _newCount = listData.length - _origLen;
+                        LocalDB.set('2d_list_data', listData);
+                        /* Instant UI — do not wait for network */
+                        finishSave();
+                        if(unparsedLines.length > 0) {
+                            /* Pho's request: keep wrong lines visible for fixing, but show what WAS saved */
+                            textarea.value = unparsedLines.join('\n');
+                            renderPortalTable();
+                            showMessage(`✅ ${_newCount} ခု ဝင်ပြီ — ⚠️ ${unparsedLines.length} လိုင်း ပြင်ရန်`);
+                        } else {
+                            textarea.value = '';
+                            closeDigitalBoard();
+                            renderPortalTable();
+                            showMessage("✅ ဝင်ရောက်သွားပါပြီ။");
+                        }
+        }
+
+        function openReceiptModal() {
+            cloudSync.get('2d_sessions', (sessions) => {
+                sessions = sessions || [];
+                let activeSession = sessions.find(s => Number(s.id) === Number(activeSessionId));
+                if(!activeSession) { showMessage("❌ ပွဲစဉ်မရှိပါ။"); return; }
+                cloudSync.get('2d_list_data', (listData) => {
+                    listData = listData || [];
+                    let targetKey = `USER_${loggedAgent}`;
+                    let filtered = listData.filter(i => Number(i.sessionId) === Number(activeSession.id) && i.target === targetKey && !i.batchNo);
+
+                    if(filtered.length === 0) { showMessage("❌ စာရင်းမရှိပါ။"); return; }
+
+                    cloudSync.get('2d_winning', (winningNumbers) => {
+                        winningNumbers = winningNumbers || {};
+                        let winNum = winningNumbers[activeSession.id] || null;
+
+                        let existingBatches = listData.filter(i => Number(i.sessionId) === Number(activeSession.id) && i.target === targetKey && i.batchNo);
+                        let batchNoNum = new Set(existingBatches.map(i => i.batchNo)).size + 1;
+                        let nowTime = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+
+                        let receiptStr = `(No-${batchNoNum}) ${activeSession.name} ${nowTime}\nNumber Money\n`;
+                        let totalAmt = 0;
+                        let winTotalAmt = 0;
+
+                        filtered.forEach(i => {
+                            let subName = i.subUser && i.subUser !== 'ကိုယ်တိုင်' ? `[${i.subUser}] ` : '';
+                            let isWin = winNum && i.no.trim() === winNum;
+                            if(isWin) winTotalAmt += i.amt;
+                            receiptStr += ` ${subName}${i.no} = ${i.amt.toLocaleString()}${isWin ? ' 🎯[ပေါက်]' : ''}\n`;
+                            totalAmt += i.amt;
+                        });
+                        receiptStr += `-----------\nစုစုပေါင်းငွေ = ${totalAmt.toLocaleString()} ကျပ်\nပေါက်သီးစုစုပေါင်း = ${winTotalAmt.toLocaleString()} ကျပ်`;
+
+                        document.getElementById('receiptTextContent').innerText = receiptStr;
+                        document.getElementById('receiptModal').style.display = 'flex';
+                    });
+                });
+            });
+        }
+
+        function closeReceiptModal() { document.getElementById('receiptModal').style.display = 'none'; }
+        function copyReceiptText() {
+            navigator.clipboard.writeText(document.getElementById('receiptTextContent').innerText).then(() => { showMessage("✅ Copy ကူးပြီးပါပြီ။"); });
+        }
+
+        /* v218.10: prevent double-press on receipt confirm */
+        let __confirmSaving = false;
+        function saveAndConfirmBatch() {
+            if (__confirmSaving) { showMessage("⏳ သိမ်းနေပါတယ်… ခဏစောင့်ပါ"); return; }
+            __confirmSaving = true;
+            /* v219: local-first — instant, no network wait */
+            let listData = LocalDB.get('2d_list_data', []) || [];
+            let targetKey = `USER_${loggedAgent}`;
+
+            let existingUserItems = listData.filter(i => Number(i.sessionId) === Number(activeSessionId) && i.target === targetKey && i.batchNo);
+            let batchCount = 1, batchKeys = new Set(existingUserItems.map(i => i.batchNo));
+            while(batchKeys.has(`No-${batchCount}`)) { batchCount++; }
+
+            let currentBatchName = `No-${batchCount}`;
+            let nowTime = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+
+            listData.forEach(item => {
+                if(Number(item.sessionId) === Number(activeSessionId) && item.target === targetKey && !item.batchNo) {
+                    item.batchNo = currentBatchName; item.time = nowTime;
+                }
+            });
+
+            LocalDB.set('2d_list_data', listData);
+            __confirmSaving = false;
+            closeReceiptModal();
+            switchPortalPage('Home');
+            showMessage(`✅ ${currentBatchName} ကို လယ်ဂျာထဲသို့ တရားဝင် အတည်ပြုထည့်သွင်းပြီးပါပြီ။`);
+        }
+
+        function renderAgentHistory() {
+            let container = document.getElementById('agentHistoryContainer');
+            cloudSync.get('2d_sessions', (sessions) => {
+                sessions = sessions || [];
+                let activeSession = sessions.find(s => Number(s.id) === Number(activeSessionId));
+                if(!activeSession) { container.innerHTML = '<div style="text-align:center; color:#6b7280; padding:30px;">ပွဲစဉ် မရှိပါ။</div>'; return; }
+
+                cloudSync.get('2d_list_data', (listData) => {
+                    listData = listData || [];
+                    let targetKey = `USER_${loggedAgent}`;
+                    let savedItems = listData.filter(i => Number(i.sessionId) === Number(activeSession.id) && i.target === targetKey && i.batchNo);
+
+                    let selectedSubUser = document.getElementById('historySubUserSelect').value;
+                    if(selectedSubUser !== 'ALL') {
+                        savedItems = savedItems.filter(i => (i.subUser || 'ကိုယ်တိုင်') === selectedSubUser);
+                    }
+
+                    if(savedItems.length === 0) {
+                        container.innerHTML = '<div style="text-align:center; color:#6b7280; padding:30px;">ဤပွဲစဉ်အတွက် စာရင်းများ မရှိသေးပါ။</div>';
+                        return;
+                    }
+
+                    cloudSync.get('2d_winning', (winningNumbers) => {
+                        winningNumbers = winningNumbers || {};
+                        let winNum = winningNumbers[activeSession.id] || null;
+
+                        let batches = {};
+                        savedItems.forEach(i => {
+                            if(!batches[i.batchNo]) batches[i.batchNo] = [];
+                            batches[i.batchNo].push(i);
+                        });
+
+                        let html = '';
+                        Object.keys(batches).forEach(bKey => {
+                            let items = batches[bKey];
+                            let total = items.reduce((sum, i) => sum + i.amt, 0);
+                            let batchWinTotal = items.filter(i => winNum && i.no.trim() === winNum).reduce((sum, i) => sum + i.amt, 0);
+                            
+                            let sheetText = `(${bKey}) ${items[0].time || ''}\nNumber Money\n`;
+                            items.forEach(i => {
+                                let sub = i.subUser && i.subUser !== 'ကိုယ်တိုင်' ? `[${i.subUser}] ` : '';
+                                sheetText += ` ${sub}${i.no} = ${i.amt.toLocaleString()}\n`;
+                            });
+                            sheetText += `-----------\nစုစုပေါင်းငွေ = ${total.toLocaleString()} ကျပ်\nပေါက်သီးစုစုပေါင်း = ${batchWinTotal.toLocaleString()} ကျပ်`;
+
+                            html += `<div style="background:#161b22; padding:10px; border-radius:8px; border:1px solid #374151; margin-bottom:10px;">
+                                <div style="font-weight:bold; color:#38bdf8; display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                                    <span>Batch: ${bKey}</span>
+                                    <div style="display:flex; gap:6px;">
+                                        <button class="top-btn" onclick="navigator.clipboard.writeText(\`${sheetText}\`).then(()=>showMessage('✅ Copy ပြီးပါပြီ'))">📋 Copy</button>
+                                        <button class="top-btn" style="background:#16a34a; color:#fff;" onclick="window.print()">🖨️ Print</button>
+                                    </div>
+                                </div>
+                                <div style="color:#34d399; font-size:12px; margin-bottom:6px;">တက်ငွေ: ${total.toLocaleString()} ကျပ် | ပေါက်သီး: ${batchWinTotal.toLocaleString()} ကျပ်</div>`;
+                            items.forEach(i => {
+                                let subName = i.subUser && i.subUser !== 'ကိုယ်တိုင်' ? `[${i.subUser}]` : 'ကိုယ်တိုင်';
+                                let isWin = winNum && i.no.trim() === winNum;
+                                let rowStyle = isWin ? 'background:rgba(52, 211, 153, 0.25); color:#34d399; font-weight:bold; padding:3px 6px; border-radius:4px;' : 'color:#d1d5db;';
+                                let winBadge = isWin ? ' 🎯 [ပေါက်]' : '';
+                                
+                                html += `<div style="font-size:12px; display:flex; justify-content:space-between; padding:2px 0; ${rowStyle}">
+                                    <span>${subName} (${i.no})${winBadge}</span><span>${i.amt.toLocaleString()}</span>
+                                </div>`;
+                            });
+                            html += `</div>`;
+                        });
+                        container.innerHTML = html;
+                    });
+                });
+            });
+        }
+
+        function renderWeeklyReport() {
+            let container = document.getElementById('weeklyReportContainer');
+            cloudSync.get('2d_sessions', (sessions) => {
+                sessions = sessions || [];
+                cloudSync.get('2d_list_data', (listData) => {
+                    listData = listData || [];
+                    cloudSync.get('2d_winning', (winningNumbers) => {
+                        winningNumbers = winningNumbers || {};
+                        let targetKey = `USER_${loggedAgent}`;
+
+                        if(sessions.length === 0) {
+                            container.innerHTML = '<div style="text-align:center; color:#6b7280; padding:30px;">ပွဲစဉ်များ မရှိသေးပါ။</div>';
+                            return;
+                        }
+
+                        let html = `<table class="weekly-grid-table">
+                            <thead>
+                                <tr>
+                                    <th>ပွဲစဉ် (Session)</th>
+                                    <th>စုစုပေါင်းငွေ</th>
+                                    <th>ပေါက်သီးစုစုပေါင်း</th>
+                                </tr>
+                            </thead>
+                            <tbody>`;
+
+                        sessions.forEach(s => {
+                            let sItems = listData.filter(i => Number(i.sessionId) === Number(s.id) && i.target === targetKey && i.batchNo);
+                            let sTotal = sItems.reduce((sum, i) => sum + i.amt, 0);
+                            let winNum = winningNumbers[s.id];
+                            let sWinTotal = sItems.filter(i => winNum && i.no.trim() === winNum).reduce((sum, i) => sum + i.amt, 0);
+                            let statusStr = winNum ? `🎯 ${sWinTotal.toLocaleString()} ကျပ်` : 'စောင့်ဆိုင်းဆဲ';
+                            if(sTotal === 0 && !winNum) statusStr = '-';
+
+                            html += `<tr>
+                                <td><b>${s.name}</b></td>
+                                <td style="color:#34d399;">${sTotal.toLocaleString()} ကျပ်</td>
+                                <td style="color:${sWinTotal > 0 ? '#34d399' : '#f1c40f'};">${statusStr}</td>
+                            </tr>`;
+                        });
+
+                        html += `</tbody></table>`;
+                        container.innerHTML = html;
+                    });
+                });
+            });
+        }
+
+        function openWinningModal() {
+            cloudSync.get('2d_sessions', (sessions) => {
+                sessions = sessions || [];
+                let activeSession = sessions.find(s => Number(s.id) === Number(activeSessionId));
+                if(!activeSession) { showMessage("❌ ပွဲစဉ် မရှိပါ။"); return; }
+                cloudSync.get('2d_winning', (winningNumbers) => {
+                    winningNumbers = winningNumbers || {};
+                    let winNum = winningNumbers[activeSession.id] || 'မထွက်ရသေးပါ';
+
+                    document.getElementById('winningDisplayContent').innerText = `🎯 (${activeSession.name}) ပေါက်ဂဏန်း: ${winNum}`;
+                    document.getElementById('winningModal').style.display = 'flex';
+                });
+            });
+        }
+        function closeWinningModal() { document.getElementById('winningModal').style.display = 'none'; }
+
+        /* ---- Multi-tenant Main linking (v217) ---- */
+        let __agentBooted = false;
+        function showLinkOverlay(msg) {
+            const el = document.getElementById('linkOverlay');
+            if (el) el.style.display = 'flex';
+            if (msg !== undefined) linkErr(msg);
+        }
+        function hideLinkOverlay() {
+            const el = document.getElementById('linkOverlay');
+            if (el) el.style.display = 'none';
+        }
+        function linkErr(msg) {
+            const el = document.getElementById('linkErr');
+            if (el) el.textContent = msg || '';
+        }
+        function refreshAgentMapping() {
+            // Keep userMains/{anonUid} -> mainId fresh (anon uid can change if
+            // the browser's auth session was replaced, e.g. by a Main login).
+            try {
+                const u = (typeof firebase !== 'undefined' && firebase.auth) ? firebase.auth().currentUser : null;
+                const tid = getTenantId();
+                if (u && u.isAnonymous && tid) {
+                    cloudSync.set('/userMains/' + u.uid, tid, () => {});
+                }
+            } catch(e) {}
+        }
+        // PocketBase: auto-login as shared agent account for sync
+        const PB_AGENT_EMAIL = 'agent@2dpro.local';
+        const PB_AGENT_PASS = 'Agent2DPro2026Sync!';
+        function ensureAnonAuth(cb) {
+            try {
+                if (PB.isLoggedIn()) { cb(); return; }
+                PB.login(PB_AGENT_EMAIL, PB_AGENT_PASS).then(() => {
+                    setConnStatus('online');
+                    cb();
+                }).catch((e) => {
+                    console.warn('Agent PB login failed:', e.message);
+                    setConnStatus('offline');
+                    cb(); // continue offline
+                });
+            } catch(e) { cb(); }
+        }
+        function verifyLinkCode(code, cb) {
+            // PocketBase: check if tenant exists
+            try {
+                PB.req('GET', '/api/collections/tenants/records/' + encodeURIComponent(code)).then((t) => {
+                    cb(!!(t && t.id), t && t.name);
+                }).catch(() => {
+                    // Try without auth (should fail, but be graceful)
+                    cb(false);
+                });
+            } catch(e) { cb(false); }
+        }
+        function submitLinkCode() {
+            const code = document.getElementById('linkCodeInput').value.trim();
+            if (!code) { linkErr('ကုဒ် ထည့်ပါ။'); return; }
+            linkErr('စစ်ဆေးနေသည်…');
+            verifyLinkCode(code, (ok, name) => {
+                if (!ok) { linkErr('❌ ကုဒ် မမှန်ပါ — ဒိုင်ဆီက ကုဒ်အမှန် ပြန်တောင်းပါ။'); return; }
+                const saveLink = () => {
+                    safeSetItem('2d_link_main', code);
+                    setTenantId(code);
+                    refreshAgentMapping();
+                    try { startCloudMonitor(); } catch(e) {}
+                    hideLinkOverlay();
+                    showMessage('✅ "' + name + '" နဲ့ ချိတ်ဆက်ပြီးပြီ');
+                    checkLoginState();
+                };
+                saveLink();
+            });
+        }
+        function unlinkMain() {
+            if (!confirm('Main ချိတ်ဆက်မှု ဖျက်မှာ သေချာပါသလား?')) return;
+            safeRemoveItem('2d_link_main');
+            setTenantId(null);
+            try { portalLogout(); } catch(e) {}
+            showLinkOverlay('');
+        }
+        /* v218.2: state persistence — stay where user left off */
+        function saveAgentState() {
+            try {
+                let boardModal = document.getElementById('digitalBoardModal');
+                let boardBox = document.getElementById('digitalBoardBox');
+                let state = {
+                    boardOpen: boardModal && boardModal.style.display === 'flex',
+                    boardText: boardBox ? boardBox.value : '',
+                    ts: Date.now()
+                };
+                localStorage.setItem('2d_app_state_agent', JSON.stringify(state));
+            } catch(e) {}
+        }
+        function restoreAgentState() {
+            try {
+                let s = JSON.parse(localStorage.getItem('2d_app_state_agent') || 'null');
+                if (!s) return;
+                if (Date.now() - (s.ts || 0) > 12*60*60*1000) return;
+                if (s.boardOpen) {
+                    try {
+                        openDigitalBoard();
+                        if (s.boardText) document.getElementById('digitalBoardBox').value = s.boardText;
+                    } catch(e) {}
+                }
+            } catch(e) {}
+        }
+        try {
+            document.addEventListener('visibilitychange', () => {
+                if (document.visibilityState === 'hidden') saveAgentState();
+            });
+            window.addEventListener('pagehide', saveAgentState);
+        } catch(e) {}
+        setTimeout(() => {
+            try {
+                let db = document.getElementById('digitalBoardBox');
+                if (db) db.addEventListener('input', saveAgentState);
+            } catch(e) {}
+        }, 2000);
+
+        function bootAgent() {
+            if (__agentBooted) return;
+            __agentBooted = true;
+            ensureAnonAuth(() => {
+                const linked = safeGetItem('2d_link_main');
+                if (linked) {
+                    /* v220: trust cached link code instantly — verify in background */
+                    setTenantId(linked);
+                    try { startCloudMonitor(); } catch(e) {}
+                    hideLinkOverlay();
+                    checkLoginState();
+                    restoreAgentState();
+                    /* Background verification */
+                    verifyLinkCode(linked, (ok) => {
+                        if (!ok) {
+                            setTenantId(null);
+                            showLinkOverlay('ချိတ်ဆက်ကုဒ် မမှန်တော့ပါ — ပြန်ထည့်ပါ။');
+                        } else {
+                            refreshAgentMapping();
+                        }
+                    });
+                } else {
+                    showLinkOverlay('');
+                }
+                try { setFocusBox('no'); } catch(e) {}
+            });
+        }
+
+        bootAgent();
+    </script>
+
+    <!-- v218: edit record popup (long-press) -->
+    <style>
+        .lp-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.65); display: none; align-items: center; justify-content: center; z-index: 9999; }
+        .lp-popup { background: #1a2332; border: 1px solid #3b82f6; border-radius: 14px; padding: 20px; width: 82%; max-width: 320px; text-align: center; }
+        .lp-popup h3 { color: #fff; margin: 0 0 12px; font-size: 16px; }
+        .lp-popup input { width: 100%; padding: 12px; font-size: 18px; text-align: center; border-radius: 10px; border: 1px solid #3b82f6; background: #0f1622; color: #fff; margin-bottom: 10px; box-sizing: border-box; }
+        .lp-popup .popup-btns { display: flex; gap: 10px; }
+        .lp-popup .popup-btns button { flex: 1; padding: 11px; border-radius: 10px; border: none; font-size: 15px; font-weight: 600; cursor: pointer; }
+        .lp-popup .btn-save { background: #3b82f6; color: #fff; }
+        .lp-popup .btn-cancel { background: #2d3748; color: #cbd5e1; }
+    </style>
+    <div class="lp-overlay" id="editRecordOverlay" onclick="if(event.target===this)closeEditRecord()">
+        <div class="lp-popup">
+            <h3>✏️ စာရင်း ပြင်ဆင်ရန်</h3>
+            <input type="text" id="editRecordNo" inputmode="numeric" placeholder="ဂဏန်း">
+            <input type="number" id="editRecordAmt" inputmode="numeric" placeholder="ငွေပမာဏ">
+            <input type="hidden" id="editRecordId">
+            <div class="popup-btns">
+                <button class="btn-cancel" onclick="closeEditRecord()">ပိတ်</button>
+                <button class="btn-save" onclick="saveEditRecord()">သိမ်း</button>
+            </div>
+        </div>
+    </div>
+    <script>
+        /* v218: long-press to edit */
+        function openEditRecord(recordId) {
+            cloudSync.get('2d_list_data', (listData) => {
+                listData = listData || [];
+                let item = listData.find(x => Number(x.id) === Number(recordId));
+                if (!item) { showMessage("❌ စာရင်း ရှာမတွေ့ပါ။"); return; }
+                document.getElementById('editRecordNo').value = item.no;
+                document.getElementById('editRecordAmt').value = item.amt || 0;
+                document.getElementById('editRecordId').value = item.id;
+                document.getElementById('editRecordOverlay').style.display = 'flex';
+            });
+        }
+        function closeEditRecord() {
+            document.getElementById('editRecordOverlay').style.display = 'none';
+        }
+        function saveEditRecord() {
+            let id = document.getElementById('editRecordId').value;
+            let newNo = document.getElementById('editRecordNo').value.trim();
+            let newAmt = parseInt((document.getElementById('editRecordAmt').value || '').replace(/[^\d]/g, ''), 10) || 0;
+            if (!newNo) { showMessage("❌ ဂဏန်း ထည့်ပါ။"); return; }
+            if (newAmt <= 0) { showMessage("❌ ငွေပမာဏ ထည့်ပါ။"); return; }
+            cloudSync.get('2d_list_data', (listData) => {
+                listData = listData || [];
+                let item = listData.find(x => Number(x.id) === Number(id));
+                if (!item) { showMessage("❌ စာရင်း ရှာမတွေ့ပါ။"); return; }
+                item.no = newNo;
+                item.amt = newAmt;
+                closeEditRecord();
+                cloudSync.set('2d_list_data', listData, () => {
+                    try { renderPortalTable(); } catch(e) {}
+                    showMessage("✅ ပြင်ဆင်ပြီးပါပြီ။");
+                });
+            });
+        }
+        (function initLongPress() {
+            let timer = null, targetRow = null;
+            const LONG_MS = 550;
+            function rowFromEvent(e) {
+                let t = e.target;
+                while (t && t !== document.body) {
+                    if (t.classList && t.classList.contains('lp-row')) return t;
+                    t = t.parentNode;
+                }
+                return null;
+            }
+            function cancel() { if (timer) { clearTimeout(timer); timer = null; } targetRow = null; }
+            document.addEventListener('touchstart', (e) => {
+                let row = rowFromEvent(e);
+                if (row) {
+                    cancel(); targetRow = row;
+                    timer = setTimeout(() => {
+                        timer = null;
+                        try { if (navigator.vibrate) navigator.vibrate(40); } catch(err) {}
+                        openEditRecord(targetRow.getAttribute('data-rid'));
+                        targetRow = null;
+                    }, LONG_MS);
+                }
+            }, { passive: true });
+            document.addEventListener('touchend', cancel, { passive: true });
+            document.addEventListener('touchmove', cancel, { passive: true });
+            document.addEventListener('contextmenu', (e) => { if (rowFromEvent(e)) e.preventDefault(); });
+        })();
+    </script>
+</body>
+</html>
