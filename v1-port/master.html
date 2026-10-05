@@ -903,14 +903,24 @@ const PB = {
         if (!this.tenantId) return null;
         try {
             // Handle chunked data (e.g., 2d_list_data split into chunks)
+            // Load chunks in PARALLEL batches for speed
             if (key === '2d_list_data') {
                 const meta = await this.getSettingRaw('2d_list_data_chunks');
                 if (meta && meta.count) {
                     const all = [];
-                    for (let i = 0; i < meta.count; i++) {
-                        const chunkKey = '2d_list_data_chunk_' + String(i).padStart(3, '0');
-                        const chunk = await this.getSettingRaw(chunkKey);
-                        if (Array.isArray(chunk)) all.push(...chunk);
+                    const count = meta.count;
+                    for (let b = 0; b < count; b += 10) {
+                        const batchSize = Math.min(10, count - b);
+                        const batchPromises = [];
+                        for (let j = 0; j < batchSize; j++) {
+                            const idx = b + j;
+                            const chunkKey = '2d_list_data_chunk_' + String(idx).padStart(3, '0');
+                            batchPromises.push(this.getSettingRaw(chunkKey));
+                        }
+                        const results = await Promise.all(batchPromises);
+                        for (const chunk of results) {
+                            if (Array.isArray(chunk)) all.push(...chunk);
+                        }
                     }
                     if (all.length > 0) return all;
                     // fall through to try direct key
