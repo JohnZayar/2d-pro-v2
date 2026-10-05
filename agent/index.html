@@ -94,10 +94,9 @@
                 <select id="entryPlayerSelect" class="field-input player-select">
                     <option value="">-- ထိုးသား ရွေးပါ --</option>
                 </select>
-                <div class="entry-topbtns">
-                    <button class="top-btn" onclick="openBoard()" title="Digital Board">📋</button>
-                    <button class="top-btn btn-save-top" onclick="savePendingBatch()">💾 Save</button>
-                </div>
+                <button class="top-btn kb-toggle-btn" id="entryKbToggle" type="button" onclick="toggleEntryKeyboard()" title="ကီးဘုတ် ဖွင့်/ပိတ်">⌨️</button>
+                <button class="top-btn" onclick="openBoard()" title="Digital Board">📋</button>
+                <button class="top-btn btn-save-top" onclick="savePendingBatch()">💾 Save</button>
             </div>
 
             <div class="table-container">
@@ -116,8 +115,13 @@
                 </table>
             </div>
 
-            <!-- Color formula keypad (matches v1 screenshot) -->
-            <div class="keypad-panel" id="entryKeypad">
+            <div class="footer-bar">
+                <span>Total: <b id="entryTotal">0</b></span>
+                <span>ကွက်: <b id="entryCount">0</b></span>
+            </div>
+
+            <!-- Color formula keypad (matches v1 screenshot), toggleable -->
+            <div class="keypad-panel" id="entryKeypad" hidden>
                 <div class="quick-btns-grid">
                     <button class="q-btn c-blue" type="button" onclick="applyFormula('ခွေ')">ခွေ</button>
                     <button class="q-btn c-lblue" type="button" onclick="applyFormula('နောက်')">နောက်</button>
@@ -161,12 +165,7 @@
                     <button class="num-btn submit-btn" type="button" onclick="submitEntry()">ထည့်မည်</button>
                 </div>
             </div>
-
-            <div class="footer-bar">
-                <span>Total: <b id="entryTotal">0</b></span>
-                <span>ကွက်: <b id="entryCount">0</b></span>
-            </div>
-        </section>
+</section>
 
         <!-- ===== SCREEN: RECORDS (စာရင်းများ — batches by player) ===== -->
         <section id="screen-records" class="screenpane" hidden>

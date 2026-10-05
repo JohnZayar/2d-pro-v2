@@ -206,6 +206,7 @@ window.openScreen = function openScreen(name) {
     const pane = document.getElementById('screen-' + name);
     if (pane) pane.hidden = false;
     window.scrollTo(0, 0);
+    if (name === 'entry') hideEntryKeyboard(); // keypad hidden by default
     refreshActiveScreen();
 };
 
@@ -216,6 +217,24 @@ window.goHome = function goHome() {
     document.getElementById('screen-home').hidden = false;
     window.scrollTo(0, 0);
     refreshActiveScreen();
+};
+
+/** Entry-screen keypad: hidden by default so the records table stays visible. */
+function hideEntryKeyboard() {
+    const kp = document.getElementById('entryKeypad');
+    if (kp) kp.hidden = true;
+    const btn = document.getElementById('entryKbToggle');
+    if (btn) btn.classList.remove('active');
+}
+
+/** Toggle the entry-screen keypad (⌨️ button next to the player select). */
+window.toggleEntryKeyboard = function toggleEntryKeyboard() {
+    const kp = document.getElementById('entryKeypad');
+    if (!kp) return;
+    kp.hidden = !kp.hidden;
+    const btn = document.getElementById('entryKbToggle');
+    if (btn) btn.classList.toggle('active', !kp.hidden);
+    if (!kp.hidden) kp.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 };
 
 /** Floating scroll-to-top button. */

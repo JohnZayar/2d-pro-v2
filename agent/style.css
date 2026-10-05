@@ -491,6 +491,20 @@ select.field-input { appearance: auto; }
     box-shadow: var(--shadow);
     max-height: 220px; overflow-y: auto;
 }
+/* Entry screen: flex column so the table scrolls independently and the
+   toggleable keypad sits below without pushing the table off screen. */
+#screen-entry { min-height: calc(100vh - 170px); min-height: calc(100dvh - 170px); }
+#screen-entry .table-container {
+    flex: 1 1 auto;
+    min-height: 120px;
+    max-height: none;
+}
+#entryKeypad[hidden] { display: none; }
+.kb-toggle-btn.active {
+    background: #0c4a6e;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgba(59,130,246,.25);
+}
 .pos-table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .pos-table thead th {
     background: #141d31; color: var(--muted); font-size: 12px; font-weight: 700;
