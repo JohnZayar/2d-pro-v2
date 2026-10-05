@@ -3819,16 +3819,8 @@ PB.loadAuth();
         }
         function bootMaster() {
             const overlay = document.getElementById('authOverlay');
-            try {
-                // PocketBase auth check
-                if (PB.isLoggedIn()) {
-                    const user = { id: PB.userId };
-                    bootMasterAfterAuth(user);
-                } else {
-                    if (overlay) overlay.style.display = 'flex';
-                }
-                // Define bootMasterAfterAuth for login/register callbacks
-                window.bootMasterAfterAuth = async function(user) {
+            // Define bootMasterAfterAuth first (used by login/register callbacks and auto-login)
+            window.bootMasterAfterAuth = async function(user) {
                     if (__booted) return;
                     __booted = true;
                     // Tenant already set by login/register
@@ -3839,8 +3831,18 @@ PB.loadAuth();
                     setFocusBox('no');
                     loadCloudData(() => { restoreAppState(); });
                 };
+            try {
+                // PocketBase auth check (after function is defined)
+                if (PB.isLoggedIn()) {
+                    const user = { id: PB.userId };
+                    window.bootMasterAfterAuth(user);
+                } else {
+                    const overlay = document.getElementById('authOverlay');
+                    if (overlay) overlay.style.display = 'flex';
+                }
                 // PB: if not logged in, overlay stays visible (set above)
             } catch(e) {
+                const overlay = document.getElementById('authOverlay');
                 if (overlay) overlay.style.display = 'flex';
             }
         }
