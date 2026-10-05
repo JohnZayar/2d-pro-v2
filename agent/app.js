@@ -33,6 +33,7 @@ let pendingEntries = []; // typed but NOT yet saved: [{player_name, number, amou
 document.addEventListener('DOMContentLoaded', init);
 
 async function init() {
+    pb.loadBaseUrl(); // custom server URL override (if Pho set one)
     pb.loadAuth();
     // Auto-login as shared agent account for PocketBase sync (if not already logged in)
     if (!pb.isLoggedIn()) {
@@ -419,20 +420,20 @@ window.clearInputs = function clearInputs() {
  * map to their parser spelling. Then focus moves to the ဒဲ့ box.
  */
 const FORMULA_INSERT = {
-    'ခွေ': 'ခွေ',
+    'ထိပ်': 'ထိပ်',
     'နောက်': 'နောက်',
     'ပတ်': 'ပတ်',
-    'အပူ': 'အပူး',
-    'ပါဝါ': 'ပါဝါ',
-    'အစုံ': 'စုံစုံ',
-    'ရွေ': 'ရွေ',
-    'ချေးပါ': 'ချေးပါ',
-    'နက္ခတ်': 'နက္ခတ်',
-    'ထိပ်': 'ထိပ်',
     'ပူး': 'ပူး',
-    'ဖုံ': 'ဖုံ',
-    'ယုံ': 'ယုံ',
-    'ညီအစ်ကို': 'ညီအစ်ကို'
+    'ပါဝါ': 'ပါဝါ',
+    'နက္ခတ်': 'နက္ခတ်',
+    'ဘရိတ်': 'ဘရိတ်',
+    'ခွေ': 'ခွေ',
+    'ခွေပူးပါ': 'ခွေပူးပါ',
+    'ညီအစ်ကို': 'ညီအစ်ကို',
+    'စုံစုံ': 'စုံစုံ',
+    'မမ': 'မမ',
+    'စုံမ': 'စုံမ',
+    'မစုံ': 'မစုံ'
 };
 
 window.applyFormula = function applyFormula(fName) {
@@ -1063,7 +1064,28 @@ window.saveBoard = async function saveBoard() {
 window.openSettings = function openSettings() {
     $('settingsSyncState').textContent =
         pb.isLoggedIn() ? '✅ ' + (sync.isOnline() ? 'Online' : 'Offline') : '📴 Local only';
+    const urlInput = $('serverUrlInput');
+    if (urlInput) {
+        const cur = pb.getBaseUrl();
+        const def = pb.getDefaultBaseUrl();
+        urlInput.value = cur === def ? '' : cur;
+        urlInput.placeholder = def;
+    }
     $('settingsModal').hidden = false;
+};
+
+window.saveServerUrl = function saveServerUrl() {
+    const v = ($('serverUrlInput').value || '').trim();
+    if (v && !/^https?:\/\//i.test(v)) { showToast('URL က https:// နဲ့ စရမယ်'); return; }
+    if (v) pb.setBaseUrl(v); else pb.clearBaseUrl();
+    showToast('✅ Server URL သိမ်းပြီးပြီ — reload လုပ်ပါ');
+    closeSettings();
+};
+
+window.resetServerUrl = function resetServerUrl() {
+    pb.clearBaseUrl();
+    $('serverUrlInput').value = '';
+    showToast('✅ Default URL ပြန်သုံးမယ် — reload လုပ်ပါ');
 };
 
 window.closeSettings = function closeSettings() {

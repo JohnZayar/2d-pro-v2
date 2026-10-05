@@ -123,20 +123,20 @@
             <!-- Color formula keypad (matches v1 screenshot), toggleable -->
             <div class="keypad-panel" id="entryKeypad" hidden>
                 <div class="quick-btns-grid">
-                    <button class="q-btn c-blue" type="button" onclick="applyFormula('ခွေ')">ခွေ</button>
+                    <button class="q-btn c-blue" type="button" onclick="applyFormula('ထိပ်')">ထိပ်</button>
                     <button class="q-btn c-lblue" type="button" onclick="applyFormula('နောက်')">နောက်</button>
                     <button class="q-btn c-green" type="button" onclick="applyFormula('ပတ်')">ပတ်</button>
-                    <button class="q-btn c-orange" type="button" onclick="applyFormula('အပူ')">အပူ</button>
+                    <button class="q-btn c-orange" type="button" onclick="applyFormula('ပူး')">ပူး</button>
                     <button class="q-btn c-pink" type="button" onclick="applyFormula('ပါဝါ')">ပါဝါ</button>
-                    <button class="q-btn c-lpink" type="button" onclick="applyFormula('အစုံ')">အစုံ</button>
-                    <button class="q-btn c-rose" type="button" onclick="applyFormula('ရွေ')">ရွေ</button>
-                    <button class="q-btn c-peach" type="button" onclick="applyFormula('ချေးပါ')">ချေးပါ</button>
-                    <button class="q-btn c-yellow" type="button" onclick="applyFormula('နက္ခတ်')">နက္ခတ်</button>
-                    <button class="q-btn c-yellow" type="button" onclick="applyFormula('ထိပ်')">ထိပ်</button>
-                    <button class="q-btn c-dorange" type="button" onclick="applyFormula('ပူး')">ပူး</button>
-                    <button class="q-btn c-dgreen" type="button" onclick="applyFormula('ဖုံ')">ဖုံ</button>
-                    <button class="q-btn c-blue" type="button" onclick="applyFormula('ယုံ')">ယုံ</button>
-                    <button class="q-btn c-cyan" type="button" onclick="applyFormula('ညီအစ်ကို')">ညီအစ်ကို</button>
+                    <button class="q-btn c-lpink" type="button" onclick="applyFormula('နက္ခတ်')">နက္ခတ်</button>
+                    <button class="q-btn c-rose" type="button" onclick="applyFormula('ဘရိတ်')">ဘရိတ်</button>
+                    <button class="q-btn c-peach" type="button" onclick="applyFormula('ခွေ')">ခွေ</button>
+                    <button class="q-btn c-yellow" type="button" onclick="applyFormula('ခွေပူးပါ')">ခွေပူးပါ</button>
+                    <button class="q-btn c-yellow" type="button" onclick="applyFormula('ညီအစ်ကို')">ညီအစ်ကို</button>
+                    <button class="q-btn c-dorange" type="button" onclick="applyFormula('စုံစုံ')">စုံစုံ</button>
+                    <button class="q-btn c-dgreen" type="button" onclick="applyFormula('မမ')">မမ</button>
+                    <button class="q-btn c-blue" type="button" onclick="applyFormula('စုံမ')">စုံမ</button>
+                    <button class="q-btn c-cyan" type="button" onclick="applyFormula('မစုံ')">မစုံ</button>
                     <button class="q-btn c-xblue" type="button" onclick="clearInputs()">C</button>
                 </div>
 
@@ -322,6 +322,16 @@
         <div class="settings-row">
             <span>Sync</span>
             <b id="settingsSyncState">—</b>
+        </div>
+        <div class="settings-row">
+            <span>🌐 Server URL</span>
+        </div>
+        <div class="settings-row">
+            <input id="serverUrlInput" type="url" inputmode="url" placeholder="https://..." style="flex:1;min-width:0">
+        </div>
+        <div class="settings-row">
+            <button class="btn-outline" onclick="saveServerUrl()">သိမ်းမယ်</button>
+            <button class="btn-outline" onclick="resetServerUrl()">Default</button>
         </div>
         <button class="btn-danger-outline" onclick="syncNowManual()">🔄 အခု Sync လုပ်မည်</button>
         <button class="btn-danger-outline" onclick="disconnectAgent()">🚪 ထွက်မည် (unlink)</button>
