@@ -10,6 +10,7 @@
 
 const DEFAULT_BASE_URL = 'https://sought-slides-douglas-wagner.trycloudflare.com';
 const AUTH_KEY = 'pb_auth'; // localStorage key: { token, model }
+const URL_KEY = 'pb_server_url'; // localStorage key for custom server URL override
 
 let _baseUrl = DEFAULT_BASE_URL;
 let _auth = null; // { token, model }
@@ -17,10 +18,33 @@ let _auth = null; // { token, model }
 /** Override the API base URL (e.g. when moving to production domain/IP). */
 export function setBaseUrl(url) {
     _baseUrl = String(url).replace(/\/+$/, '');
+    try {
+        if (url) localStorage.setItem(URL_KEY, _baseUrl);
+        else localStorage.removeItem(URL_KEY);
+    } catch (e) { /* ignore */ }
 }
 
 export function getBaseUrl() {
     return _baseUrl;
+}
+
+/** Load a previously saved custom server URL (call at app startup, before loadAuth). */
+export function loadBaseUrl() {
+    try {
+        const saved = localStorage.getItem(URL_KEY);
+        if (saved && saved.trim()) _baseUrl = saved.trim().replace(/\/+$/, '');
+    } catch (e) { /* ignore */ }
+    return _baseUrl;
+}
+
+/** Clear the custom server URL override (revert to default). */
+export function clearBaseUrl() {
+    _baseUrl = DEFAULT_BASE_URL;
+    try { localStorage.removeItem(URL_KEY); } catch (e) { /* ignore */ }
+}
+
+export function getDefaultBaseUrl() {
+    return DEFAULT_BASE_URL;
 }
 
 /** Load persisted auth from localStorage (call once at app startup). */
