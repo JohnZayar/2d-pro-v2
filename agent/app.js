@@ -1245,12 +1245,15 @@ window.renderWeekly = async function renderWeekly() {
 
     let weekAmt = 0, weekCount = 0;
     let html = '';
+    let shownDays = 0;
 
     for (let i = 0; i < 7; i++) {
         const d = new Date(monday);
         d.setDate(d.getDate() + i);
         const key = toISODate(d);
         const dayRecs = byDay[key] || [];
+        if (!dayRecs.length) continue; // Skip empty days — don't render them at all
+        shownDays++;
         const dayAmt = dayRecs.reduce((s, r) => s + (Number(r.amount) || 0), 0);
         weekAmt += dayAmt;
         weekCount += dayRecs.length;
@@ -1258,28 +1261,28 @@ window.renderWeekly = async function renderWeekly() {
         const dayName = BURMESE_DAYS[d.getDay()];
         html += '<div class="day-section">' +
             '<div class="day-head"><span>📅 ' + dayName + ' <span class="muted-sm">' + formatDateStr(d) + '</span></span>' +
-            '<b>' + formatMoney(dayAmt) + ' <span class="muted-sm">(' + dayRecs.length + ' ကွက်)</span></b></div>';
+            '<b>' + formatMoney(dayAmt) + '</b></div>';
 
-        if (dayRecs.length) {
-            const perPlayer = {};
-            const pOrder = [];
-            dayRecs.forEach((r) => {
-                const k = r.player_name || '';
-                if (!perPlayer[k]) { perPlayer[k] = { amount: 0, count: 0 }; pOrder.push(k); }
-                perPlayer[k].amount += Number(r.amount) || 0;
-                perPlayer[k].count += 1;
-            });
-            html += pOrder.map((k) =>
-                '<div class="day-player"><span>👤 ' + escHtml(playerLabel(k)) + '</span>' +
-                '<span>' + formatMoney(perPlayer[k].amount) + ' <span class="muted-sm">(' + perPlayer[k].count + ' ကွက်)</span></span></div>'
-            ).join('');
-        } else {
-            html += '<div class="day-empty">— စာရင်း မရှိပါ —</div>';
-        }
+        const perPlayer = {};
+        const pOrder = [];
+        dayRecs.forEach((r) => {
+            const k = r.player_name || '';
+            if (!perPlayer[k]) { perPlayer[k] = { amount: 0, count: 0 }; pOrder.push(k); }
+            perPlayer[k].amount += Number(r.amount) || 0;
+            perPlayer[k].count += 1;
+        });
+        html += pOrder.map((k) =>
+            '<div class="day-player"><span>👤 ' + escHtml(playerLabel(k)) + '</span>' +
+            '<span>' + formatMoney(perPlayer[k].amount) + '</span></div>'
+        ).join('');
         html += '</div>';
     }
 
-    html += '<div class="voucher-total"><span>📊 တပတ် စုစုပေါင်း</span><b>' + formatMoney(weekAmt) +
-        ' (' + weekCount + ' ကွက်)</b></div>';
+    if (!shownDays) {
+        html = '<div class="empty-state">စာရင်း မရှိပါ</div>';
+    } else {
+        html += '<div class="voucher-total"><span>📊 တပတ် စုစုပေါင်း</span><b>' + formatMoney(weekAmt) +
+            '</b></div>';
+    }
     content.innerHTML = html;
 };
