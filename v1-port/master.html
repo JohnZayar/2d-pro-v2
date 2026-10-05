@@ -4039,7 +4039,12 @@ PB.loadAuth();
         }
         function updateMainInfoUI() {
             const el = document.getElementById('mainLinkCode');
-            if (el) el.textContent = getTenantId() || '...';
+            if (el) {
+                // Try __tenantId first, then PB.tenantId as fallback
+                let tid = getTenantId();
+                if (!tid && typeof PB !== 'undefined' && PB && PB.tenantId) tid = PB.tenantId;
+                el.textContent = tid || '...';
+            }
         }
         function bootMaster() {
             const overlay = document.getElementById('authOverlay');
