@@ -500,6 +500,20 @@ select.field-input { appearance: auto; }
     max-height: none;
 }
 #entryKeypad[hidden] { display: none; }
+/* Fixed bottom panel: toggled by ⌨️, sticks to the phone's bottom edge and
+   overlays content instead of pushing it up. Hidden = display:none above. */
+#entryKeypad {
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    z-index: 900;
+    margin: 0;
+    border-radius: 16px 16px 0 0;
+    border-bottom: none;
+    box-shadow: 0 -10px 32px rgba(0,0,0,.55);
+    max-height: 74vh; max-height: 74dvh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+}
 .kb-toggle-btn.active {
     background: #0c4a6e;
     border-color: var(--accent);

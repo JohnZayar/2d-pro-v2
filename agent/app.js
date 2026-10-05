@@ -213,6 +213,7 @@ window.openScreen = function openScreen(name) {
 
 /** Back to the home menu screen. */
 window.goHome = function goHome() {
+    hideEntryKeyboard();
     activeScreen = 'home';
     document.querySelectorAll('.screenpane').forEach((p) => { p.hidden = true; });
     document.getElementById('screen-home').hidden = false;
@@ -226,17 +227,39 @@ function hideEntryKeyboard() {
     if (kp) kp.hidden = true;
     const btn = document.getElementById('entryKbToggle');
     if (btn) btn.classList.remove('active');
+    const pane = document.getElementById('screen-entry');
+    if (pane) pane.style.paddingBottom = '';
 }
 
-/** Toggle the entry-screen keypad (⌨️ button next to the player select). */
+/** Keep entry-screen content visible above the fixed bottom keypad. */
+function syncKeypadPadding() {
+    const kp = document.getElementById('entryKeypad');
+    const pane = document.getElementById('screen-entry');
+    if (!pane) return;
+    if (kp && !kp.hidden) {
+        pane.style.paddingBottom = (kp.offsetHeight + 12) + 'px';
+    } else {
+        pane.style.paddingBottom = '';
+    }
+}
+
+/** Toggle the entry-screen keypad (⌨️ button next to the player select).
+ *  The keypad is a fixed bottom panel: it overlays the screen bottom and
+ *  never pushes content up; closing it hides it completely. */
 window.toggleEntryKeyboard = function toggleEntryKeyboard() {
     const kp = document.getElementById('entryKeypad');
     if (!kp) return;
     kp.hidden = !kp.hidden;
     const btn = document.getElementById('entryKbToggle');
     if (btn) btn.classList.toggle('active', !kp.hidden);
-    if (!kp.hidden) kp.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    syncKeypadPadding();
 };
+
+// Re-measure the fixed keypad on rotate/resize so content stays visible.
+window.addEventListener('resize', () => {
+    const kp = document.getElementById('entryKeypad');
+    if (kp && !kp.hidden && activeScreen === 'entry') syncKeypadPadding();
+});
 
 /** Floating scroll-to-top button. */
 window.scrollToTop = function scrollToTop() {
@@ -761,14 +784,8 @@ window.renderRecordsView = async function renderRecordsView() {
                 '<div class="v-batch-head" onclick="openBatchDetail(\'' + escHtml(p.key) + '\',' + b.no + ')" title="အသေးစိတ် ကြည့်ရန်">' +
                     '<span class="v-batch-no">' + escHtml(p.label) + ' (' + escHtml(b.label) + ')</span>' +
                     '<span class="v-batch-time">' + escHtml(b.time) + '</span>' +
-                '</div>';
-            b.items.forEach((r) => {
-                html += '<div class="voucher-row">' +
-                    '<span class="v-no">ဂဏန်း: ' + escHtml(r.number) + '</span>' +
-                    '<span class="v-amt">' + formatMoney(r.amount) + ' ကျပ်</span>' +
-                '</div>';
-            });
-            html += '<div class="v-batch-foot"><span>Total</span><b>' + formatMoney(b.totalAmt) + '</b></div>' +
+                    '<span class="v-batch-total">' + formatMoney(b.totalAmt) + ' <span class="muted-sm">(' + b.totalCount + ' ကွက်)</span></span>' +
+                '</div>' +
                 '</div>';
         });
         html += '</div>';
