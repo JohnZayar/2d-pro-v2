@@ -62,14 +62,21 @@ async function _req(method, path, body) {
     const opts = { method, headers };
     if (body !== undefined) opts.body = JSON.stringify(body);
 
+    // Add 15s timeout so slow/hanging networks don't block the app
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    opts.signal = controller.signal;
+
     let res;
     try {
         res = await fetch(_baseUrl + path, opts);
     } catch (e) {
-        // Network unreachable (offline, blocked, tunnel down)
-        const err = new Error('Network unreachable: ' + e.message);
-        err.code = 'NETWORK_ERROR';
+        // Network unreachable (offline, blocked, tunnel down) or timeout
+        const err = new Error(e.name === 'AbortError' ? 'Request timed out' : 'Network unreachable: ' + e.message);
+        err.code = e.name === 'AbortError' ? 'TIMEOUT' : 'NETWORK_ERROR';
         throw err;
+    } finally {
+        clearTimeout(timeoutId);
     }
 
     let data = null;
