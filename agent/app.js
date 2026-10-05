@@ -644,7 +644,7 @@ function groupByNumberKeepOrder(recs) {
 }
 
 function batchLabel(b) {
-    return b > 0 ? 'No-' + b : 'အရင်';
+    return 'no(' + (Number(b) || 0) + ')';
 }
 
 /** "02:28 PM" style timestamp for voucher batch headers (v1 format). */
@@ -759,15 +759,16 @@ window.renderRecordsView = async function renderRecordsView() {
     let html = '';
     voucherPlayers.forEach((p) => {
         html += '<div class="v-player-block">' +
-            '<div class="v-player-head"><span>👤 ' + escHtml(p.label) + '</span>' +
-            '<b>' + formatMoney(p.totalAmt) + '</b></div>';
+            '<div class="v-player-name">' + escHtml(p.label) + '</div>';
         p.batches.forEach((b) => {
             html += '<div class="v-batch">' +
-                '<div class="v-batch-head" onclick="openBatchDetail(\'' + escHtml(p.key) + '\',' + b.no + ')" title="အသေးစိတ် ကြည့်ရန်">' +
-                    '<span class="v-batch-no">' + escHtml(p.label) + ' (' + escHtml(b.label) + ')</span>' +
-                    '<span class="v-batch-time">' + escHtml(b.time) + '</span>' +
-                    '<span class="v-batch-total">' + formatMoney(b.totalAmt) + '</span>' +
-                '</div>' +
+                '<div class="v-batch-no" onclick="openBatchDetail(\'' + escHtml(p.key) + '\',' + b.no + ')" title="အသေးစိတ် ကြည့်ရန် (ပြင်/ဖျက်)">' + escHtml(b.label) + '</div>' +
+                b.items.map((r) =>
+                    '<div class="voucher-row">' +
+                        '<span class="v-no">' + escHtml(r.number) + '</span>' +
+                        '<span class="v-amt">' + formatMoney(r.amount) + '</span>' +
+                    '</div>'
+                ).join('') +
                 '</div>';
         });
         html += '</div>';
@@ -1047,7 +1048,7 @@ window.saveBoard = async function saveBoard() {
         openScreen('records'); // board bypasses pendingEntries; show the saved batch immediately
         updateSyncPill();
         const skipped = invalidLines.length + (items.length - validItems.length);
-        showToast('✅ No' + batchNo + ' — သိမ်းပြီးပြီ' +
+        showToast('✅ no(' + batchNo + ') သိမ်းပြီးပြီ' +
             (skipped ? ' (⚠️ ' + skipped + ' လိုင်း ကျန်)' : ''));
     } catch (e) {
         console.error('[agent] saveBoard failed', e);
@@ -1188,25 +1189,36 @@ function renderPlayerGroups(recs, emptyMsg) {
         byPlayer[k].push(r);
     });
 
-    let grandAmt = 0, grandCount = 0;
+    let grandAmt = 0;
     let html = '';
 
     order.forEach((k) => {
-        const grouped = groupByNumberKeepOrder(byPlayer[k]);
-        const pAmt = grouped.reduce((s, g) => s + g.amount, 0);
-        const pCount = grouped.reduce((s, g) => s + g.count, 0);
+        const pRecs = byPlayer[k];
+        const pAmt = pRecs.reduce((s, r) => s + (Number(r.amount) || 0), 0);
         grandAmt += pAmt;
-        grandCount += pCount;
+        // group by batch_no, entry order of first appearance
+        const byBatch = {};
+        const batchOrder = [];
+        pRecs.forEach((r) => {
+            const b = Number(r.batch_no) || 0;
+            if (!byBatch[b]) { byBatch[b] = []; batchOrder.push(b); }
+            byBatch[b].push(r);
+        });
+        batchOrder.sort((a, b) => a - b);
         html += '<div class="player-group">' +
-            '<div class="player-group-head"><span>👤 ' + escHtml(playerLabel(k)) + '</span>' +
-            '<b>' + formatMoney(pAmt) + '</b></div>' +
-            grouped.map((g) =>
-                '<div class="voucher-row">' +
-                    '<span class="v-no">' + escHtml(g.number) + '</span>' +
-                    '<span class="v-amt">' + formatMoney(g.amount) + '</span>' +
-                '</div>'
-            ).join('') +
-        '</div>';
+            '<div class="player-group-name">' + escHtml(playerLabel(k)) + '</div>';
+        batchOrder.forEach((b) => {
+            html += '<div class="v-batch">' +
+                '<div class="v-batch-no">' + escHtml(batchLabel(b)) + '</div>' +
+                byBatch[b].map((r) =>
+                    '<div class="voucher-row">' +
+                        '<span class="v-no">' + escHtml(r.number) + '</span>' +
+                        '<span class="v-amt">' + formatMoney(r.amount) + '</span>' +
+                    '</div>'
+                ).join('') +
+                '</div>';
+        });
+        html += '</div>';
     });
 
     html += '<div class="voucher-total"><span>စုစုပေါင်း</span><b>' + formatMoney(grandAmt) +
