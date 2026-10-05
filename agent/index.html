@@ -42,26 +42,55 @@
     </header>
 
     <main class="app-main">
-        <!-- ===== TAB: HOME ===== -->
-        <section id="tab-home" class="tabpane">
+        <!-- ===== HOME SCREEN: big menu buttons ===== -->
+        <section id="screen-home" class="screenpane">
             <!-- Current session banner -->
             <div id="sessionBanner" class="session-banner">
                 <span id="sessionBannerText">Session ရွေးနေတယ်…</span>
             </div>
 
-            <!-- Big action: open digital board -->
-            <button id="openBoardBtn" class="btn-board" onclick="openBoard()">
-                📝 စာရင်းသွင်းရန် <span class="btn-sub">နှိပ်၍ ဘုတ်ဖွင့်မည်</span>
-            </button>
+            <!-- Menu grid -->
+            <div class="menu-grid">
+                <button class="menu-card menu-board" onclick="openBoard()">
+                    <span class="menu-icon">📝</span>
+                    <span class="menu-label">စာရင်းသွင်း</span>
+                    <span class="menu-sub">ဘုတ်ဖွင့်၍ ဂဏန်းရိုက်</span>
+                </button>
+                <button class="menu-card" onclick="openScreen('players')">
+                    <span class="menu-icon">👥</span>
+                    <span class="menu-label">လူစာရင်း</span>
+                    <span class="menu-sub" id="menuPlayersSub">—</span>
+                </button>
+                <button class="menu-card" onclick="openScreen('voucher')">
+                    <span class="menu-icon">🧾</span>
+                    <span class="menu-label">ဘောက်ချာ</span>
+                    <span class="menu-sub">တဦးချင်း စာရွက်</span>
+                </button>
+                <button class="menu-card" onclick="openScreen('daily')">
+                    <span class="menu-icon">📅</span>
+                    <span class="menu-label">တနေ့စာ</span>
+                    <span class="menu-sub">နေ့စဉ် စာရင်း</span>
+                </button>
+                <button class="menu-card" onclick="openScreen('weekly')">
+                    <span class="menu-icon">📊</span>
+                    <span class="menu-label">တပတ်စာ</span>
+                    <span class="menu-sub">အပတ်စဉ် စာရင်း</span>
+                </button>
+                <button class="menu-card" onclick="openSettings()">
+                    <span class="menu-icon">⚙️</span>
+                    <span class="menu-label">ဆက်တင်</span>
+                    <span class="menu-sub">Sync • ထွက်ရန်</span>
+                </button>
+            </div>
 
-            <!-- Records -->
+            <!-- My records summary -->
             <div class="section-head">
                 <h2>📋 ကျွန်တော့် စာရင်း</h2>
                 <span id="recordCount" class="count-badge">0</span>
             </div>
             <div id="recordsList" class="records-list"></div>
             <div id="recordsEmpty" class="empty-state" hidden>
-                စာရင်း မရှိသေးပါ<br><span>အပေါ် ခလုတ်နှိပ်၍ စသွင်းပါ</span>
+                စာရင်း မရှိသေးပါ<br><span>📝 စာရင်းသွင်း နှိပ်၍ စသွင်းပါ</span>
             </div>
 
             <!-- Totals -->
@@ -77,9 +106,10 @@
             </div>
         </section>
 
-        <!-- ===== TAB: PLAYERS ===== -->
-        <section id="tab-players" class="tabpane" hidden>
-            <div class="section-head">
+        <!-- ===== SCREEN: PLAYERS ===== -->
+        <section id="screen-players" class="screenpane" hidden>
+            <div class="screen-head">
+                <button class="back-btn" onclick="goHome()">‹ ပင်မ</button>
                 <h2>👥 လူစာရင်း</h2>
                 <button class="btn-add" onclick="openPlayerModal()">＋ အသစ်</button>
             </div>
@@ -89,31 +119,42 @@
             </div>
         </section>
 
-        <!-- ===== TAB: VOUCHER ===== -->
-        <section id="tab-voucher" class="tabpane" hidden>
-            <div class="section-head">
-                <h2>🧾 တဦးချင်းဘောက်ချာ</h2>
+        <!-- ===== SCREEN: VOUCHER ===== -->
+        <section id="screen-voucher" class="screenpane" hidden>
+            <div class="screen-head">
+                <button class="back-btn" onclick="goHome()">‹ ပင်မ</button>
+                <h2>🧾 ဘောက်ချာ</h2>
+                <span></span>
             </div>
             <label class="field-label" for="voucherPlayer">လူ ရွေးပါ</label>
             <select id="voucherPlayer" class="field-input" onchange="renderVoucher()"></select>
             <label class="field-label" for="voucherSession">Session</label>
             <select id="voucherSession" class="field-input" onchange="renderVoucher()"></select>
+            <div class="voucher-actions">
+                <button class="btn-action" onclick="copyVoucher()">📋 Copy</button>
+                <button class="btn-action" onclick="printVoucher()">🖨️ Print</button>
+                <button class="btn-action" onclick="shareVoucher()">📤 Share</button>
+            </div>
             <div id="voucherContent" class="voucher-content"></div>
         </section>
 
-        <!-- ===== TAB: DAILY ===== -->
-        <section id="tab-daily" class="tabpane" hidden>
-            <div class="section-head">
-                <h2>📅 တနေ့စာစာရင်း</h2>
+        <!-- ===== SCREEN: DAILY ===== -->
+        <section id="screen-daily" class="screenpane" hidden>
+            <div class="screen-head">
+                <button class="back-btn" onclick="goHome()">‹ ပင်မ</button>
+                <h2>📅 တနေ့စာ</h2>
+                <span></span>
             </div>
             <input type="date" id="dailyDate" class="field-input" onchange="renderDaily()">
             <div id="dailyContent" class="daily-content"></div>
         </section>
 
-        <!-- ===== TAB: WEEKLY ===== -->
-        <section id="tab-weekly" class="tabpane" hidden>
-            <div class="section-head">
-                <h2>📊 တပတ်စာစာရင်း</h2>
+        <!-- ===== SCREEN: WEEKLY ===== -->
+        <section id="screen-weekly" class="screenpane" hidden>
+            <div class="screen-head">
+                <button class="back-btn" onclick="goHome()">‹ ပင်မ</button>
+                <h2>📊 တပတ်စာ</h2>
+                <span></span>
             </div>
             <div class="week-nav">
                 <button class="week-btn" onclick="changeWeek(-1)">‹</button>
@@ -124,15 +165,6 @@
             <div id="weeklyContent" class="weekly-content"></div>
         </section>
     </main>
-
-    <!-- Bottom tab bar -->
-    <nav class="tabbar">
-        <button class="tab active" data-tab="home" onclick="switchTab('home')">🏠<span>ပင်မ</span></button>
-        <button class="tab" data-tab="players" onclick="switchTab('players')">👥<span>လူများ</span></button>
-        <button class="tab" data-tab="voucher" onclick="switchTab('voucher')">🧾<span>ဘောက်ချာ</span></button>
-        <button class="tab" data-tab="daily" onclick="switchTab('daily')">📅<span>နေ့စဉ်</span></button>
-        <button class="tab" data-tab="weekly" onclick="switchTab('weekly')">📊<span>အပတ်စဉ်</span></button>
-    </nav>
 </div>
 
 <!-- ============ DIGITAL BOARD MODAL ============ -->
@@ -205,6 +237,36 @@
     </div>
 </div>
 
+<!-- ============ EDIT RECORD MODAL ============ -->
+<div id="editModal" class="modal" hidden>
+    <div class="settings-card">
+        <div class="board-title">
+            <span>✏️ စာရင်း ပြင်မည်</span>
+            <span class="close-x" onclick="closeEditModal()">✕</span>
+        </div>
+        <div>
+            <label class="field-label" for="editNumberInput">နံပါတ်</label>
+            <input type="text" id="editNumberInput" class="field-input" inputmode="numeric" maxlength="2" placeholder="00-99">
+        </div>
+        <div>
+            <label class="field-label" for="editAmountInput">ငွေ</label>
+            <input type="number" id="editAmountInput" class="field-input" inputmode="numeric" placeholder="ငွေပမာဏ">
+        </div>
+        <button class="btn-primary" onclick="saveEditRecord()">💾 သိမ်းမည်</button>
+    </div>
+</div>
+
+<!-- ============ VOUCHER GROUP DETAIL MODAL ============ -->
+<div id="voucherDetailModal" class="modal" hidden>
+    <div class="settings-card detail-card">
+        <div class="board-title">
+            <span id="voucherDetailTitle">🧾</span>
+            <span class="close-x" onclick="closeVoucherDetail()">✕</span>
+        </div>
+        <div id="voucherDetailList" class="records-list"></div>
+    </div>
+</div>
+
 <!-- ============ SETTINGS MODAL ============ -->
 <div id="settingsModal" class="modal" hidden>
     <div class="settings-card">
@@ -230,5 +292,12 @@
 </div>
 
 <script type="module" src="app.js"></script>
+
+<!-- Floating scroll-to-top button -->
+<button id="scrollTopBtn" class="scroll-top" onclick="scrollToTop()" hidden aria-label="အပေါ်တက်">⬆️</button>
+
+<!-- Print-only receipt area -->
+<div id="printArea" class="print-area" aria-hidden="true"></div>
+
 </body>
 </html>

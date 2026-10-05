@@ -60,7 +60,7 @@ async function init() {
             updateSyncPill();
             refreshSession();
             renderRecords();
-            refreshActiveTab();
+            refreshActiveScreen();
         }).catch(() => updateSyncPill());
     } else {
         showLinkScreen();
@@ -266,7 +266,7 @@ window.saveBoard = async function saveBoard() {
 
         // Optimistic UI: re-render immediately from local DB.
         await renderRecords();
-        refreshActiveTab();
+        refreshActiveScreen();
 
         if (invalidLines.length) {
             ta.value = invalidLines.join('\n');
@@ -326,7 +326,10 @@ async function renderRecords() {
                 (r.player_name ? '<span class="rec-player">' + escHtml(r.player_name) + '</span>' : '') +
             '</span>' +
             '<span class="rec-amt">' + formatMoney(r.amount) + '</span>' +
-            '<button class="rec-del" onclick="deleteRecord(\'' + r.id + '\')" title="ဖျက်မည်">🗑️</button>' +
+            '<span class="rec-actions">' +
+                '<button class="rec-edit" onclick="openEditRecord(\'' + r.id + '\')" title="ပြင်မည်">✏️</button>' +
+                '<button class="rec-del" onclick="deleteRecord(\'' + r.id + '\')" title="ဖျက်မည်">🗑️</button>' +
+            '</span>' +
         '</div>'
     ).join('');
 }
@@ -337,8 +340,52 @@ window.deleteRecord = async function deleteRecord(id) {
     if (!confirm(rec.number + ' (' + formatMoney(rec.amount) + ') ဖျက်မှာလား?')) return;
     await sync.mutate('delete', 'lottery_records', { id });
     await renderRecords();
-    refreshActiveTab();
+    refreshActiveScreen();
+    refreshVoucherDetail();
     showToast('🗑️ ဖျက်ပြီးပြီ');
+};
+
+/* ================= Edit record (အမှားပြင်ရန်) ================= */
+
+let editingRecordId = null;
+
+window.openEditRecord = async function openEditRecord(id) {
+    const rec = await db.get('lottery_records', id);
+    if (!rec) return;
+    editingRecordId = id;
+    document.getElementById('editNumberInput').value = rec.number || '';
+    document.getElementById('editAmountInput').value = rec.amount || '';
+    document.getElementById('editModal').hidden = false;
+    setTimeout(() => document.getElementById('editAmountInput').focus(), 100);
+};
+
+window.closeEditModal = function closeEditModal() {
+    document.getElementById('editModal').hidden = true;
+    editingRecordId = null;
+};
+
+window.saveEditRecord = async function saveEditRecord() {
+    if (!editingRecordId) return;
+    const num = document.getElementById('editNumberInput').value.trim();
+    const amt = Number(document.getElementById('editAmountInput').value);
+    if (!/^\d{1,2}$/.test(num)) { showToast('နံပါတ် မှန်အောင်ထည့်ပါ (0-99)'); return; }
+    if (!amt || amt <= 0) { showToast('ငွေ ထည့်ပါ'); return; }
+    try {
+        const existing = (await db.get('lottery_records', editingRecordId)) || {};
+        await sync.mutate('update', 'lottery_records', Object.assign({}, existing, {
+            id: editingRecordId,
+            number: num.padStart(2, '0'),
+            amount: amt
+        }));
+        closeEditModal();
+        await renderRecords();
+        refreshActiveScreen();
+        refreshVoucherDetail();
+        updateSyncPill();
+        showToast('✅ ပြင်ပြီးပြီ');
+    } catch (e) {
+        showToast('❌ သိမ်းမရပါ: ' + e.message);
+    }
 };
 
 /* ================= Settings & sync ================= */
@@ -362,7 +409,7 @@ window.syncNowManual = async function syncNowManual() {
         showToast('🔄 Sync ပြီးပြီ (↑' + pushed + ' ↓' + pulled + ')');
         await refreshSession();
         await renderRecords();
-        refreshActiveTab();
+        refreshActiveScreen();
     } catch (e) {
         showToast('❌ Sync မရပါ: ' + e.message);
     }
@@ -399,28 +446,56 @@ document.addEventListener('click', (e) => {
     }
 });
 
-/* ================= Tabs ================= */
+/* ================= Screens (home menu navigation) ================= */
 
-let activeTab = 'home';
+let activeScreen = 'home';
 
-window.switchTab = function switchTab(name) {
-    activeTab = name;
-    document.querySelectorAll('.tabpane').forEach((p) => { p.hidden = true; });
-    const pane = document.getElementById('tab-' + name);
+/** Open a feature screen (players / voucher / daily / weekly). */
+window.openScreen = function openScreen(name) {
+    activeScreen = name;
+    document.querySelectorAll('.screenpane').forEach((p) => { p.hidden = true; });
+    const pane = document.getElementById('screen-' + name);
     if (pane) pane.hidden = false;
-    document.querySelectorAll('.tabbar .tab').forEach((t) => {
-        t.classList.toggle('active', t.dataset.tab === name);
-    });
-    refreshActiveTab();
+    // Always start at the top of the new screen.
+    window.scrollTo(0, 0);
+    refreshActiveScreen();
 };
 
-/** Re-render whichever tab is currently visible (after data changes). */
-function refreshActiveTab() {
-    if (activeTab === 'home') renderRecords();
-    else if (activeTab === 'players') renderPlayers();
-    else if (activeTab === 'voucher') renderVoucher();
-    else if (activeTab === 'daily') renderDaily();
-    else if (activeTab === 'weekly') renderWeekly();
+/** Back to the home menu screen. */
+window.goHome = function goHome() {
+    activeScreen = 'home';
+    document.querySelectorAll('.screenpane').forEach((p) => { p.hidden = true; });
+    document.getElementById('screen-home').hidden = false;
+    window.scrollTo(0, 0);
+    refreshActiveScreen();
+};
+
+/** Floating scroll-to-top button: show only when scrolled down. */
+window.scrollToTop = function scrollToTop() {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+};
+
+window.addEventListener('scroll', () => {
+    const btn = document.getElementById('scrollTopBtn');
+    if (btn) btn.hidden = window.scrollY < 300;
+}, { passive: true });
+
+/** Re-render whichever screen is currently visible (after data changes). */
+function refreshActiveScreen() {
+    if (activeScreen === 'home') { renderRecords(); updateMenuSubs(); }
+    else if (activeScreen === 'players') renderPlayers();
+    else if (activeScreen === 'voucher') renderVoucher();
+    else if (activeScreen === 'daily') renderDaily();
+    else if (activeScreen === 'weekly') renderWeekly();
+}
+
+/** Update the small subtitles on home menu cards (e.g. player count). */
+async function updateMenuSubs() {
+    try {
+        const players = await getPlayers();
+        const el = document.getElementById('menuPlayersSub');
+        if (el) el.textContent = players.length ? players.length + ' ယောက်' : 'လူ ထည့်ရန်';
+    } catch (e) { /* ignore */ }
 }
 
 /* ================= Players (လူစာရင်း) ================= */
@@ -572,6 +647,11 @@ window.kbPress = function kbPress(k) {
 
 /* ================= Voucher (တဦးချင်းဘောက်ချာ) ================= */
 
+/** Last rendered voucher context — used by Copy/Print/Share and detail view. */
+let lastVoucher = null;
+/** Number currently open in the voucher detail modal (for refresh after edit/delete). */
+let voucherDetailNumber = null;
+
 /** Group records by number → { number, amount, count }, sorted by number. */
 function groupByNumber(recs) {
     const map = {};
@@ -623,6 +703,7 @@ window.renderVoucher = async function renderVoucher() {
     const selPlayer = playerSel.value; // '' = self (no player_name)
     const sessId = sessSel.value;
     if (!sessId) {
+        lastVoucher = null;
         content.innerHTML = '<div class="empty-state">Session မရှိသေးပါ</div>';
         return;
     }
@@ -637,6 +718,7 @@ window.renderVoucher = async function renderVoucher() {
     );
 
     if (!recs.length) {
+        lastVoucher = null;
         content.innerHTML = '<div class="empty-state">စာရင်း မရှိသေးပါ</div>';
         return;
     }
@@ -645,11 +727,24 @@ window.renderVoucher = async function renderVoucher() {
     const totalAmt = grouped.reduce((s, g) => s + g.amount, 0);
     const totalCount = grouped.reduce((s, g) => s + g.count, 0);
 
+    // Save context for Copy/Print/Share + detail modal.
+    const sessName = (sessions.find((s) => s.id === sessId) || {}).name || 'Session';
+    lastVoucher = {
+        playerName: selPlayer,
+        playerLabel: selPlayer || 'ကိုယ်တိုင်',
+        sessId,
+        sessionName: sessName,
+        dateLabel: formatDateStr(new Date()),
+        groups: grouped,
+        totalAmt,
+        totalCount
+    };
+
     content.innerHTML =
         '<div class="voucher-head">🧾 ' + escHtml(selPlayer || 'ကိုယ်တိုင်') +
         ' — <b>' + grouped.length + '</b> မျိုး, <b>' + formatMoney(totalAmt) + '</b></div>' +
         grouped.map((g) =>
-            '<div class="voucher-row">' +
+            '<div class="voucher-row" onclick="openVoucherDetail(\'' + escHtml(g.number) + '\')" title="အသေးစိတ် ကြည့်ရန် / ပြင်ရန်">' +
                 '<span class="v-no">' + escHtml(g.number) + '</span>' +
                 '<span class="v-amt">' + formatMoney(g.amount) + '</span>' +
                 '<span class="v-count">' + g.count + ' ကြိမ်</span>' +
@@ -658,6 +753,134 @@ window.renderVoucher = async function renderVoucher() {
         '<div class="voucher-total"><span>စုစုပေါင်း</span><b>' + formatMoney(totalAmt) +
         ' (' + totalCount + ' ကွက်)</b></div>';
 };
+
+/* ================= Voucher actions: Copy / Print / Share ================= */
+
+/** Build the paper-receipt text for the current voucher. */
+function buildVoucherText() {
+    const v = lastVoucher;
+    if (!v) return '';
+    const lines = [];
+    lines.push('🧾 ဘောက်ချာ - ' + v.playerLabel);
+    lines.push('📅 ' + v.dateLabel + ' | ' + v.sessionName);
+    lines.push('─────────────');
+    v.groups.forEach((g) => {
+        lines.push(g.number + ' - ' + formatMoney(g.amount) + ' (' + g.count + ' ကြိမ်)');
+    });
+    lines.push('─────────────');
+    lines.push('စုစုပေါင်း: ' + formatMoney(v.totalAmt) + ' (' + v.totalCount + ' ကွက်)');
+    return lines.join('\n');
+}
+
+async function copyTextToClipboard(text) {
+    try {
+        await navigator.clipboard.writeText(text);
+        return true;
+    } catch (e) {
+        // Fallback for older browsers / non-secure contexts.
+        try {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+            const ok = document.execCommand('copy');
+            document.body.removeChild(ta);
+            return ok;
+        } catch (e2) {
+            return false;
+        }
+    }
+}
+
+window.copyVoucher = async function copyVoucher() {
+    const text = buildVoucherText();
+    if (!text) { showToast('ဘောက်ချာ မရှိသေးပါ'); return; }
+    const ok = await copyTextToClipboard(text);
+    showToast(ok ? '✅ ကူးပြီးပြီ' : '❌ ကူးမရပါ');
+};
+
+window.printVoucher = function printVoucher() {
+    const v = lastVoucher;
+    if (!v) { showToast('ဘောက်ချာ မရှိသေးပါ'); return; }
+    const area = document.getElementById('printArea');
+    area.innerHTML =
+        '<div class="print-receipt">' +
+            '<div class="pr-title">🧾 ဘောက်ချာ</div>' +
+            '<div class="pr-sub">' + escHtml(v.playerLabel) + '</div>' +
+            '<div class="pr-sub">' + escHtml(v.dateLabel) + ' | ' + escHtml(v.sessionName) + '</div>' +
+            '<div class="pr-line"></div>' +
+            v.groups.map((g) =>
+                '<div class="pr-row"><span>' + escHtml(g.number) + '</span>' +
+                '<span>' + formatMoney(g.amount) + ' (' + g.count + ' ကြိမ်)</span></div>'
+            ).join('') +
+            '<div class="pr-line"></div>' +
+            '<div class="pr-total"><span>စုစုပေါင်း</span><span>' + formatMoney(v.totalAmt) +
+            ' (' + v.totalCount + ' ကွက်)</span></div>' +
+        '</div>';
+    window.print();
+};
+
+window.shareVoucher = async function shareVoucher() {
+    const text = buildVoucherText();
+    if (!text) { showToast('ဘောက်ချာ မရှိသေးပါ'); return; }
+    if (navigator.share) {
+        try {
+            await navigator.share({ title: '🧾 ဘောက်ချာ', text });
+        } catch (e) {
+            // User cancelled — no toast needed.
+        }
+    } else {
+        // No Web Share API → fall back to copy.
+        const ok = await copyTextToClipboard(text);
+        showToast(ok ? '✅ ကူးပြီးပြီ (share မရလို့)' : '❌ မျှဝေမရပါ');
+    }
+};
+
+/* ================= Voucher group detail (per-number edit/delete) ================= */
+
+window.openVoucherDetail = async function openVoucherDetail(number) {
+    const v = lastVoucher;
+    if (!v) return;
+    voucherDetailNumber = number;
+
+    let recs = [];
+    try {
+        recs = await db.query('lottery_records', 'by_session', v.sessId);
+    } catch (e) { /* ignore */ }
+    recs = recs.filter((r) =>
+        (r.agent_name || '') === agentName &&
+        (v.playerName ? (r.player_name || '') === v.playerName : !(r.player_name || '')) &&
+        String(r.number) === String(number)
+    ).sort((a, b) => (b.created || 0) - (a.created || 0));
+
+    document.getElementById('voucherDetailTitle').textContent = '🧾 ' + number +
+        ' (' + recs.length + ' ကြိမ်)';
+    document.getElementById('voucherDetailList').innerHTML = recs.length ? recs.map((r) =>
+        '<div class="record-row">' +
+            '<span class="rec-no">' + escHtml(r.number) + '</span>' +
+            '<span class="rec-amt">' + formatMoney(r.amount) + '</span>' +
+            '<span class="rec-actions">' +
+                '<button class="rec-edit" onclick="openEditRecord(\'' + r.id + '\')" title="ပြင်မည်">✏️</button>' +
+                '<button class="rec-del" onclick="deleteRecord(\'' + r.id + '\')" title="ဖျက်မည်">🗑️</button>' +
+            '</span>' +
+        '</div>'
+    ).join('') : '<div class="empty-state">စာရင်း မရှိပါ</div>';
+    document.getElementById('voucherDetailModal').hidden = false;
+};
+
+window.closeVoucherDetail = function closeVoucherDetail() {
+    document.getElementById('voucherDetailModal').hidden = true;
+    voucherDetailNumber = null;
+};
+
+/** Re-render the open detail modal after an edit/delete inside it. */
+async function refreshVoucherDetail() {
+    const modal = document.getElementById('voucherDetailModal');
+    if (!modal || modal.hidden || voucherDetailNumber == null) return;
+    await openVoucherDetail(voucherDetailNumber);
+}
 
 /* ================= Daily (တနေ့စာစာရင်း) ================= */
 
