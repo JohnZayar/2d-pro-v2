@@ -853,6 +853,30 @@ const PB = {
     async getSetting(key) {
         if (!this.tenantId) return null;
         try {
+            // Handle chunked data (e.g., 2d_list_data split into chunks)
+            if (key === '2d_list_data') {
+                const meta = await this.getSettingRaw('2d_list_data_chunks');
+                if (meta && meta.count) {
+                    const all = [];
+                    for (let i = 0; i < meta.count; i++) {
+                        const chunkKey = '2d_list_data_chunk_' + String(i).padStart(3, '0');
+                        const chunk = await this.getSettingRaw(chunkKey);
+                        if (Array.isArray(chunk)) all.push(...chunk);
+                    }
+                    if (all.length > 0) return all;
+                    // fall through to try direct key
+                }
+            }
+            return await this.getSettingRaw(key);
+        } catch (e) {
+            console.warn('PB getSetting failed:', key, e.message);
+            return null;
+        }
+    },
+
+    async getSettingRaw(key) {
+        if (!this.tenantId) return null;
+        try {
             const filter = encodeURIComponent('tenant="' + this.tenantId + '" && key="' + key + '"');
             const data = await this.req('GET', '/api/collections/app_settings/records?filter=' + filter + '&perPage=1');
             if (data.items && data.items.length > 0) {
@@ -861,7 +885,7 @@ const PB = {
             }
             return null;
         } catch (e) {
-            console.warn('PB getSetting failed:', key, e.message);
+            console.warn('PB getSettingRaw failed:', key, e.message);
             return null;
         }
     },
