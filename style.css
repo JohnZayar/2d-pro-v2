@@ -1,0 +1,209 @@
+/* 2D Agent Pro v2 — dark theme, mobile-first */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+    --bg: #0b0f17;
+    --card: #1e293b;
+    --card2: #0f172a;
+    --border: #334155;
+    --accent: #3b82f6;
+    --accent2: #0284c7;
+    --text: #f1f5f9;
+    --muted: #93a4bd;
+    --green: #34d399;
+    --red: #f43f5e;
+    --yellow: #f1c40f;
+}
+
+html, body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, "Segoe UI", Roboto, "Noto Sans Myanmar", sans-serif;
+    min-height: 100vh;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.screen { min-height: 100vh; display: flex; flex-direction: column; }
+.screen[hidden] { display: none; }
+
+/* ---------- Link screen ---------- */
+#linkScreen { align-items: center; justify-content: center; padding: 20px; }
+.link-card {
+    background: linear-gradient(160deg, #1e293b 0%, #0f172a 100%);
+    width: 100%; max-width: 400px;
+    border-radius: 18px; padding: 28px 22px;
+    border: 1px solid var(--accent);
+    box-shadow: 0 20px 50px rgba(0,0,0,.6);
+    display: flex; flex-direction: column; gap: 10px;
+}
+.app-logo { font-size: 52px; text-align: center; }
+.app-title { text-align: center; font-size: 24px; font-weight: 800; }
+.app-subtitle { text-align: center; color: var(--muted); font-size: 12px; margin-bottom: 6px; }
+.link-desc { text-align: center; color: var(--muted); font-size: 14px; margin-bottom: 8px; }
+.field-label { font-size: 13px; color: var(--muted); font-weight: 600; margin-top: 4px; }
+.field-input {
+    width: 100%; padding: 13px 14px; font-size: 16px;
+    background: #0a0f1a; color: var(--text);
+    border: 2px solid var(--border); border-radius: 10px; outline: none;
+}
+.field-input:focus { border-color: var(--accent); }
+.btn-primary {
+    margin-top: 10px; padding: 14px; font-size: 17px; font-weight: 800;
+    background: linear-gradient(135deg, var(--accent2), #0369a1); color: #fff;
+    border: none; border-radius: 12px; cursor: pointer;
+    box-shadow: 0 4px 14px rgba(2,132,199,.4);
+}
+.btn-primary:active { transform: scale(.98); }
+.error-msg { color: var(--red); font-size: 13px; text-align: center; }
+
+/* ---------- App header ---------- */
+.app-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 12px 16px; background: var(--card2);
+    border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; z-index: 50;
+}
+.agent-name { font-size: 17px; font-weight: 800; }
+.tenant-name { font-size: 12px; color: var(--muted); }
+.header-right { display: flex; align-items: center; gap: 8px; }
+.sync-pill { font-size: 18px; }
+.sync-pill.online { color: var(--green); }
+.sync-pill.offline { color: var(--red); }
+.sync-pill.working { color: var(--yellow); }
+.icon-btn {
+    background: var(--card); border: 1px solid var(--border); color: var(--text);
+    font-size: 18px; width: 40px; height: 40px; border-radius: 10px; cursor: pointer;
+}
+
+.app-main { padding: 14px; display: flex; flex-direction: column; gap: 14px; max-width: 640px; width: 100%; margin: 0 auto; }
+
+.session-banner {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 12px; padding: 12px 14px; font-size: 14px;
+    color: var(--muted); text-align: center;
+}
+.session-banner b { color: var(--yellow); }
+
+/* ---------- Big board button ---------- */
+.btn-board {
+    padding: 26px 16px; font-size: 20px; font-weight: 800;
+    background: linear-gradient(135deg, #0ea5e9, #0369a1); color: #fff;
+    border: none; border-radius: 16px; cursor: pointer;
+    box-shadow: 0 8px 24px rgba(2,132,199,.35);
+    display: flex; flex-direction: column; gap: 4px; align-items: center;
+}
+.btn-board:active { transform: scale(.98); }
+.btn-board .btn-sub { font-size: 12px; font-weight: 400; opacity: .85; }
+
+/* ---------- Records ---------- */
+.section-head { display: flex; align-items: center; gap: 8px; }
+.section-head h2 { font-size: 16px; font-weight: 700; }
+.count-badge {
+    background: var(--card); border: 1px solid var(--border);
+    font-size: 12px; padding: 2px 10px; border-radius: 20px; color: var(--muted);
+}
+.records-list { display: flex; flex-direction: column; gap: 8px; }
+.record-row {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 10px; padding: 10px 14px;
+    display: flex; justify-content: space-between; align-items: center;
+}
+.record-row .rec-no { font-size: 20px; font-weight: 800; color: var(--yellow); }
+.record-row .rec-amt { font-size: 15px; color: var(--green); font-weight: 600; }
+.record-row .rec-del {
+    background: none; border: none; color: var(--red);
+    font-size: 16px; cursor: pointer; padding: 6px;
+}
+.empty-state { text-align: center; color: var(--muted); padding: 30px 10px; font-size: 14px; line-height: 1.8; }
+.empty-state span { font-size: 12px; }
+
+.totals-bar {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+    position: sticky; bottom: 0; padding: 10px 0;
+}
+.total-item {
+    background: var(--card); border: 1px solid var(--accent);
+    border-radius: 12px; padding: 12px; text-align: center;
+    display: flex; flex-direction: column; gap: 2px;
+}
+.total-label { font-size: 11px; color: var(--muted); }
+.total-value { font-size: 20px; font-weight: 800; color: var(--text); }
+
+/* ---------- Modals ---------- */
+.modal {
+    position: fixed; inset: 0; z-index: 1000;
+    background: rgba(0,0,0,.7);
+    display: flex; align-items: center; justify-content: center; padding: 12px;
+}
+.modal[hidden] { display: none; }
+
+/* ---------- Digital board ---------- */
+.board-card {
+    background: linear-gradient(160deg, #1e293b 0%, #0f172a 100%);
+    width: 100%; max-width: 620px; border-radius: 18px; padding: 20px;
+    border: 1px solid var(--accent);
+    box-shadow: 0 20px 50px rgba(0,0,0,.9);
+    display: flex; flex-direction: column; gap: 14px;
+    max-height: 94vh; overflow-y: auto;
+}
+.board-title {
+    color: #fff; font-size: 18px; font-weight: 800;
+    display: flex; justify-content: space-between; align-items: center;
+}
+.board-title .close-x { cursor: pointer; color: var(--muted); font-size: 20px; padding: 4px 8px; }
+.board-textarea-wrap {
+    background: #0a0f1a; border: 2px solid var(--accent);
+    border-radius: 12px; padding: 14px;
+    box-shadow: inset 0 2px 8px rgba(0,0,0,.5);
+}
+.board-textarea {
+    width: 100%; min-height: 320px; background: transparent; border: none; outline: none;
+    color: #fff; font-size: 16px; font-family: ui-monospace, Menlo, monospace;
+    line-height: 1.7; resize: vertical;
+}
+.board-textarea::placeholder { color: #475569; }
+.board-preview {
+    background: #0a0f1a; border: 1px solid var(--border); border-radius: 10px;
+    padding: 10px 14px; font-size: 13px; color: var(--muted);
+    max-height: 140px; overflow-y: auto;
+}
+.board-preview b { color: var(--green); }
+.board-preview .warn { color: var(--yellow); }
+.board-btns { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.board-btns button {
+    padding: 14px 4px; border-radius: 10px; font-weight: 700; font-size: 15px;
+    cursor: pointer; border: none; text-align: center;
+}
+.board-btns button:active { transform: scale(.97); }
+.btn-back { background: #374151; color: #d1d5db; }
+.btn-paste { background: #374151; color: #d1d5db; }
+.btn-save { background: linear-gradient(135deg, #0284c7, #0369a1); color: #fff; box-shadow: 0 4px 12px rgba(2,132,199,.4); }
+
+/* ---------- Settings ---------- */
+.settings-card {
+    background: linear-gradient(160deg, #1e293b 0%, #0f172a 100%);
+    width: 100%; max-width: 400px; border-radius: 18px; padding: 20px;
+    border: 1px solid var(--border);
+    display: flex; flex-direction: column; gap: 12px;
+}
+.settings-row {
+    display: flex; justify-content: space-between; align-items: center;
+    background: #0a0f1a; border: 1px solid var(--border);
+    border-radius: 10px; padding: 12px 14px; font-size: 14px;
+}
+.settings-row span { color: var(--muted); }
+.btn-danger-outline {
+    padding: 12px; border-radius: 10px; font-size: 14px; font-weight: 600;
+    background: transparent; color: var(--red); border: 1px solid var(--red); cursor: pointer;
+}
+.btn-danger-outline:active { transform: scale(.98); }
+
+/* ---------- Toast (utils.js injects #v2-toast-box) ---------- */
+#v2-toast-box { pointer-events: none; }
+
+/* ---------- Small screens ---------- */
+@media (max-width: 480px) {
+    .board-textarea { min-height: 260px; font-size: 15px; }
+    .btn-board { padding: 22px 12px; font-size: 18px; }
+    .record-row .rec-no { font-size: 18px; }
+}
