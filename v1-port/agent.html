@@ -296,31 +296,6 @@ const PB = {
     async getSetting(key) {
         if (!this.tenantId) return null;
         try {
-            // Handle chunked data (e.g., 2d_list_data split into chunks)
-            // Load chunks in PARALLEL batches for speed (129 chunks would be too slow sequentially)
-            if (key === '2d_list_data') {
-                const meta = await this.getSettingRaw('2d_list_data_chunks');
-                if (meta && meta.count) {
-                    const all = [];
-                    const count = meta.count;
-                    // Fetch in parallel batches of 10
-                    for (let b = 0; b < count; b += 10) {
-                        const batchSize = Math.min(10, count - b);
-                        const batchPromises = [];
-                        for (let j = 0; j < batchSize; j++) {
-                            const idx = b + j;
-                            const chunkKey = '2d_list_data_chunk_' + String(idx).padStart(3, '0');
-                            batchPromises.push(this.getSettingRaw(chunkKey));
-                        }
-                        const results = await Promise.all(batchPromises);
-                        for (const chunk of results) {
-                            if (Array.isArray(chunk)) all.push(...chunk);
-                        }
-                    }
-                    if (all.length > 0) return all;
-                    // fall through to try direct key
-                }
-            }
             return await this.getSettingRaw(key);
         } catch (e) {
             console.warn('PB getSetting failed:', key, e.message);
@@ -346,10 +321,6 @@ const PB = {
 
     async setSetting(key, value) {
         if (!this.tenantId) throw new Error('No tenant');
-        // Handle chunked save for large 2d_list_data
-        if (key === '2d_list_data' && Array.isArray(value)) {
-            return await this.setSettingChunked(key, value);
-        }
         const jsonVal = typeof value === 'string' ? value : JSON.stringify(value);
         try {
             const filter = encodeURIComponent('tenant="' + this.tenantId + '" && key="' + key + '"');
@@ -374,33 +345,6 @@ const PB = {
         }
     },
 
-    async setSettingChunked(key, records) {
-        const chunkSize = 15;
-        const chunks = [];
-        for (let i = 0; i < records.length; i += chunkSize) {
-            chunks.push(records.slice(i, i + chunkSize));
-        }
-        // Save chunks in parallel batches of 10 (much faster than sequential)
-        for (let b = 0; b < chunks.length; b += 10) {
-            const batch = chunks.slice(b, b + 10);
-            await Promise.all(batch.map((chunk, j) => {
-                const idx = b + j;
-                const chunkKey = key + '_chunk_' + String(idx).padStart(3, '0');
-                const jsonVal = JSON.stringify(chunk);
-                return this.setSettingRaw(chunkKey, jsonVal);
-            }));
-        }
-        await this.setSettingRaw(key + '_chunks', JSON.stringify({ count: chunks.length, total: records.length }));
-        try {
-            const filter = encodeURIComponent('tenant="' + this.tenantId + '" && key="' + key + '"');
-            const data = await this.req('GET', '/api/collections/app_settings/records?filter=' + filter + '&perPage=1');
-            if (data.items && data.items.length > 0) {
-                await this.req('DELETE', '/api/collections/app_settings/records/' + data.items[0].id);
-            }
-        } catch (e) {}
-        return true;
-    },
-
     async setSettingRaw(key, jsonVal) {
         if (!this.tenantId) throw new Error('No tenant');
         try {
@@ -420,6 +364,94 @@ const PB = {
             return true;
         } catch (e) {
             console.warn('PB setSettingRaw failed:', key, e.message);
+            throw e;
+        }
+    },
+
+    // === lottery_records collection (fast, individual records) ===
+    v1ToPb(rec, recordType) {
+        return {
+            tenant: this.tenantId,
+            session: String(rec.sessionId || ''),
+            number: String(rec.no || ''),
+            amount: Number(rec.amt) || 0,
+            agent_name: String(rec.target || ''),
+            record_type: recordType,
+            batch_no: String(rec.batchNo || ''),
+            v1_id: String(rec.id || ''),
+            v1_date: String(rec.date || ''),
+            v1_time: String(rec.time || '')
+        };
+    },
+    pbToV1(pbRec) {
+        return {
+            id: pbRec.v1_id ? parseFloat(pbRec.v1_id) : 0,
+            no: pbRec.number || '',
+            amt: pbRec.amount || 0,
+            batchNo: pbRec.batch_no || '',
+            sessionId: pbRec.session ? parseFloat(pbRec.session) : 0,
+            target: pbRec.agent_name || '',
+            date: pbRec.v1_date || '',
+            time: pbRec.v1_time || '',
+            _pbId: pbRec.id
+        };
+    },
+    async getLotteryRecords(recordType) {
+        if (!this.tenantId) return null;
+        try {
+            const filter = encodeURIComponent('tenant="' + this.tenantId + '" && record_type="' + recordType + '"');
+            const data = await this.req('GET', '/api/collections/lottery_records/records?filter=' + filter + '&perPage=5000&sort=created');
+            if (data.items && data.items.length > 0) {
+                return data.items.map(r => this.pbToV1(r));
+            }
+            return [];
+        } catch (e) {
+            console.warn('PB getLotteryRecords failed:', recordType, e.message);
+            return null;
+        }
+    },
+    async saveLotteryRecords(records, recordType) {
+        if (!this.tenantId) throw new Error('No tenant');
+        try {
+            const filter = encodeURIComponent('tenant="' + this.tenantId + '" && record_type="' + recordType + '"');
+            const existing = await this.req('GET', '/api/collections/lottery_records/records?filter=' + filter + '&perPage=5000');
+            const existingByV1Id = {};
+            if (existing.items) {
+                for (const r of existing.items) {
+                    if (r.v1_id) existingByV1Id[String(r.v1_id)] = r;
+                }
+            }
+            const toCreate = [];
+            const toUpdate = [];
+            const seenV1Ids = new Set();
+            for (const rec of records) {
+                const v1id = String(rec.id || '');
+                seenV1Ids.add(v1id);
+                const pbData = this.v1ToPb(rec, recordType);
+                if (v1id && existingByV1Id[v1id]) {
+                    toUpdate.push({ pbId: existingByV1Id[v1id].id, data: pbData });
+                } else {
+                    toCreate.push(pbData);
+                }
+            }
+            const toDelete = [];
+            if (existing.items) {
+                for (const r of existing.items) {
+                    const vid = String(r.v1_id || '');
+                    if (vid && !seenV1Ids.has(vid)) toDelete.push(r.id);
+                }
+            }
+            const batch = async (items, fn) => {
+                for (let i = 0; i < items.length; i += 10) {
+                    await Promise.all(items.slice(i, i + 10).map(fn));
+                }
+            };
+            await batch(toCreate, (d) => this.req('POST', '/api/collections/lottery_records/records', d));
+            await batch(toUpdate, (u) => this.req('PATCH', '/api/collections/lottery_records/records/' + u.pbId, u.data));
+            await batch(toDelete, (id) => this.req('DELETE', '/api/collections/lottery_records/records/' + id));
+            return true;
+        } catch (e) {
+            console.warn('PB saveLotteryRecords failed:', recordType, e.message);
             throw e;
         }
     }
@@ -657,6 +689,24 @@ PB.loadAuth();
                     if (!answered) { answered = true; finish(null); }
                     return;
                 }
+                // Use lottery_records collection for 2d_list_data / 2d_akan_data (fast)
+                if (pbKey === '2d_list_data' || pbKey === '2d_akan_data') {
+                    const recType = pbKey === '2d_list_data' ? 'pos' : 'akan';
+                    PB.getLotteryRecords(recType).then((val) => {
+                        try { clearTimeout(safetyTimer); } catch(e) {}
+                        if (val !== null && val !== undefined) {
+                            const strVal = JSON.stringify(val);
+                            safeSetItem('cache_' + pkey, strVal);
+                            if (localData !== strVal || !answered) { answered = true; finish(val); }
+                        } else if (!answered) { answered = true; finish(null); }
+                        setConnStatus(PB.isLoggedIn() ? 'online' : 'offline');
+                    }).catch(() => {
+                        try { clearTimeout(safetyTimer); } catch(e) {}
+                        if (!answered) { answered = true; finish(null); }
+                        setConnStatus('offline');
+                    });
+                    return;
+                }
                 PB.getSetting(pbKey).then((val) => {
                     try { clearTimeout(safetyTimer); } catch(e) {}
                     if (val !== null && val !== undefined) {
@@ -702,8 +752,12 @@ PB.loadAuth();
                 }
                 if (key.charAt(0) === '/') { finish(true); return; }
                 let done = false;
-                const t = setTimeout(() => { if (!done) { done = true; finish(false); } }, 15000);
-                PB.setSetting(pbKey, value).then(() => {
+                const t = setTimeout(() => { if (!done) { done = true; finish(false); } }, 60000);
+                // Use lottery_records collection for 2d_list_data / 2d_akan_data (fast)
+                const savePromise = (pbKey === '2d_list_data' || pbKey === '2d_akan_data') && Array.isArray(value)
+                    ? PB.saveLotteryRecords(value, pbKey === '2d_list_data' ? 'pos' : 'akan')
+                    : PB.setSetting(pbKey, value);
+                savePromise.then(() => {
                     if (!done) { done = true; clearTimeout(t); finish(true); }
                     setConnStatus('online');
                 }).catch(() => {
