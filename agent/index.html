@@ -42,38 +42,97 @@
     </header>
 
     <main class="app-main">
-        <!-- Current session banner -->
-        <div id="sessionBanner" class="session-banner">
-            <span id="sessionBannerText">Session ရွေးနေတယ်…</span>
-        </div>
-
-        <!-- Big action: open digital board -->
-        <button id="openBoardBtn" class="btn-board" onclick="openBoard()">
-            📝 စာရင်းသွင်းရန် <span class="btn-sub">နှိပ်၍ ဘုတ်ဖွင့်မည်</span>
-        </button>
-
-        <!-- Records -->
-        <div class="section-head">
-            <h2>📋 ကျွန်တော့် စာရင်း</h2>
-            <span id="recordCount" class="count-badge">0</span>
-        </div>
-        <div id="recordsList" class="records-list"></div>
-        <div id="recordsEmpty" class="empty-state" hidden>
-            စာရင်း မရှိသေးပါ<br><span>အပေါ် ခလုတ်နှိပ်၍ စသွင်းပါ</span>
-        </div>
-
-        <!-- Totals -->
-        <div class="totals-bar">
-            <div class="total-item">
-                <span class="total-label">စုစုပေါင်း</span>
-                <span class="total-value" id="totalAmount">0</span>
+        <!-- ===== TAB: HOME ===== -->
+        <section id="tab-home" class="tabpane">
+            <!-- Current session banner -->
+            <div id="sessionBanner" class="session-banner">
+                <span id="sessionBannerText">Session ရွေးနေတယ်…</span>
             </div>
-            <div class="total-item">
-                <span class="total-label">အကွက်</span>
-                <span class="total-value" id="totalCount">0</span>
+
+            <!-- Big action: open digital board -->
+            <button id="openBoardBtn" class="btn-board" onclick="openBoard()">
+                📝 စာရင်းသွင်းရန် <span class="btn-sub">နှိပ်၍ ဘုတ်ဖွင့်မည်</span>
+            </button>
+
+            <!-- Records -->
+            <div class="section-head">
+                <h2>📋 ကျွန်တော့် စာရင်း</h2>
+                <span id="recordCount" class="count-badge">0</span>
             </div>
-        </div>
+            <div id="recordsList" class="records-list"></div>
+            <div id="recordsEmpty" class="empty-state" hidden>
+                စာရင်း မရှိသေးပါ<br><span>အပေါ် ခလုတ်နှိပ်၍ စသွင်းပါ</span>
+            </div>
+
+            <!-- Totals -->
+            <div class="totals-bar">
+                <div class="total-item">
+                    <span class="total-label">စုစုပေါင်း</span>
+                    <span class="total-value" id="totalAmount">0</span>
+                </div>
+                <div class="total-item">
+                    <span class="total-label">အကွက်</span>
+                    <span class="total-value" id="totalCount">0</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===== TAB: PLAYERS ===== -->
+        <section id="tab-players" class="tabpane" hidden>
+            <div class="section-head">
+                <h2>👥 လူစာရင်း</h2>
+                <button class="btn-add" onclick="openPlayerModal()">＋ အသစ်</button>
+            </div>
+            <div id="playersList" class="records-list"></div>
+            <div id="playersEmpty" class="empty-state" hidden>
+                လူ မရှိသေးပါ<br><span>＋ အသစ် နှိပ်၍ ထည့်ပါ</span>
+            </div>
+        </section>
+
+        <!-- ===== TAB: VOUCHER ===== -->
+        <section id="tab-voucher" class="tabpane" hidden>
+            <div class="section-head">
+                <h2>🧾 တဦးချင်းဘောက်ချာ</h2>
+            </div>
+            <label class="field-label" for="voucherPlayer">လူ ရွေးပါ</label>
+            <select id="voucherPlayer" class="field-input" onchange="renderVoucher()"></select>
+            <label class="field-label" for="voucherSession">Session</label>
+            <select id="voucherSession" class="field-input" onchange="renderVoucher()"></select>
+            <div id="voucherContent" class="voucher-content"></div>
+        </section>
+
+        <!-- ===== TAB: DAILY ===== -->
+        <section id="tab-daily" class="tabpane" hidden>
+            <div class="section-head">
+                <h2>📅 တနေ့စာစာရင်း</h2>
+            </div>
+            <input type="date" id="dailyDate" class="field-input" onchange="renderDaily()">
+            <div id="dailyContent" class="daily-content"></div>
+        </section>
+
+        <!-- ===== TAB: WEEKLY ===== -->
+        <section id="tab-weekly" class="tabpane" hidden>
+            <div class="section-head">
+                <h2>📊 တပတ်စာစာရင်း</h2>
+            </div>
+            <div class="week-nav">
+                <button class="week-btn" onclick="changeWeek(-1)">‹</button>
+                <span id="weekLabel" class="week-label">—</span>
+                <button class="week-btn" onclick="changeWeek(1)">›</button>
+                <button class="week-btn week-today" onclick="changeWeek(0)">ဒီအပတ်</button>
+            </div>
+            <div id="weeklyContent" class="weekly-content"></div>
+        </section>
     </main>
+
+    <!-- Bottom tab bar -->
+    <nav class="tabbar">
+        <button class="tab active" data-tab="home" onclick="switchTab('home')">🏠<span>ပင်မ</span></button>
+        <button class="tab" data-tab="players" onclick="switchTab('players')">👥<span>လူများ</span></button>
+        <button class="tab" data-tab="voucher" onclick="switchTab('voucher')">🧾<span>ဘောက်ချာ</span></button>
+        <button class="tab" data-tab="daily" onclick="switchTab('daily')">📅<span>နေ့စဉ်</span></button>
+        <button class="tab" data-tab="weekly" onclick="switchTab('weekly')">📊<span>အပတ်စဉ်</span></button>
+    </nav>
 </div>
 
 <!-- ============ DIGITAL BOARD MODAL ============ -->
@@ -82,6 +141,35 @@
         <div class="board-title">
             <span>📝 ဒစ်ဂျစ်တယ် ဘုတ်</span>
             <span class="close-x" onclick="closeBoard()">✕</span>
+        </div>
+
+        <div class="board-player-row">
+            <label class="field-label" for="boardPlayer">🧍 ဘယ်သူ့အတွက်</label>
+            <select id="boardPlayer" class="field-input"></select>
+        </div>
+
+        <button class="btn-kb-toggle" onclick="toggleKeyboard()">⌨️ ကီးဘုတ် ဖွင့်/ပိတ်</button>
+
+        <div id="boardKeyboard" class="kb" hidden>
+            <button class="kb-key" onclick="kbPress('1')">1</button>
+            <button class="kb-key" onclick="kbPress('2')">2</button>
+            <button class="kb-key" onclick="kbPress('3')">3</button>
+            <button class="kb-key kb-fn" onclick="kbPress('R')">R</button>
+            <button class="kb-key kb-fn" onclick="kbPress('ထိပ်')">ထိပ်</button>
+            <button class="kb-key" onclick="kbPress('4')">4</button>
+            <button class="kb-key" onclick="kbPress('5')">5</button>
+            <button class="kb-key" onclick="kbPress('6')">6</button>
+            <button class="kb-key kb-fn" onclick="kbPress('နောက်')">နောက်</button>
+            <button class="kb-key kb-fn" onclick="kbPress('=')">=</button>
+            <button class="kb-key" onclick="kbPress('7')">7</button>
+            <button class="kb-key" onclick="kbPress('8')">8</button>
+            <button class="kb-key" onclick="kbPress('9')">9</button>
+            <button class="kb-key kb-fn" onclick="kbPress(' ')">␣</button>
+            <button class="kb-key kb-fn" onclick="kbPress('\n')">⏎</button>
+            <button class="kb-key" onclick="kbPress('0')">0</button>
+            <button class="kb-key kb-fn" onclick="kbPress('00')">00</button>
+            <button class="kb-key kb-del" onclick="kbPress('BS')">⌫</button>
+            <button class="kb-key kb-del" onclick="kbPress('CLR')">🧹</button>
         </div>
 
         <div class="board-textarea-wrap">
@@ -95,6 +183,25 @@
             <button class="btn-paste" onclick="pasteToBoard()">Paste</button>
             <button class="btn-save" onclick="saveBoard()">💾 Save</button>
         </div>
+    </div>
+</div>
+
+<!-- ============ PLAYER MODAL ============ -->
+<div id="playerModal" class="modal" hidden>
+    <div class="settings-card">
+        <div class="board-title">
+            <span id="playerModalTitle">👥 လူအသစ်</span>
+            <span class="close-x" onclick="closePlayerModal()">✕</span>
+        </div>
+        <div>
+            <label class="field-label" for="playerNameInput">နာမည်</label>
+            <input type="text" id="playerNameInput" class="field-input" placeholder="လူနာမည်" autocomplete="off">
+        </div>
+        <div>
+            <label class="field-label" for="playerPhoneInput">ဖုန်း (မဖြစ်မနေ မဟုတ်)</label>
+            <input type="tel" id="playerPhoneInput" class="field-input" placeholder="09xxxxxxxxx" autocomplete="off">
+        </div>
+        <button class="btn-primary" onclick="savePlayer()">💾 သိမ်းမည်</button>
     </div>
 </div>
 

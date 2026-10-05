@@ -13,7 +13,7 @@ import * as db from '../shared/db.js';
 import * as pb from '../shared/pb.js';
 import * as sync from '../shared/sync.js';
 import { parseBoard, parseBoardReport } from '../shared/parser.js';
-import { uid, formatMoney, showToast, escHtml, debounce } from '../shared/utils.js';
+import { uid, formatMoney, formatDateStr, getWeekMonday, showToast, escHtml, debounce } from '../shared/utils.js';
 
 const LS_TENANT = 'v2_agent_tenant';
 const LS_AGENT_NAME = 'v2_agent_name';
@@ -60,6 +60,7 @@ async function init() {
             updateSyncPill();
             refreshSession();
             renderRecords();
+            refreshActiveTab();
         }).catch(() => updateSyncPill());
     } else {
         showLinkScreen();
@@ -181,12 +182,25 @@ window.openBoard = function openBoard() {
         showToast('⚠️ Session မရှိသေးပါ');
         return;
     }
+    populateBoardPlayer();
     document.getElementById('boardModal').hidden = false;
     document.getElementById('boardPreview').hidden = true;
+    document.getElementById('boardKeyboard').hidden = true;
     const ta = document.getElementById('boardTextarea');
     ta.value = '';
     setTimeout(() => ta.focus(), 100);
 };
+
+/** Fill the "who is this bet for" select in the board modal. */
+async function populateBoardPlayer() {
+    const sel = document.getElementById('boardPlayer');
+    const players = await getPlayers();
+    let html = '<option value="">🧍 ကိုယ်တိုင်</option>';
+    html += players.map((p) => '<option value="' + escHtml(p.name) + '">' + escHtml(p.name) + '</option>').join('');
+    sel.innerHTML = html;
+    // Default to first player when players exist, else self.
+    sel.value = players.length ? players[0].name : '';
+}
 
 window.closeBoard = function closeBoard() {
     document.getElementById('boardModal').hidden = true;
@@ -231,6 +245,7 @@ window.saveBoard = async function saveBoard() {
     saveInFlight = true;
     try {
         const { items, invalidLines } = parseBoardReport(text);
+        const playerName = document.getElementById('boardPlayer').value || null;
         let savedCount = 0;
 
         for (const it of items) {
@@ -241,6 +256,7 @@ window.saveBoard = async function saveBoard() {
                 number: it.number,
                 amount: it.amount,
                 agent_name: agentName,
+                player_name: playerName,
                 record_type: 'pos',
                 batch_no: null,
                 created: Date.now()
@@ -250,6 +266,7 @@ window.saveBoard = async function saveBoard() {
 
         // Optimistic UI: re-render immediately from local DB.
         await renderRecords();
+        refreshActiveTab();
 
         if (invalidLines.length) {
             ta.value = invalidLines.join('\n');
@@ -305,7 +322,9 @@ async function renderRecords() {
     emptyEl.hidden = true;
     listEl.innerHTML = recs.map((r) =>
         '<div class="record-row">' +
-            '<span class="rec-no">' + escHtml(r.number) + '</span>' +
+            '<span class="rec-no">' + escHtml(r.number) +
+                (r.player_name ? '<span class="rec-player">' + escHtml(r.player_name) + '</span>' : '') +
+            '</span>' +
             '<span class="rec-amt">' + formatMoney(r.amount) + '</span>' +
             '<button class="rec-del" onclick="deleteRecord(\'' + r.id + '\')" title="ဖျက်မည်">🗑️</button>' +
         '</div>'
@@ -318,6 +337,7 @@ window.deleteRecord = async function deleteRecord(id) {
     if (!confirm(rec.number + ' (' + formatMoney(rec.amount) + ') ဖျက်မှာလား?')) return;
     await sync.mutate('delete', 'lottery_records', { id });
     await renderRecords();
+    refreshActiveTab();
     showToast('🗑️ ဖျက်ပြီးပြီ');
 };
 
@@ -342,6 +362,7 @@ window.syncNowManual = async function syncNowManual() {
         showToast('🔄 Sync ပြီးပြီ (↑' + pushed + ' ↓' + pulled + ')');
         await refreshSession();
         await renderRecords();
+        refreshActiveTab();
     } catch (e) {
         showToast('❌ Sync မရပါ: ' + e.message);
     }
@@ -377,3 +398,415 @@ document.addEventListener('click', (e) => {
         e.target.hidden = true;
     }
 });
+
+/* ================= Tabs ================= */
+
+let activeTab = 'home';
+
+window.switchTab = function switchTab(name) {
+    activeTab = name;
+    document.querySelectorAll('.tabpane').forEach((p) => { p.hidden = true; });
+    const pane = document.getElementById('tab-' + name);
+    if (pane) pane.hidden = false;
+    document.querySelectorAll('.tabbar .tab').forEach((t) => {
+        t.classList.toggle('active', t.dataset.tab === name);
+    });
+    refreshActiveTab();
+};
+
+/** Re-render whichever tab is currently visible (after data changes). */
+function refreshActiveTab() {
+    if (activeTab === 'home') renderRecords();
+    else if (activeTab === 'players') renderPlayers();
+    else if (activeTab === 'voucher') renderVoucher();
+    else if (activeTab === 'daily') renderDaily();
+    else if (activeTab === 'weekly') renderWeekly();
+}
+
+/* ================= Players (လူစာရင်း) ================= */
+
+let editingPlayerId = null;
+
+/** This agent's players, sorted by name. */
+async function getPlayers() {
+    try {
+        const all = await db.query('players', 'by_tenant', tenantId);
+        return all
+            .filter((p) => (p.agent_name || '') === agentName)
+            .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+    } catch (e) {
+        console.warn('[agent] getPlayers failed', e);
+        return [];
+    }
+}
+
+window.openPlayerModal = function openPlayerModal(editId) {
+    editingPlayerId = editId || null;
+    document.getElementById('playerModalTitle').textContent = editId ? '✏️ လူ ပြင်မည်' : '👥 လူအသစ်';
+    document.getElementById('playerNameInput').value = '';
+    document.getElementById('playerPhoneInput').value = '';
+    if (editId) {
+        db.get('players', editId).then((p) => {
+            if (p) {
+                document.getElementById('playerNameInput').value = p.name || '';
+                document.getElementById('playerPhoneInput').value = p.phone || '';
+            }
+        });
+    }
+    document.getElementById('playerModal').hidden = false;
+    setTimeout(() => document.getElementById('playerNameInput').focus(), 100);
+};
+
+window.closePlayerModal = function closePlayerModal() {
+    document.getElementById('playerModal').hidden = true;
+    editingPlayerId = null;
+};
+
+window.savePlayer = async function savePlayer() {
+    const name = document.getElementById('playerNameInput').value.trim();
+    const phone = document.getElementById('playerPhoneInput').value.trim();
+    if (!name) { showToast('နာမည် ထည့်ပါ'); return; }
+    try {
+        if (editingPlayerId) {
+            const existing = (await db.get('players', editingPlayerId)) || {};
+            await sync.mutate('update', 'players', Object.assign({}, existing, {
+                id: editingPlayerId, name, phone
+            }));
+            showToast('✅ ပြင်ပြီးပြီ');
+        } else {
+            await sync.mutate('create', 'players', {
+                id: uid(),
+                tenant: tenantId,
+                agent_name: agentName,
+                name, phone,
+                created: Date.now()
+            });
+            showToast('✅ လူ ထည့်ပြီးပြီ');
+        }
+        closePlayerModal();
+        await renderPlayers();
+        updateSyncPill();
+    } catch (e) {
+        showToast('❌ သိမ်းမရပါ: ' + e.message);
+    }
+};
+
+window.deletePlayer = async function deletePlayer(id) {
+    const p = await db.get('players', id);
+    if (!p) return;
+    if (!confirm('"' + p.name + '" ကို ဖျက်မှာလား?')) return;
+    await sync.mutate('delete', 'players', { id });
+    await renderPlayers();
+    showToast('🗑️ ဖျက်ပြီးပြီ');
+};
+
+async function renderPlayers() {
+    const listEl = document.getElementById('playersList');
+    const emptyEl = document.getElementById('playersEmpty');
+    const players = await getPlayers();
+
+    // Current-session totals per player (for quick reference).
+    let sessRecs = [];
+    if (currentSessionId) {
+        try {
+            sessRecs = (await db.query('lottery_records', 'by_session', currentSessionId))
+                .filter((r) => (r.agent_name || '') === agentName);
+        } catch (e) { /* ignore */ }
+    }
+    const totals = {};
+    sessRecs.forEach((r) => {
+        const k = r.player_name || '';
+        totals[k] = totals[k] || { amount: 0, count: 0 };
+        totals[k].amount += Number(r.amount) || 0;
+        totals[k].count += 1;
+    });
+
+    if (!players.length) {
+        listEl.innerHTML = '';
+        emptyEl.hidden = false;
+        return;
+    }
+    emptyEl.hidden = true;
+    listEl.innerHTML = players.map((p) => {
+        const t = totals[p.name] || { amount: 0, count: 0 };
+        return '<div class="player-row">' +
+            '<div class="player-info" onclick="openPlayerModal(\'' + p.id + '\')">' +
+                '<div class="player-name">👤 ' + escHtml(p.name) + '</div>' +
+                (p.phone ? '<div class="player-phone">📞 ' + escHtml(p.phone) + '</div>' : '') +
+                '<div class="player-sess">ဒီ session: ' + formatMoney(t.amount) + ' (' + t.count + ' ကွက်)</div>' +
+            '</div>' +
+            '<button class="rec-del" onclick="deletePlayer(\'' + p.id + '\')" title="ဖျက်မည်">🗑️</button>' +
+        '</div>';
+    }).join('');
+}
+
+/* ================= Custom keyboard ================= */
+
+window.toggleKeyboard = function toggleKeyboard() {
+    const kb = document.getElementById('boardKeyboard');
+    kb.hidden = !kb.hidden;
+};
+
+/** Insert key at cursor (or handle BS/CLR). */
+window.kbPress = function kbPress(k) {
+    const ta = document.getElementById('boardTextarea');
+    if (k === 'BS') {
+        const s = ta.selectionStart || ta.value.length;
+        const e = ta.selectionEnd || ta.value.length;
+        if (s !== e) ta.value = ta.value.slice(0, s) + ta.value.slice(e);
+        else ta.value = ta.value.slice(0, Math.max(0, s - 1)) + ta.value.slice(s);
+        const pos = Math.max(0, (s !== e ? s : s - 1));
+        ta.setSelectionRange(pos, pos);
+    } else if (k === 'CLR') {
+        ta.value = '';
+    } else {
+        const s = ta.selectionStart != null ? ta.selectionStart : ta.value.length;
+        const e = ta.selectionEnd != null ? ta.selectionEnd : ta.value.length;
+        ta.value = ta.value.slice(0, s) + k + ta.value.slice(e);
+        const pos = s + k.length;
+        ta.setSelectionRange(pos, pos);
+    }
+    ta.focus();
+    updateBoardPreview();
+};
+
+/* ================= Voucher (တဦးချင်းဘောက်ချာ) ================= */
+
+/** Group records by number → { number, amount, count }, sorted by number. */
+function groupByNumber(recs) {
+    const map = {};
+    recs.forEach((r) => {
+        const n = String(r.number || '');
+        if (!map[n]) map[n] = { number: n, amount: 0, count: 0 };
+        map[n].amount += Number(r.amount) || 0;
+        map[n].count += 1;
+    });
+    return Object.values(map).sort((a, b) => a.number.localeCompare(b.number, undefined, { numeric: true }));
+}
+
+async function getAgentSessions() {
+    try {
+        const sessions = await db.query('sessions', 'by_tenant', tenantId);
+        return sessions.sort((a, b) => (b.created || 0) - (a.created || 0));
+    } catch (e) {
+        return [];
+    }
+}
+
+window.renderVoucher = async function renderVoucher() {
+    const playerSel = document.getElementById('voucherPlayer');
+    const sessSel = document.getElementById('voucherSession');
+    const content = document.getElementById('voucherContent');
+
+    const players = await getPlayers();
+    const sessions = await getAgentSessions();
+
+    // Preserve selections across re-renders.
+    const prevPlayer = playerSel.value;
+    const prevSess = sessSel.value;
+
+    let pHtml = '<option value="">🧍 ကိုယ်တိုင်</option>';
+    pHtml += players.map((p) => '<option value="' + escHtml(p.name) + '">' + escHtml(p.name) + '</option>').join('');
+    playerSel.innerHTML = pHtml;
+    if (prevPlayer !== undefined && Array.from(playerSel.options).some((o) => o.value === prevPlayer)) {
+        playerSel.value = prevPlayer;
+    }
+
+    sessSel.innerHTML = sessions.map((s) =>
+        '<option value="' + s.id + '">' + escHtml(s.name || 'Session') + '</option>').join('');
+    if (prevSess && Array.from(sessSel.options).some((o) => o.value === prevSess)) {
+        sessSel.value = prevSess;
+    } else if (currentSessionId) {
+        sessSel.value = currentSessionId;
+    }
+
+    const selPlayer = playerSel.value; // '' = self (no player_name)
+    const sessId = sessSel.value;
+    if (!sessId) {
+        content.innerHTML = '<div class="empty-state">Session မရှိသေးပါ</div>';
+        return;
+    }
+
+    let recs = [];
+    try {
+        recs = await db.query('lottery_records', 'by_session', sessId);
+    } catch (e) { /* ignore */ }
+    recs = recs.filter((r) =>
+        (r.agent_name || '') === agentName &&
+        (selPlayer ? (r.player_name || '') === selPlayer : !(r.player_name || ''))
+    );
+
+    if (!recs.length) {
+        content.innerHTML = '<div class="empty-state">စာရင်း မရှိသေးပါ</div>';
+        return;
+    }
+
+    const grouped = groupByNumber(recs);
+    const totalAmt = grouped.reduce((s, g) => s + g.amount, 0);
+    const totalCount = grouped.reduce((s, g) => s + g.count, 0);
+
+    content.innerHTML =
+        '<div class="voucher-head">🧾 ' + escHtml(selPlayer || 'ကိုယ်တိုင်') +
+        ' — <b>' + grouped.length + '</b> မျိုး, <b>' + formatMoney(totalAmt) + '</b></div>' +
+        grouped.map((g) =>
+            '<div class="voucher-row">' +
+                '<span class="v-no">' + escHtml(g.number) + '</span>' +
+                '<span class="v-amt">' + formatMoney(g.amount) + '</span>' +
+                '<span class="v-count">' + g.count + ' ကြိမ်</span>' +
+            '</div>'
+        ).join('') +
+        '<div class="voucher-total"><span>စုစုပေါင်း</span><b>' + formatMoney(totalAmt) +
+        ' (' + totalCount + ' ကွက်)</b></div>';
+};
+
+/* ================= Daily (တနေ့စာစာရင်း) ================= */
+
+const BURMESE_DAYS = ['တနင်္ဂနွေ', 'တနင်္လာ', 'အင်္ဂါ', 'ဗုဒ္ဓဟူး', 'ကြာသပတေး', 'သောကြာ', 'စနေ'];
+
+function pad2(n) { return String(n).padStart(2, '0'); }
+
+/** Local date key "YYYY-MM-DD" for a timestamp. */
+function dateKey(ts) {
+    const d = new Date(Number(ts) || 0);
+    return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+}
+
+/** "YYYY-MM-DD" for a Date (for <input type=date>). */
+function toISODate(d) {
+    return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+}
+
+/** Display label for a player key ('' = self). */
+function playerLabel(key) {
+    return key ? key : '🧍 ကိုယ်တိုင်';
+}
+
+/** All of this agent's records in this tenant. */
+async function getAgentRecords() {
+    try {
+        const all = await db.query('lottery_records', 'by_tenant', tenantId);
+        return all.filter((r) => (r.agent_name || '') === agentName);
+    } catch (e) {
+        return [];
+    }
+}
+
+window.renderDaily = async function renderDaily() {
+    const dateInput = document.getElementById('dailyDate');
+    const content = document.getElementById('dailyContent');
+    if (!dateInput.value) dateInput.value = toISODate(new Date());
+    const key = dateInput.value;
+
+    const recs = (await getAgentRecords()).filter((r) => dateKey(r.created) === key);
+    content.innerHTML = renderPlayerGroups(recs, 'ဒီနေ့ စာရင်း မရှိပါ');
+};
+
+/**
+ * Render records grouped by player → per-player number groups + totals,
+ * plus a grand total. Shared by daily & weekly views.
+ */
+function renderPlayerGroups(recs, emptyMsg) {
+    if (!recs.length) return '<div class="empty-state">' + escHtml(emptyMsg || 'စာရင်း မရှိပါ') + '</div>';
+
+    const byPlayer = {};
+    recs.forEach((r) => {
+        const k = r.player_name || '';
+        (byPlayer[k] = byPlayer[k] || []).push(r);
+    });
+
+    const playerKeys = Object.keys(byPlayer).sort((a, b) => a.localeCompare(b));
+    let grandAmt = 0, grandCount = 0;
+    let html = '';
+
+    playerKeys.forEach((k) => {
+        const grouped = groupByNumber(byPlayer[k]);
+        const pAmt = grouped.reduce((s, g) => s + g.amount, 0);
+        const pCount = grouped.reduce((s, g) => s + g.count, 0);
+        grandAmt += pAmt;
+        grandCount += pCount;
+        html += '<div class="player-group">' +
+            '<div class="player-group-head"><span>👤 ' + escHtml(playerLabel(k)) + '</span>' +
+            '<b>' + formatMoney(pAmt) + ' <span class="muted-sm">(' + pCount + ' ကွက်)</span></b></div>' +
+            grouped.map((g) =>
+                '<div class="voucher-row">' +
+                    '<span class="v-no">' + escHtml(g.number) + '</span>' +
+                    '<span class="v-amt">' + formatMoney(g.amount) + '</span>' +
+                    '<span class="v-count">' + g.count + ' ကြိမ်</span>' +
+                '</div>'
+            ).join('') +
+        '</div>';
+    });
+
+    html += '<div class="voucher-total"><span>စုစုပေါင်း</span><b>' + formatMoney(grandAmt) +
+        ' (' + grandCount + ' ကွက်)</b></div>';
+    return html;
+}
+
+/* ================= Weekly (တပတ်စာစာရင်း) ================= */
+
+let weekOffset = 0; // 0 = this week, -1 = last week, +1 = next week
+
+window.changeWeek = function changeWeek(d) {
+    weekOffset = (d === 0) ? 0 : weekOffset + d;
+    renderWeekly();
+};
+
+window.renderWeekly = async function renderWeekly() {
+    const label = document.getElementById('weekLabel');
+    const content = document.getElementById('weeklyContent');
+
+    const base = new Date();
+    base.setDate(base.getDate() + weekOffset * 7);
+    const monday = getWeekMonday(base);
+    const sunday = new Date(monday);
+    sunday.setDate(sunday.getDate() + 6);
+
+    label.textContent = formatDateStr(monday) + ' – ' + formatDateStr(sunday);
+
+    const recs = await getAgentRecords();
+    const byDay = {};
+    recs.forEach((r) => {
+        const k = dateKey(r.created);
+        (byDay[k] = byDay[k] || []).push(r);
+    });
+
+    let weekAmt = 0, weekCount = 0;
+    let html = '';
+
+    for (let i = 0; i < 7; i++) {
+        const d = new Date(monday);
+        d.setDate(d.getDate() + i);
+        const key = toISODate(d);
+        const dayRecs = byDay[key] || [];
+        const dayAmt = dayRecs.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+        weekAmt += dayAmt;
+        weekCount += dayRecs.length;
+
+        const dayName = BURMESE_DAYS[d.getDay()];
+        html += '<div class="day-section">' +
+            '<div class="day-head"><span>📅 ' + dayName + ' <span class="muted-sm">' + formatDateStr(d) + '</span></span>' +
+            '<b>' + formatMoney(dayAmt) + ' <span class="muted-sm">(' + dayRecs.length + ' ကွက်)</span></b></div>';
+
+        if (dayRecs.length) {
+            // Per-player totals for the day.
+            const perPlayer = {};
+            dayRecs.forEach((r) => {
+                const k = r.player_name || '';
+                perPlayer[k] = perPlayer[k] || { amount: 0, count: 0 };
+                perPlayer[k].amount += Number(r.amount) || 0;
+                perPlayer[k].count += 1;
+            });
+            html += Object.keys(perPlayer).sort((a, b) => a.localeCompare(b)).map((k) =>
+                '<div class="day-player"><span>👤 ' + escHtml(playerLabel(k)) + '</span>' +
+                '<span>' + formatMoney(perPlayer[k].amount) + ' <span class="muted-sm">(' + perPlayer[k].count + ' ကွက်)</span></span></div>'
+            ).join('');
+        } else {
+            html += '<div class="day-empty">— စာရင်း မရှိပါ —</div>';
+        }
+        html += '</div>';
+    }
+
+    html += '<div class="voucher-total"><span>📊 တပတ် စုစုပေါင်း</span><b>' + formatMoney(weekAmt) +
+        ' (' + weekCount + ' ကွက်)</b></div>';
+    content.innerHTML = html;
+};

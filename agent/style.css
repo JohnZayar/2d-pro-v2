@@ -207,3 +207,133 @@ html, body {
     .btn-board { padding: 22px 12px; font-size: 18px; }
     .record-row .rec-no { font-size: 18px; }
 }
+
+/* ---------- Bottom tab bar ---------- */
+.app-main { padding-bottom: 84px; }
+.tabpane { display: flex; flex-direction: column; gap: 14px; }
+.tabpane[hidden] { display: none; }
+
+.tabbar {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 60;
+    display: grid; grid-template-columns: repeat(5, 1fr);
+    background: #0f172a; border-top: 1px solid var(--border);
+    padding: 6px 4px calc(6px + env(safe-area-inset-bottom));
+}
+.tabbar .tab {
+    background: none; border: none; color: var(--muted);
+    display: flex; flex-direction: column; align-items: center; gap: 2px;
+    font-size: 20px; padding: 6px 2px; cursor: pointer; border-radius: 10px;
+}
+.tabbar .tab span { font-size: 10px; font-weight: 600; }
+.tabbar .tab.active { color: #fff; background: rgba(59,130,246,.15); }
+
+/* ---------- Players ---------- */
+.btn-add {
+    background: linear-gradient(135deg, #0ea5e9, #0369a1); color: #fff;
+    border: none; border-radius: 10px; padding: 8px 14px;
+    font-size: 14px; font-weight: 700; cursor: pointer;
+}
+.btn-add:active { transform: scale(.97); }
+.player-row {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 10px; padding: 10px 14px;
+    display: flex; justify-content: space-between; align-items: center; gap: 8px;
+}
+.player-info { flex: 1; cursor: pointer; }
+.player-name { font-size: 16px; font-weight: 800; }
+.player-phone { font-size: 13px; color: var(--muted); margin-top: 2px; }
+.player-sess { font-size: 12px; color: var(--green); margin-top: 4px; }
+.rec-player {
+    display: block; font-size: 11px; font-weight: 400;
+    color: var(--muted); margin-top: 2px;
+}
+
+/* ---------- Voucher / daily / weekly ---------- */
+select.field-input { appearance: auto; }
+.voucher-content, .daily-content, .weekly-content {
+    display: flex; flex-direction: column; gap: 10px;
+}
+.voucher-head {
+    background: var(--card); border: 1px solid var(--accent);
+    border-radius: 10px; padding: 10px 14px; font-size: 14px;
+}
+.voucher-row {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 10px; padding: 10px 14px;
+    display: flex; justify-content: space-between; align-items: center;
+}
+.voucher-row .v-no { font-size: 20px; font-weight: 800; color: var(--yellow); }
+.voucher-row .v-amt { font-size: 15px; color: var(--green); font-weight: 700; }
+.voucher-row .v-count { font-size: 12px; color: var(--muted); }
+.voucher-total {
+    background: #0a0f1a; border: 1px solid var(--accent);
+    border-radius: 10px; padding: 12px 14px;
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 15px;
+}
+.voucher-total b { color: var(--yellow); }
+.player-group {
+    background: var(--card2); border: 1px solid var(--border);
+    border-radius: 12px; padding: 10px;
+    display: flex; flex-direction: column; gap: 8px;
+}
+.player-group-head {
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 14px; padding: 2px 4px;
+}
+.player-group-head b { color: var(--green); }
+.muted-sm { font-size: 11px; color: var(--muted); font-weight: 400; }
+
+/* ---------- Week nav / day sections ---------- */
+.week-nav {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 12px; padding: 8px 10px;
+}
+.week-btn {
+    background: var(--card2); border: 1px solid var(--border); color: var(--text);
+    font-size: 18px; font-weight: 800; border-radius: 10px;
+    min-width: 44px; padding: 8px 10px; cursor: pointer;
+}
+.week-btn:active { transform: scale(.95); }
+.week-today { font-size: 13px; margin-left: auto; }
+.week-label { font-size: 13px; color: var(--muted); flex: 1; text-align: center; }
+.day-section {
+    background: var(--card2); border: 1px solid var(--border);
+    border-radius: 12px; padding: 10px;
+    display: flex; flex-direction: column; gap: 6px;
+}
+.day-head {
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 14px; font-weight: 700; padding: 2px 4px;
+}
+.day-head b { color: var(--green); }
+.day-player {
+    display: flex; justify-content: space-between; align-items: center;
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 8px; padding: 8px 12px; font-size: 13px;
+}
+.day-empty { text-align: center; color: var(--muted); font-size: 12px; padding: 6px; }
+
+/* ---------- Board: player select + keyboard ---------- */
+.board-player-row { display: flex; flex-direction: column; gap: 6px; }
+.btn-kb-toggle {
+    background: #1e293b; border: 1px solid var(--border); color: var(--text);
+    border-radius: 10px; padding: 10px; font-size: 14px; font-weight: 600; cursor: pointer;
+}
+.btn-kb-toggle:active { transform: scale(.98); }
+.kb {
+    display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px;
+    background: #0a0f1a; border: 1px solid var(--border);
+    border-radius: 12px; padding: 10px;
+}
+.kb[hidden] { display: none; }
+.kb-key {
+    background: #1e293b; border: 1px solid var(--border); color: #fff;
+    border-radius: 10px; padding: 14px 4px;
+    font-size: 17px; font-weight: 800; cursor: pointer;
+    font-family: inherit;
+}
+.kb-key:active { transform: scale(.94); background: #334155; }
+.kb-fn { background: #0c4a6e; border-color: #0284c7; font-size: 14px; }
+.kb-del { background: #4c1d1d; border-color: #7f1d1d; }
