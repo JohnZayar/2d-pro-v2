@@ -10,7 +10,7 @@
  */
 
 const DB_NAME = '2dProV2';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 const STORES = [
     'tenants',
@@ -19,6 +19,7 @@ const STORES = [
     'winning_numbers',
     'agents',
     'app_settings',
+    'players',
     'sync_queue'
 ];
 
@@ -39,6 +40,10 @@ const INDEXES = {
     ],
     agents: [
         { name: 'by_tenant', keyPath: 'tenant', unique: false }
+    ],
+    players: [
+        { name: 'by_tenant', keyPath: 'tenant', unique: false },
+        { name: 'by_agent', keyPath: 'agent_name', unique: false }
     ],
     app_settings: [
         { name: 'by_tenant', keyPath: 'tenant', unique: false }
