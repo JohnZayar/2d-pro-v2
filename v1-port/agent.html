@@ -47,12 +47,24 @@
         .page-view { display: none; flex: 1; flex-direction: column; overflow: hidden; height: 100%; }
         .page-view.active { display: flex; }
 
-        /* Homepage Grid */
-        .home-grid { padding: 20px; display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; align-content: start; flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
-        .home-card { background: linear-gradient(135deg, #1e293b, #0f172a); border: 1px solid #334155; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; cursor: pointer; text-align: center; min-height: 120px; }
-        .home-card:active { background: #253047; border-color: #38bdf8; }
-        .home-card span:first-child { font-size: 30px; }
-        .home-card span:last-child { font-size: 12px; font-weight: bold; color: #f1c40f; }
+        /* Homepage Grid - v2 style */
+        .home-grid { padding: 20px; display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; align-content: start; flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+        .home-card { background: linear-gradient(160deg, #1a2436 0%, #121b2e 100%); border: 1px solid #334155; border-radius: 18px; padding: 22px 12px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; cursor: pointer; text-align: center; min-height: 128px; box-shadow: 0 6px 16px rgba(0,0,0,0.5); transition: transform .12s ease, border-color .12s ease; animation: fadeSlideIn .18s ease; }
+        .home-card:active { transform: scale(.95); border-color: #38bdf8; }
+        .home-card .card-icon { font-size: 38px; line-height: 1; }
+        .home-card .card-label { font-size: 15px; font-weight: 800; color: #f1c40f; }
+        .home-card .card-sub { font-size: 11px; color: #94a3b8; }
+        .home-card.card-blue { background: linear-gradient(135deg, #0ea5e9 0%, #0369a1 60%, #075985 100%); border-color: rgba(255,255,255,.2); box-shadow: 0 10px 28px rgba(2,132,199,.4), inset 0 1px 0 rgba(255,255,255,.25); }
+        .home-card.card-blue .card-label { color: #fff; } .home-card.card-blue .card-sub { color: rgba(255,255,255,.85); }
+        .home-card.card-green { background: linear-gradient(135deg, #10b981 0%, #047857 60%, #065f46 100%); border-color: rgba(255,255,255,.2); box-shadow: 0 10px 28px rgba(16,185,129,.35), inset 0 1px 0 rgba(255,255,255,.25); }
+        .home-card.card-green .card-label { color: #fff; } .home-card.card-green .card-sub { color: rgba(255,255,255,.85); }
+        .home-card.card-purple { background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 60%, #5b21b6 100%); border-color: rgba(255,255,255,.2); box-shadow: 0 10px 28px rgba(139,92,246,.35), inset 0 1px 0 rgba(255,255,255,.25); }
+        .home-card.card-purple .card-label { color: #fff; } .home-card.card-purple .card-sub { color: rgba(255,255,255,.85); }
+        .home-card.card-amber { background: linear-gradient(135deg, #f59e0b 0%, #d97706 60%, #b45309 100%); border-color: rgba(255,255,255,.2); box-shadow: 0 10px 28px rgba(245,158,11,.35), inset 0 1px 0 rgba(255,255,255,.25); }
+        .home-card.card-amber .card-label { color: #fff; } .home-card.card-amber .card-sub { color: rgba(255,255,255,.85); }
+        .home-card.card-rose { background: linear-gradient(135deg, #f43f5e 0%, #e11d48 60%, #be123c 100%); border-color: rgba(255,255,255,.2); box-shadow: 0 10px 28px rgba(244,63,94,.35), inset 0 1px 0 rgba(255,255,255,.25); }
+        .home-card.card-rose .card-label { color: #fff; } .home-card.card-rose .card-sub { color: rgba(255,255,255,.85); }
+        @keyframes fadeSlideIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 
         .table-container { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; background: #0b0f17; padding: 10px; }
         .pos-table { width: 100%; border-collapse: collapse; }
@@ -855,33 +867,40 @@ PB.loadAuth();
                     <span class="conn-pill" style="font-size:10px; font-weight:bold; padding:4px 8px; border-radius:20px; border:1px solid #f59e0b; background:#78350f; color:#fcd34d; white-space:nowrap;">🟡 ချိတ်ဆက်နေသည်…</span>
                 </div>
                 <div class="home-grid">
-                    <div class="home-card" onclick="switchPortalPage('POS')">
-                        <span>📝</span>
-                        <span>စာရင်းသွင်းရန်</span>
+                    <div class="home-card card-blue" onclick="switchPortalPage('POS')">
+                        <span class="card-icon">📝</span>
+                        <span class="card-label">စာရင်းသွင်းရန်</span>
+                        <span class="card-sub">ဂဏန်းရိုက် ထည့်သွင်း</span>
                     </div>
-                    <div class="home-card" onclick="switchPortalPage('SubUsers')">
-                        <span>👥</span>
-                        <span>ထိုးသားစာရင်းများ</span>
+                    <div class="home-card card-purple" onclick="switchPortalPage('SubUsers')">
+                        <span class="card-icon">👥</span>
+                        <span class="card-label">ထိုးသားစာရင်းများ</span>
+                        <span class="card-sub">လူစာရင်း ကြည့်ရန်</span>
                     </div>
-                    <div class="home-card" onclick="switchPortalPage('History')">
-                        <span>📊</span>
-                        <span>ကိုယ်ပိုင်စာရင်းချုပ်</span>
+                    <div class="home-card card-green" onclick="switchPortalPage('History')">
+                        <span class="card-icon">📊</span>
+                        <span class="card-label">ကိုယ်ပိုင်စာရင်းချုပ်</span>
+                        <span class="card-sub">စာရင်းအဟောင်း</span>
                     </div>
-                    <div class="home-card" onclick="switchPortalPage('Weekly')">
-                        <span>📅</span>
-                        <span>၇ ရက်စာ အချုပ်</span>
+                    <div class="home-card card-amber" onclick="switchPortalPage('Weekly')">
+                        <span class="card-icon">📅</span>
+                        <span class="card-label">၇ ရက်စာ အချုပ်</span>
+                        <span class="card-sub">အပတ်စဉ် စာရင်း</span>
                     </div>
                     <div class="home-card" onclick="openReceiptModal()">
-                        <span>📄</span>
-                        <span>စာရွက်ထုတ်ရန်/Save</span>
+                        <span class="card-icon">📄</span>
+                        <span class="card-label">စာရွက်ထုတ်ရန်/Save</span>
+                        <span class="card-sub">ဘောက်ချာ ထုတ်ရန်</span>
                     </div>
-                    <div class="home-card" onclick="openWinningModal()">
-                        <span>🎯</span>
-                        <span>ပေါက်သီး စစ်ဆေးရန်</span>
+                    <div class="home-card card-rose" onclick="openWinningModal()">
+                        <span class="card-icon">🎯</span>
+                        <span class="card-label">ပေါက်သီး စစ်ဆေးရန်</span>
+                        <span class="card-sub">ထွက်ဂဏန်း ကြည့်ရန်</span>
                     </div>
                     <div class="home-card" onclick="openServerUrlModal()">
-                        <span>🌐</span>
-                        <span>ဆာဗာ URL</span>
+                        <span class="card-icon">🌐</span>
+                        <span class="card-label">ဆာဗာ URL</span>
+                        <span class="card-sub">ဆာဗာ လိပ်စာ ပြင်ရန်</span>
                     </div>
                 </div>
             </div>
