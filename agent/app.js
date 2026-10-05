@@ -376,7 +376,7 @@ async function renderPlayers() {
             '<div class="player-info" onclick="openPlayerModal(\'' + p.id + '\')">' +
                 '<div class="player-name">👤 ' + escHtml(p.name) + '</div>' +
                 (p.phone ? '<div class="player-phone">📞 ' + escHtml(p.phone) + '</div>' : '') +
-                '<div class="player-sess">ဒီ session: ' + formatMoney(t.amount) + ' (' + t.count + ' ကွက်)</div>' +
+                '<div class="player-sess">ဒီ session: ' + formatMoney(t.amount) + '</div>' +
             '</div>' +
             '<button class="rec-del" onclick="deletePlayer(\'' + p.id + '\')" title="ဖျက်မည်">🗑️</button>' +
         '</div>';
@@ -566,7 +566,7 @@ window.submitEntry = async function submitEntry() {
     clearInputs();
     await renderEntryTable();
     const skipped = invalidLines.length + (items.length - validItems.length);
-    showToast('✅ ' + validItems.length + ' ကွက် ထည့်ပြီးပြီ' +
+    showToast('✅ ထည့်ပြီးပြီ' +
         (skipped ? ' (⚠️ ' + skipped + ' လိုင်း ကျန်)' : ''));
 };
 
@@ -613,7 +613,7 @@ window.savePendingBatch = async function savePendingBatch() {
         pendingEntries = [];
         await renderEntryTable();
         updateSyncPill();
-        showToast('✅ ' + count + ' ကွက် သိမ်းပြီးပြီ');
+        showToast('✅ သိမ်းပြီးပြီ');
     } catch (e) {
         console.error('[agent] savePendingBatch failed', e);
         showToast('❌ သိမ်းမရပါ: ' + e.message);
@@ -796,7 +796,7 @@ function buildVoucherText() {
         });
     });
     lines.push('─────────────');
-    lines.push('စုစုပေါင်း: ' + formatMoney(v.totalAmt) + ' (' + v.totalCount + ' ကွက်)');
+    lines.push('စုစုပေါင်း: ' + formatMoney(v.totalAmt));
     return lines.join('\n');
 }
 
@@ -851,7 +851,7 @@ window.printVoucher = function printVoucher() {
             '<div class="pr-line"></div>' + body +
             '<div class="pr-line"></div>' +
             '<div class="pr-total"><span>စုစုပေါင်း</span><span>' + formatMoney(v.totalAmt) +
-            ' (' + v.totalCount + ' ကွက်)</span></div>' +
+            '</span></div>' +
         '</div>';
     window.print();
 };
@@ -879,7 +879,7 @@ window.openBatchDetail = async function openBatchDetail(playerKey, batchNo) {
                        (Number(r.batch_no) || 0) === batchDetailCtx.batchNo);
 
     $('batchDetailTitle').textContent = '🧾 ' + playerLabel(batchDetailCtx.playerKey) +
-        ' (' + batchLabel(batchDetailCtx.batchNo) + ') — ' + recs.length + ' ကွက်';
+        ' (' + batchLabel(batchDetailCtx.batchNo) + ')';
     $('batchDetailList').innerHTML = recs.length ? recs.map((r) =>
         '<div class="record-row">' +
             '<span class="rec-no">' + escHtml(r.number) + '</span>' +
@@ -999,7 +999,7 @@ const updateBoardPreview = debounce(() => {
     if (!text.trim()) { box.hidden = true; return; }
     const { items, invalidLines } = parseBoardReport(text);
     box.hidden = false;
-    box.innerHTML = '✅ <b>' + items.length + '</b> ကွက် ဝင်မယ်' +
+    box.innerHTML = '✅ ဝင်မယ်' +
         (invalidLines.length ? ' &nbsp; <span class="warn">⚠️ ' + invalidLines.length + ' လိုင်း ပြင်ရန်</span>' : '');
 }, 400);
 
@@ -1048,7 +1048,7 @@ window.saveBoard = async function saveBoard() {
         if (activeScreen === 'records') await renderRecordsView();
         updateSyncPill();
         const skipped = invalidLines.length + (items.length - validItems.length);
-        showToast('✅ No' + batchNo + ' — ' + validItems.length + ' ကွက် သိမ်းပြီးပြီ' +
+        showToast('✅ No' + batchNo + ' — သိမ်းပြီးပြီ' +
             (skipped ? ' (⚠️ ' + skipped + ' လိုင်း ကျန်)' : ''));
     } catch (e) {
         console.error('[agent] saveBoard failed', e);
