@@ -123,12 +123,29 @@
  * Uses app_settings collection as blob storage for v1's 2d_* keys.
  */
 
-const PB_BASE = 'https://sought-slides-douglas-wagner.trycloudflare.com';
+const PB_DEFAULT_BASE = 'https://sought-slides-douglas-wagner.trycloudflare.com';
+const PB_URL_KEY = 'pb_server_url'; // localStorage key for custom server URL
 const PB_AUTH_KEY = 'pb_v1_auth'; // localStorage key for {token, userId, tenantId}
+
+/* Server URL: custom value from Settings, or default fallback */
+function getServerUrl() {
+    try {
+        const custom = localStorage.getItem(PB_URL_KEY);
+        if (custom && custom.trim()) return custom.trim().replace(/\/+$/, '');
+    } catch (e) {}
+    return PB_DEFAULT_BASE;
+}
+function saveServerUrlSetting(url) {
+    try {
+        url = (url || '').trim().replace(/\/+$/, '');
+        if (!url) { localStorage.removeItem(PB_URL_KEY); }
+        else { localStorage.setItem(PB_URL_KEY, url); }
+    } catch (e) {}
+}
 
 /* ============ PocketBase HTTP client ============ */
 const PB = {
-    baseUrl: PB_BASE,
+    get baseUrl() { return getServerUrl(); },
     token: null,
     userId: null,
     tenantId: null,
@@ -799,6 +816,23 @@ PB.loadAuth();
         </div>
     </div>
 
+    <!-- Server URL Modal -->
+    <div class="modal" id="serverUrlModal">
+        <div class="custom-card">
+            <div class="modal-header">
+                <span>🌐 ဆာဗာ URL</span>
+                <span onclick="closeServerUrlModal()">✕</span>
+            </div>
+            <div class="form-group">
+                <label>Server URL (ဗလာထားရင် မူလ URL သုံးမယ်)</label>
+                <input type="text" id="serverUrlInput" placeholder="https://...">
+            </div>
+            <div id="serverUrlMsg" style="font-size:12px; margin-bottom:8px;"></div>
+            <button class="btn-modal-action" onclick="saveServerUrlAgent()">💾 သိမ်းမည်</button>
+            <button class="btn-modal-action" style="background:#374151; color:#d1d5db; margin-top:8px;" onclick="closeServerUrlModal()">ပိတ်မည်</button>
+        </div>
+    </div>
+
     <div class="phone-frame">
         <!-- Top Bar -->
         <div class="top-bar">
@@ -844,6 +878,10 @@ PB.loadAuth();
                     <div class="home-card" onclick="openWinningModal()">
                         <span>🎯</span>
                         <span>ပေါက်သီး စစ်ဆေးရန်</span>
+                    </div>
+                    <div class="home-card" onclick="openServerUrlModal()">
+                        <span>🌐</span>
+                        <span>ဆာဗာ URL</span>
                     </div>
                 </div>
             </div>
@@ -2047,6 +2085,34 @@ PB.loadAuth();
             });
         }
         function closeWinningModal() { document.getElementById('winningModal').style.display = 'none'; }
+
+        /* ---- Server URL setting ---- */
+        function openServerUrlModal() {
+            const el = document.getElementById('serverUrlInput');
+            const msg = document.getElementById('serverUrlMsg');
+            if (el) {
+                let custom = '';
+                try { custom = localStorage.getItem(PB_URL_KEY) || ''; } catch (e) {}
+                el.value = custom;
+                el.placeholder = PB_DEFAULT_BASE;
+            }
+            if (msg) msg.textContent = '';
+            document.getElementById('serverUrlModal').style.display = 'flex';
+        }
+        function closeServerUrlModal() { document.getElementById('serverUrlModal').style.display = 'none'; }
+        function saveServerUrlAgent() {
+            const el = document.getElementById('serverUrlInput');
+            const msg = document.getElementById('serverUrlMsg');
+            const url = el ? el.value.trim() : '';
+            if (url && !/^https?:\/\//i.test(url)) {
+                if (msg) { msg.style.color = '#f43f5e'; msg.textContent = '❌ URL က https:// နဲ့ စရမယ်'; }
+                return;
+            }
+            saveServerUrlSetting(url);
+            if (msg) { msg.style.color = '#22c55e'; msg.textContent = '✅ သိမ်းပြီးပြီ'; }
+            try { showMessage('✅ ဆာဗာ URL သိမ်းပြီးပြီ — App ကို ပြန်ဖွင့်ပါ'); } catch (e) {}
+            setTimeout(closeServerUrlModal, 1200);
+        }
 
         /* ---- Multi-tenant Main linking (v217) ---- */
         let __agentBooted = false;

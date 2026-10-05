@@ -421,6 +421,16 @@
 
                     <div class="info-card" style="background:#1a202c; border:1px solid #2d3748; border-radius:10px; padding:16px;">
                         <h3 style="color:#f43f5e; font-size:15px; margin-bottom:8px;">⚙️ စနစ် ဆက်တင်များ</h3>
+                        <!-- Server URL setting (PocketBase) -->
+                        <div style="margin-bottom:12px; padding:12px; background:#111827; border-radius:8px; border:1px solid #374151;">
+                            <div style="font-size:13px; color:#d1d5db; margin-bottom:8px; font-weight:bold;">🌐 ဆာဗာ URL</div>
+                            <div style="font-size:11px; color:#9ca3af; margin-bottom:8px;">Tunnel address ပြောင်းသွားရင် ဒီမှာ URL အသစ် ထည့်ပါ။ ဗလာထားရင် မူလ URL ကို သုံးမယ်။</div>
+                            <div style="display:flex; gap:8px;">
+                                <input type="text" id="serverUrlInput" placeholder="https://..." style="flex:1; background:#0b0f17; color:#fff; border:1px solid #374151; padding:8px; border-radius:6px; font-size:12px;">
+                                <button class="btn-modal-action" style="background:#38bdf8; color:#000; width:auto; padding:8px 16px; margin-top:0;" onclick="saveServerUrlUI()">သိမ်း</button>
+                            </div>
+                            <div id="serverUrlMsg" style="font-size:11px; color:#22c55e; margin-top:6px;"></div>
+                        </div>
                         <!-- v220: Device Password for selling — admin sets it, buyers need it to activate -->
                         <div style="margin-bottom:12px; padding:12px; background:#111827; border-radius:8px; border:1px solid #374151;">
                             <div style="font-size:13px; color:#d1d5db; margin-bottom:8px; font-weight:bold;">🔒 Device Password (ရောင်းရန်)</div>
@@ -709,12 +719,29 @@
  * Uses app_settings collection as blob storage for v1's 2d_* keys.
  */
 
-const PB_BASE = 'https://sought-slides-douglas-wagner.trycloudflare.com';
+const PB_DEFAULT_BASE = 'https://sought-slides-douglas-wagner.trycloudflare.com';
+const PB_URL_KEY = 'pb_server_url'; // localStorage key for custom server URL
 const PB_AUTH_KEY = 'pb_v1_auth'; // localStorage key for {token, userId, tenantId}
+
+/* Server URL: custom value from Settings, or default fallback */
+function getServerUrl() {
+    try {
+        const custom = localStorage.getItem(PB_URL_KEY);
+        if (custom && custom.trim()) return custom.trim().replace(/\/+$/, '');
+    } catch (e) {}
+    return PB_DEFAULT_BASE;
+}
+function saveServerUrlSetting(url) {
+    try {
+        url = (url || '').trim().replace(/\/+$/, '');
+        if (!url) { localStorage.removeItem(PB_URL_KEY); }
+        else { localStorage.setItem(PB_URL_KEY, url); }
+    } catch (e) {}
+}
 
 /* ============ PocketBase HTTP client ============ */
 const PB = {
-    baseUrl: PB_BASE,
+    get baseUrl() { return getServerUrl(); },
     token: null,
     userId: null,
     tenantId: null,
@@ -1345,6 +1372,29 @@ PB.loadAuth();
             });
         }
 
+        /* Server URL setting — custom PocketBase URL, takes effect on reload */
+        function loadServerUrlUI() {
+            const el = document.getElementById('serverUrlInput');
+            if (el) {
+                let custom = '';
+                try { custom = localStorage.getItem(PB_URL_KEY) || ''; } catch (e) {}
+                el.value = custom;
+                el.placeholder = PB_DEFAULT_BASE;
+            }
+        }
+        function saveServerUrlUI() {
+            const el = document.getElementById('serverUrlInput');
+            const msg = document.getElementById('serverUrlMsg');
+            const url = el ? el.value.trim() : '';
+            if (url && !/^https?:\/\//i.test(url)) {
+                if (msg) { msg.style.color = '#f43f5e'; msg.textContent = '❌ URL က https:// နဲ့ စရမယ်'; }
+                return;
+            }
+            saveServerUrlSetting(url);
+            if (msg) { msg.style.color = '#22c55e'; msg.textContent = '✅ သိမ်းပြီးပြီ — App ကို ပြန်ဖွင့်ပါ (reload)'; }
+            try { showMessage('✅ ဆာဗာ URL သိမ်းပြီးပြီ — ပြန်ဖွင့်ပါ'); } catch (e) {}
+        }
+
         /* v221.2: Master Admin is hidden — only Pho can unlock with master password */
         const MASTER_ADMIN_PASSWORD = 'pho2024master'; /* Pho: change this to your own! */
         function unlockMasterAdmin() {
@@ -1675,6 +1725,7 @@ PB.loadAuth();
                 if(pageName === 'Sessions') renderSessionsList();
                 else if(pageName === 'Users') renderUsersList();
                 else if(pageName === 'Results') loadWinningNumber();
+                else if(pageName === 'Settings') loadServerUrlUI();
             } else if(pageName === 'WeeklyReport') {
                 if(topIcons) topIcons.style.display = 'none';
                 if(footerBar) footerBar.style.display = 'none';
