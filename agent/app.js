@@ -760,20 +760,20 @@ window.renderRecordsView = async function renderRecordsView() {
     voucherPlayers.forEach((p) => {
         html += '<div class="v-player-block">' +
             '<div class="v-player-head"><span>👤 ' + escHtml(p.label) + '</span>' +
-            '<b>' + formatMoney(p.totalAmt) + ' <span class="muted-sm">(' + p.totalCount + ' ကွက်)</span></b></div>';
+            '<b>' + formatMoney(p.totalAmt) + '</b></div>';
         p.batches.forEach((b) => {
             html += '<div class="v-batch">' +
                 '<div class="v-batch-head" onclick="openBatchDetail(\'' + escHtml(p.key) + '\',' + b.no + ')" title="အသေးစိတ် ကြည့်ရန်">' +
                     '<span class="v-batch-no">' + escHtml(p.label) + ' (' + escHtml(b.label) + ')</span>' +
                     '<span class="v-batch-time">' + escHtml(b.time) + '</span>' +
-                    '<span class="v-batch-total">' + formatMoney(b.totalAmt) + ' <span class="muted-sm">(' + b.totalCount + ' ကွက်)</span></span>' +
+                    '<span class="v-batch-total">' + formatMoney(b.totalAmt) + '</span>' +
                 '</div>' +
                 '</div>';
         });
         html += '</div>';
     });
     html += '<div class="voucher-total"><span>စုစုပေါင်း</span><b>' + formatMoney(grandAmt) +
-        ' (' + grandCount + ' ကွက်)</b></div>';
+        '</b></div>';
     content.innerHTML = html;
 };
 
@@ -1200,19 +1200,18 @@ function renderPlayerGroups(recs, emptyMsg) {
         grandCount += pCount;
         html += '<div class="player-group">' +
             '<div class="player-group-head"><span>👤 ' + escHtml(playerLabel(k)) + '</span>' +
-            '<b>' + formatMoney(pAmt) + ' <span class="muted-sm">(' + pCount + ' ကွက်)</span></b></div>' +
+            '<b>' + formatMoney(pAmt) + '</b></div>' +
             grouped.map((g) =>
                 '<div class="voucher-row">' +
                     '<span class="v-no">' + escHtml(g.number) + '</span>' +
                     '<span class="v-amt">' + formatMoney(g.amount) + '</span>' +
-                    '<span class="v-count">' + g.count + ' ကြိမ်</span>' +
                 '</div>'
             ).join('') +
         '</div>';
     });
 
     html += '<div class="voucher-total"><span>စုစုပေါင်း</span><b>' + formatMoney(grandAmt) +
-        ' (' + grandCount + ' ကွက်)</b></div>';
+        '</b></div>';
     return html;
 }
 
