@@ -1028,27 +1028,14 @@ window.saveBoard = async function saveBoard() {
             saveInFlight = false;
             return;
         }
-        const batchNo = await getNextBatchNo(playerName);
-        for (const it of validItems) {
-            await sync.mutate('create', 'lottery_records', {
-                id: uid(),
-                tenant: tenantId,
-                session: currentSessionId,
-                number: it.number,
-                amount: it.amount,
-                agent_name: agentName,
-                player_name: playerName,
-                record_type: 'pos',
-                batch_no: batchNo,
-                created: Date.now()
-            });
-        }
+        validItems.forEach((it) => {
+            pendingEntries.push({ player_name: playerName, number: it.number, amount: it.amount });
+        });
         ta.value = '';
         closeBoard();
-        openScreen('records'); // board bypasses pendingEntries; show the saved batch immediately
-        updateSyncPill();
+        await renderEntryTable();
         const skipped = invalidLines.length + (items.length - validItems.length);
-        showToast('✅ no(' + batchNo + ') သိမ်းပြီးပြီ' +
+        showToast('✅ ထည့်ပြီးပြီ' +
             (skipped ? ' (⚠️ ' + skipped + ' လိုင်း ကျန်)' : ''));
     } catch (e) {
         console.error('[agent] saveBoard failed', e);
