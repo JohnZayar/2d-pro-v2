@@ -34,6 +34,7 @@ document.addEventListener('DOMContentLoaded', init);
 
 async function init() {
     bindUI();
+    pb.loadBaseUrl(); // custom server URL override (if Pho set one)
     pb.loadAuth();
     await db.openDB().catch((e) => console.error('IDB open failed', e));
 
@@ -87,6 +88,18 @@ function bindUI() {
     $('setRate').addEventListener('change', () => setSetting('box_rate', Number($('setRate').value) || 2000).then(renderLedger));
     $('syncNowBtn').addEventListener('click', () => fullSync(true));
     $('logoutBtn').addEventListener('click', doLogout);
+    $('serverUrlSave').addEventListener('click', () => {
+        const v = $('serverUrlInput').value.trim();
+        if (v && !/^https?:\/\//i.test(v)) { showToast('URL က https:// နဲ့ စရမယ်'); return; }
+        if (v) pb.setBaseUrl(v); else pb.clearBaseUrl();
+        showToast('✅ Server URL သိမ်းပြီးပြီ — reload လုပ်ပါ');
+    });
+    $('serverUrlReset').addEventListener('click', () => {
+        pb.clearBaseUrl();
+        $('serverUrlInput').value = '';
+        $('serverUrlInput').placeholder = pb.getDefaultBaseUrl();
+        showToast('✅ Default URL ပြန်သုံးမယ် — reload လုပ်ပါ');
+    });
 }
 
 /* ================= AUTH ================= */
@@ -151,39 +164,55 @@ async function enterApp() {
 /* ================= TENANT ================= */
 
 async function ensureTenant() {
-    const userKey = 'v2_tenant:' + (state.user && state.user.id);
-    const saved = localStorage.getItem(userKey);
-    let t = null;
+    // P1.1: Tenant ID comes from the user record's `tenant` relation field.
+    // Do NOT list the tenants collection — it has no `tenant` field, so the
+    // tenant-aware API rule can never match and the list always comes back empty.
+    let tenantPbId = state.user && state.user.tenant;
+    if (tenantPbId && typeof tenantPbId === 'object') tenantPbId = tenantPbId.id;
 
-    // Pull server tenants first (we are online right after login)
-    try {
-        const server = await pb.listAll('tenants', {});
-        for (const s of server) {
-            const local = (await db.getAll('tenants')).find((r) => r._pbId === s.id);
-            const rec = {
-                id: local ? local.id : s.id,
-                name: s.name, _pbId: s.id, _updated: Date.parse(s.updated) || Date.now(),
-            };
-            await db.put('tenants', rec);
+    if (!tenantPbId) {
+        // User record may be stale — refresh auth to get the latest tenant link.
+        try {
+            state.user = await pb.refreshAuth();
+            tenantPbId = state.user && state.user.tenant;
+            if (tenantPbId && typeof tenantPbId === 'object') tenantPbId = tenantPbId.id;
+        } catch (e) { console.warn('tenant refresh failed:', e.message); }
+    }
+
+    if (tenantPbId) {
+        state.tenantId = tenantPbId;
+        state.tenantPbId = tenantPbId;
+        // Cache a local tenant row so offline queries by tenant keep working.
+        try {
+            const existing = await db.get('tenants', tenantPbId);
+            if (!existing) {
+                await db.put('tenants', {
+                    id: tenantPbId,
+                    name: (state.user && (state.user.name || state.user.email)) || 'My Shop',
+                    _pbId: tenantPbId,
+                    _updated: Date.now()
+                });
+            }
+        } catch (e) { console.warn('tenant cache failed:', e.message); }
+    } else {
+        // Fallback for users with no tenant link (should not happen for Pho).
+        console.warn('No tenant on user record — using local fallback');
+        const all = await db.getAll('tenants').catch(() => []);
+        let t = all[0];
+        if (!t) {
+            t = { id: uid(), name: 'My Shop' };
+            await db.put('tenants', t);
         }
-    } catch (e) { console.warn('tenant pull failed', e.message); }
+        state.tenantId = t.id;
+        state.tenantPbId = t._pbId || t.id;
+    }
 
-    if (saved) t = await db.get('tenants', saved);
-    if (!t) {
-        const all = await db.getAll('tenants');
-        t = all.find((r) => r._pbId) || all[0];
-    }
-    if (!t) {
-        t = { id: uid(), name: (state.user && (state.user.name || state.user.email)) || 'My Shop' };
-        await db.put('tenants', t);
-        await sync.queueOp({ op: 'create', collection: 'tenants', localId: t.id, data: t });
-        await sync.pushPending().catch(() => {});
-        t = await db.get('tenants', t.id);
-    }
-    state.tenantId = t.id;
-    state.tenantPbId = t._pbId || t.id;
-    localStorage.setItem(userKey, t.id);
-    $('linkCode').textContent = state.tenantPbId;
+    try {
+        const userKey = 'v2_tenant:' + (state.user && state.user.id);
+        localStorage.setItem(userKey, state.tenantId);
+    } catch (e) { /* ignore */ }
+    const lc = $('linkCode');
+    if (lc) lc.textContent = state.tenantPbId;
 }
 
 /* ================= SYNC ================= */
@@ -369,6 +398,13 @@ async function setSetting(key, value) {
 async function loadSettingsIntoUI() {
     $('setLimit').value = await getSetting('limit', 50000);
     $('setRate').value = await getSetting('box_rate', 2000);
+    const urlInput = $('serverUrlInput');
+    if (urlInput) {
+        const cur = pb.getBaseUrl();
+        const def = pb.getDefaultBaseUrl();
+        urlInput.value = cur === def ? '' : cur;
+        urlInput.placeholder = def;
+    }
 }
 
 /* ================= TABS & MODALS ================= */
