@@ -736,21 +736,53 @@ async function renderEntry() {
     const s = state.sessions.find((x) => x.id === state.activeSessionId);
     $('entrySessionLabel').textContent = s ? sessionLabel(s) : 'Session မရှိပါ';
 
-    // Person select: player names from this session's records, first-appearance order
+    // Outgoing warning tint follows the type selector (Pho: မှားတတ်သည်)
+    const pType = $('entryPersonType') ? $('entryPersonType').value : 'player';
+    document.querySelector('#tab-entry .entry-playerbar')?.classList.toggle('outgoing', pType === 'akan');
+
+    await renderEntryPersonOptions();
+    renderEntryTable();
+}
+
+/** Person-type selector changed → repopulate the name dropdown. */
+window.onEntryPersonTypeChange = async function onEntryPersonTypeChange() {
+    const pType = $('entryPersonType') ? $('entryPersonType').value : 'player';
+    document.querySelector('#tab-entry .entry-playerbar')?.classList.toggle('outgoing', pType === 'akan');
+    await renderEntryPersonOptions();
+};
+
+/** Name dropdown source depends on the person type:
+ *  ထိုးသား → player names in this session's records (incoming, not akan)
+ *  Agent   → names from the agents list
+ *  အကန်ဒိုင် → bookie names from prior OUTGOING (akan) bets, all sessions */
+async function renderEntryPersonOptions() {
+    const pType = $('entryPersonType') ? $('entryPersonType').value : 'player';
     const pSel = $('entryPlayerSelect');
     const prev = pSel.value;
-    const recs = state.activeSessionId ? await db.query('lottery_records', 'by_session', state.activeSessionId) : [];
     const order = [];
     const seen = new Set();
-    recs.forEach((r) => {
-        const k = voucherPersonKey(r);
-        if (!seen.has(k)) { seen.add(k); order.push(k); }
-    });
-    pSel.innerHTML = '<option value="">-- ထိုးသား ရွေးပါ --</option>' +
+    const add = (k) => { k = (k || '').trim(); if (k && !seen.has(k)) { seen.add(k); order.push(k); } };
+
+    if (pType === 'agent') {
+        (state.agents || []).forEach((a) => add(a.name));
+    } else if (pType === 'akan') {
+        for (const sess of state.sessions) {
+            const recs = await db.query('lottery_records', 'by_session', sess.id);
+            for (const r of recs) {
+                if (r.record_type !== 'akan') continue;
+                add(r.player_name || r.agent_name);
+            }
+        }
+    } else {
+        const recs = state.activeSessionId ? await db.query('lottery_records', 'by_session', state.activeSessionId) : [];
+        recs.forEach((r) => { if (r.record_type !== 'akan') add(voucherPersonKey(r)); });
+    }
+    const ph = pType === 'akan' ? '-- အကန်ဒိုင် ရွေးပါ --'
+        : pType === 'agent' ? '-- Agent ရွေးပါ --'
+        : '-- ထိုးသား ရွေးပါ --';
+    pSel.innerHTML = '<option value="">' + escHtml(ph) + '</option>' +
         order.map((k) => '<option value="' + escHtml(k) + '">' + escHtml(voucherPersonLabel(k)) + '</option>').join('');
     if (prev && order.includes(prev)) pSel.value = prev;
-
-    renderEntryTable();
 }
 
 /** Pending entries table + totals. */
@@ -765,7 +797,7 @@ function renderEntryTable() {
     }
     tbody.innerHTML = entryPending.map((e, i) =>
         '<tr>' +
-            '<td>' + escHtml(e.player_name || (e.record_type === 'akan' ? 'ဒိုင် (အကန်)' : 'ကိုယ်တိုင်')) + '</td>' +
+            '<td>' + (e.record_type === 'akan' ? '⬆️ ' : '') + escHtml(e.player_name || (e.record_type === 'akan' ? 'ဒိုင် (အကန်)' : 'ကိုယ်တိုင်')) + '</td>' +
             '<td class="cell-no">' + escHtml(String(e.number)) + '</td>' +
             '<td class="cell-amt">' + formatMoney(e.amount) + '</td>' +
             '<td class="cell-del"><button class="rec-del" onclick="entryDeleteRow(' + i + ')" title="ဖျက်မည်">🗑️</button></td>' +
@@ -781,6 +813,8 @@ window.entryDeleteRow = function entryDeleteRow(i) {
 /** ထည့်မည် — expand the number-box formula and add to the PENDING table. */
 window.submitEntryRow = async function submitEntryRow() {
     const playerName = $('entryPlayerSelect').value || null;
+    const pType = $('entryPersonType') ? $('entryPersonType').value : 'player';
+    const rType = (pType === 'akan') ? 'akan' : 'pos'; // အကန်ဒိုင် = OUTGOING
     const noText = $('boxNo').value.trim();
     const amtText = $('boxAmt').value.trim().replace(/[^\d]/g, '');
     const revText = $('boxRev').value.trim();
@@ -805,12 +839,12 @@ window.submitEntryRow = async function submitEntryRow() {
         return;
     }
     validItems.forEach((it) => {
-        entryPending.push({ player_name: playerName, number: String(it.number), amount: it.amount, record_type: 'pos' });
+        entryPending.push({ player_name: playerName, number: String(it.number), amount: it.amount, record_type: rType });
     });
     entryClearInputs();
     renderEntryTable();
     const skipped = invalidLines.length + (items.length - validItems.length);
-    showToast('✅ ထည့်ပြီးပြီ' + (skipped ? ' (⚠️ ' + skipped + ' လိုင်း ကျန်)' : ''));
+    showToast(rType === 'akan' ? '✅ ထည့်ပြီးပြီ (⬆️ အထွက်)' : '✅ ထည့်ပြီးပြီ' + (skipped ? ' (⚠️ ' + skipped + ' လိုင်း ကျန်)' : ''));
 };
 
 /** 💾 Save — persist all pending entries as NEW batches (one batch_no per person/type). */

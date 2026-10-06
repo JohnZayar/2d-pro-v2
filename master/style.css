@@ -394,6 +394,20 @@ table.data tr.over-row td:first-child { font-weight: 800; font-size: 15px; }
     border: 1px solid var(--border); border-radius: 8px;
     font-weight: 700; font-size: 13px; padding: 8px 10px;
 }
+/* Person-type selector: ထိုးသား / Agent / အကန်ဒိုင် */
+.type-select {
+    background: #0a0f1a; color: var(--yellow);
+    border: 1px solid var(--border); border-radius: 8px;
+    font-weight: 800; font-size: 12px; padding: 8px 6px;
+    max-width: 98px; flex-shrink: 0; font-family: inherit;
+}
+/* Outgoing (အကန်ဒိုင်) warning tint — Pho: မှားတတ်သည် */
+.entry-playerbar.outgoing .type-select {
+    border-color: var(--red2); color: #fca5a5; background: #2a0f14;
+}
+.entry-playerbar.outgoing .player-select {
+    border-color: var(--red2); color: #fca5a5;
+}
 .top-btn {
     background: var(--card); border: 1px solid var(--border); color: var(--text);
     border-radius: 8px; padding: 7px 10px;
@@ -418,6 +432,9 @@ table.data tr.over-row td:first-child { font-weight: 800; font-size: 15px; }
     min-height: 120px;
     max-height: none;
 }
+/* ===== 📝 ထိုးကွက် 3-layer (Agent spec): fixed topbar / scrolling records / fixed-bottom keypad ===== */
+#tab-entry.active { display: flex; flex-direction: column; }
+#tab-entry { min-height: calc(100vh - 210px); min-height: calc(100dvh - 210px); }
 #entryKeypad[hidden] { display: none; }
 /* Fixed bottom overlay: toggled by ⌨️, stuck dead to the phone's bottom edge. */
 #entryKeypad {

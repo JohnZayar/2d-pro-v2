@@ -98,6 +98,11 @@
         </div>
 
         <div class="entry-playerbar">
+          <select id="entryPersonType" class="type-select" onchange="onEntryPersonTypeChange()" title="အမျိုးအစား ရွေးပါ">
+            <option value="player">ထိုးသား</option>
+            <option value="agent">Agent</option>
+            <option value="akan">အကန်ဒိုင်</option>
+          </select>
           <select id="entryPlayerSelect" class="field-input player-select">
             <option value="">-- ထိုးသား ရွေးပါ --</option>
           </select>
@@ -127,50 +132,6 @@
           <span>ကွက်: <b id="entryCount">0</b></span>
         </div>
 
-        <!-- Color formula keypad (7x2, same as Agent), toggleable -->
-        <div class="keypad-panel" id="entryKeypad" hidden>
-          <div class="quick-btns-grid">
-            <button class="q-btn c-blue" type="button" onclick="entryApplyFormula('စုံမ')">စုံမ</button>
-            <button class="q-btn c-cyan" type="button" onclick="entryApplyFormula('မစုံ')">မစုံ</button>
-            <button class="q-btn c-blue" type="button" onclick="entryApplyFormula('ထိပ်')">ထိပ်</button>
-            <button class="q-btn c-lblue" type="button" onclick="entryApplyFormula('နောက်')">နောက်</button>
-            <button class="q-btn c-green" type="button" onclick="entryApplyFormula('ပတ်')">ပတ်</button>
-            <button class="q-btn c-orange" type="button" onclick="entryApplyFormula('ပူး')">ပူး</button>
-            <button class="q-btn c-pink" type="button" onclick="entryApplyFormula('ပါဝါ')">ပါဝါ</button>
-            <button class="q-btn c-lpink" type="button" onclick="entryApplyFormula('နက္ခတ်')">နက္ခတ်</button>
-            <button class="q-btn c-rose" type="button" onclick="entryApplyFormula('ဘရိတ်')">ဘရိတ်</button>
-            <button class="q-btn c-peach" type="button" onclick="entryApplyFormula('ခွေ')">ခွေ</button>
-            <button class="q-btn c-yellow" type="button" onclick="entryApplyFormula('ခွေပူးပါ')">ခွေပူးပါ</button>
-            <button class="q-btn c-yellow" type="button" onclick="entryApplyFormula('ညီအစ်ကို')">ညီအစ်ကို</button>
-            <button class="q-btn c-dorange" type="button" onclick="entryApplyFormula('စုံစုံ')">စုံစုံ</button>
-            <button class="q-btn c-dgreen" type="button" onclick="entryApplyFormula('မမ')">မမ</button>
-          </div>
-
-          <div class="input-row-3box">
-            <div class="box-wrap"><input type="text" id="boxNo" class="mbox active-box" placeholder="ဂဏန်း" readonly onclick="entrySetFocusBox('no')"></div>
-            <div class="box-wrap"><input type="text" id="boxAmt" class="mbox" placeholder="ဒဲ့" readonly onclick="entrySetFocusBox('amt')"></div>
-            <div class="box-wrap"><input type="text" id="boxRev" class="mbox" placeholder="အပြန်" readonly onclick="entrySetFocusBox('rev')"></div>
-            <button class="btn-r-box" type="button" onclick="entryToggleR()">R</button>
-          </div>
-
-          <div class="numpad-grid-wrapper">
-            <div class="numpad">
-              <button class="num-btn" type="button" onclick="entryAppendNum('1')">1</button>
-              <button class="num-btn" type="button" onclick="entryAppendNum('2')">2</button>
-              <button class="num-btn" type="button" onclick="entryAppendNum('3')">3</button>
-              <button class="num-btn" type="button" onclick="entryAppendNum('4')">4</button>
-              <button class="num-btn" type="button" onclick="entryAppendNum('5')">5</button>
-              <button class="num-btn" type="button" onclick="entryAppendNum('6')">6</button>
-              <button class="num-btn" type="button" onclick="entryAppendNum('7')">7</button>
-              <button class="num-btn" type="button" onclick="entryAppendNum('8')">8</button>
-              <button class="num-btn" type="button" onclick="entryAppendNum('9')">9</button>
-              <button class="num-btn" type="button" onclick="entryAppendNum('00')">00</button>
-              <button class="num-btn" type="button" onclick="entryAppendNum('0')">0</button>
-              <button class="num-btn" type="button" onclick="entryBackspace()">⌫</button>
-            </div>
-            <button class="num-btn submit-btn" type="button" onclick="submitEntryRow()">ထည့်မည်</button>
-          </div>
-        </div>
       </section>
       <section id="tab-ledger" class="tabpane">
         <div id="ledgerHead"></div>
@@ -287,50 +248,6 @@
           <span>ကွက်: <b id="akanCount">0</b></span>
         </div>
 
-        <!-- Color formula keypad (7x2, same as entry), toggleable -->
-        <div class="keypad-panel" id="akanKeypad" hidden>
-          <div class="quick-btns-grid">
-            <button class="q-btn c-blue" type="button" onclick="akanApplyFormula('စုံမ')">စုံမ</button>
-            <button class="q-btn c-cyan" type="button" onclick="akanApplyFormula('မစုံ')">မစုံ</button>
-            <button class="q-btn c-blue" type="button" onclick="akanApplyFormula('ထိပ်')">ထိပ်</button>
-            <button class="q-btn c-lblue" type="button" onclick="akanApplyFormula('နောက်')">နောက်</button>
-            <button class="q-btn c-green" type="button" onclick="akanApplyFormula('ပတ်')">ပတ်</button>
-            <button class="q-btn c-orange" type="button" onclick="akanApplyFormula('ပူး')">ပူး</button>
-            <button class="q-btn c-pink" type="button" onclick="akanApplyFormula('ပါဝါ')">ပါဝါ</button>
-            <button class="q-btn c-lpink" type="button" onclick="akanApplyFormula('နက္ခတ်')">နက္ခတ်</button>
-            <button class="q-btn c-rose" type="button" onclick="akanApplyFormula('ဘရိတ်')">ဘရိတ်</button>
-            <button class="q-btn c-peach" type="button" onclick="akanApplyFormula('ခွေ')">ခွေ</button>
-            <button class="q-btn c-yellow" type="button" onclick="akanApplyFormula('ခွေပူးပါ')">ခွေပူးပါ</button>
-            <button class="q-btn c-yellow" type="button" onclick="akanApplyFormula('ညီအစ်ကို')">ညီအစ်ကို</button>
-            <button class="q-btn c-dorange" type="button" onclick="akanApplyFormula('စုံစုံ')">စုံစုံ</button>
-            <button class="q-btn c-dgreen" type="button" onclick="akanApplyFormula('မမ')">မမ</button>
-          </div>
-
-          <div class="input-row-3box">
-            <div class="box-wrap"><input type="text" id="akanBoxNo" class="mbox active-box" placeholder="ဂဏန်း" readonly onclick="akanSetFocusBox('no')"></div>
-            <div class="box-wrap"><input type="text" id="akanBoxAmt" class="mbox" placeholder="ဒဲ့" readonly onclick="akanSetFocusBox('amt')"></div>
-            <div class="box-wrap"><input type="text" id="akanBoxRev" class="mbox" placeholder="အပြန်" readonly onclick="akanSetFocusBox('rev')"></div>
-            <button class="btn-r-box" type="button" onclick="akanToggleR()">R</button>
-          </div>
-
-          <div class="numpad-grid-wrapper">
-            <div class="numpad">
-              <button class="num-btn" type="button" onclick="akanAppendNum('1')">1</button>
-              <button class="num-btn" type="button" onclick="akanAppendNum('2')">2</button>
-              <button class="num-btn" type="button" onclick="akanAppendNum('3')">3</button>
-              <button class="num-btn" type="button" onclick="akanAppendNum('4')">4</button>
-              <button class="num-btn" type="button" onclick="akanAppendNum('5')">5</button>
-              <button class="num-btn" type="button" onclick="akanAppendNum('6')">6</button>
-              <button class="num-btn" type="button" onclick="akanAppendNum('7')">7</button>
-              <button class="num-btn" type="button" onclick="akanAppendNum('8')">8</button>
-              <button class="num-btn" type="button" onclick="akanAppendNum('9')">9</button>
-              <button class="num-btn" type="button" onclick="akanAppendNum('00')">00</button>
-              <button class="num-btn" type="button" onclick="akanAppendNum('0')">0</button>
-              <button class="num-btn" type="button" onclick="akanBackspace()">⌫</button>
-            </div>
-            <button class="num-btn submit-btn" type="button" onclick="submitAkanRow()">ထည့်မည်</button>
-          </div>
-        </div>
       </section>
       <section id="tab-weekly" class="tabpane">
         <div class="card">
@@ -441,6 +358,99 @@
   </div>
 
   <div id="printArea" class="print-area" aria-hidden="true"></div>
+
+  <!-- ===== Fixed bottom keypads (3rd layer): direct children of #app so no
+       tab-section ancestor can ever break position:fixed. Toggled by ⌨️. ===== -->
+        <!-- Color formula keypad (7x2, same as Agent), toggleable -->
+        <div class="keypad-panel" id="entryKeypad" hidden>
+          <div class="quick-btns-grid">
+            <button class="q-btn c-blue" type="button" onclick="entryApplyFormula('စုံမ')">စုံမ</button>
+            <button class="q-btn c-cyan" type="button" onclick="entryApplyFormula('မစုံ')">မစုံ</button>
+            <button class="q-btn c-blue" type="button" onclick="entryApplyFormula('ထိပ်')">ထိပ်</button>
+            <button class="q-btn c-lblue" type="button" onclick="entryApplyFormula('နောက်')">နောက်</button>
+            <button class="q-btn c-green" type="button" onclick="entryApplyFormula('ပတ်')">ပတ်</button>
+            <button class="q-btn c-orange" type="button" onclick="entryApplyFormula('ပူး')">ပူး</button>
+            <button class="q-btn c-pink" type="button" onclick="entryApplyFormula('ပါဝါ')">ပါဝါ</button>
+            <button class="q-btn c-lpink" type="button" onclick="entryApplyFormula('နက္ခတ်')">နက္ခတ်</button>
+            <button class="q-btn c-rose" type="button" onclick="entryApplyFormula('ဘရိတ်')">ဘရိတ်</button>
+            <button class="q-btn c-peach" type="button" onclick="entryApplyFormula('ခွေ')">ခွေ</button>
+            <button class="q-btn c-yellow" type="button" onclick="entryApplyFormula('ခွေပူးပါ')">ခွေပူးပါ</button>
+            <button class="q-btn c-yellow" type="button" onclick="entryApplyFormula('ညီအစ်ကို')">ညီအစ်ကို</button>
+            <button class="q-btn c-dorange" type="button" onclick="entryApplyFormula('စုံစုံ')">စုံစုံ</button>
+            <button class="q-btn c-dgreen" type="button" onclick="entryApplyFormula('မမ')">မမ</button>
+          </div>
+
+          <div class="input-row-3box">
+            <div class="box-wrap"><input type="text" id="boxNo" class="mbox active-box" placeholder="ဂဏန်း" readonly onclick="entrySetFocusBox('no')"></div>
+            <div class="box-wrap"><input type="text" id="boxAmt" class="mbox" placeholder="ဒဲ့" readonly onclick="entrySetFocusBox('amt')"></div>
+            <div class="box-wrap"><input type="text" id="boxRev" class="mbox" placeholder="အပြန်" readonly onclick="entrySetFocusBox('rev')"></div>
+            <button class="btn-r-box" type="button" onclick="entryToggleR()">R</button>
+          </div>
+
+          <div class="numpad-grid-wrapper">
+            <div class="numpad">
+              <button class="num-btn" type="button" onclick="entryAppendNum('1')">1</button>
+              <button class="num-btn" type="button" onclick="entryAppendNum('2')">2</button>
+              <button class="num-btn" type="button" onclick="entryAppendNum('3')">3</button>
+              <button class="num-btn" type="button" onclick="entryAppendNum('4')">4</button>
+              <button class="num-btn" type="button" onclick="entryAppendNum('5')">5</button>
+              <button class="num-btn" type="button" onclick="entryAppendNum('6')">6</button>
+              <button class="num-btn" type="button" onclick="entryAppendNum('7')">7</button>
+              <button class="num-btn" type="button" onclick="entryAppendNum('8')">8</button>
+              <button class="num-btn" type="button" onclick="entryAppendNum('9')">9</button>
+              <button class="num-btn" type="button" onclick="entryAppendNum('00')">00</button>
+              <button class="num-btn" type="button" onclick="entryAppendNum('0')">0</button>
+              <button class="num-btn" type="button" onclick="entryBackspace()">⌫</button>
+            </div>
+            <button class="num-btn submit-btn" type="button" onclick="submitEntryRow()">ထည့်မည်</button>
+          </div>
+        </div>
+
+        <!-- Color formula keypad (7x2, same as entry), toggleable -->
+        <div class="keypad-panel" id="akanKeypad" hidden>
+          <div class="quick-btns-grid">
+            <button class="q-btn c-blue" type="button" onclick="akanApplyFormula('စုံမ')">စုံမ</button>
+            <button class="q-btn c-cyan" type="button" onclick="akanApplyFormula('မစုံ')">မစုံ</button>
+            <button class="q-btn c-blue" type="button" onclick="akanApplyFormula('ထိပ်')">ထိပ်</button>
+            <button class="q-btn c-lblue" type="button" onclick="akanApplyFormula('နောက်')">နောက်</button>
+            <button class="q-btn c-green" type="button" onclick="akanApplyFormula('ပတ်')">ပတ်</button>
+            <button class="q-btn c-orange" type="button" onclick="akanApplyFormula('ပူး')">ပူး</button>
+            <button class="q-btn c-pink" type="button" onclick="akanApplyFormula('ပါဝါ')">ပါဝါ</button>
+            <button class="q-btn c-lpink" type="button" onclick="akanApplyFormula('နက္ခတ်')">နက္ခတ်</button>
+            <button class="q-btn c-rose" type="button" onclick="akanApplyFormula('ဘရိတ်')">ဘရိတ်</button>
+            <button class="q-btn c-peach" type="button" onclick="akanApplyFormula('ခွေ')">ခွေ</button>
+            <button class="q-btn c-yellow" type="button" onclick="akanApplyFormula('ခွေပူးပါ')">ခွေပူးပါ</button>
+            <button class="q-btn c-yellow" type="button" onclick="akanApplyFormula('ညီအစ်ကို')">ညီအစ်ကို</button>
+            <button class="q-btn c-dorange" type="button" onclick="akanApplyFormula('စုံစုံ')">စုံစုံ</button>
+            <button class="q-btn c-dgreen" type="button" onclick="akanApplyFormula('မမ')">မမ</button>
+          </div>
+
+          <div class="input-row-3box">
+            <div class="box-wrap"><input type="text" id="akanBoxNo" class="mbox active-box" placeholder="ဂဏန်း" readonly onclick="akanSetFocusBox('no')"></div>
+            <div class="box-wrap"><input type="text" id="akanBoxAmt" class="mbox" placeholder="ဒဲ့" readonly onclick="akanSetFocusBox('amt')"></div>
+            <div class="box-wrap"><input type="text" id="akanBoxRev" class="mbox" placeholder="အပြန်" readonly onclick="akanSetFocusBox('rev')"></div>
+            <button class="btn-r-box" type="button" onclick="akanToggleR()">R</button>
+          </div>
+
+          <div class="numpad-grid-wrapper">
+            <div class="numpad">
+              <button class="num-btn" type="button" onclick="akanAppendNum('1')">1</button>
+              <button class="num-btn" type="button" onclick="akanAppendNum('2')">2</button>
+              <button class="num-btn" type="button" onclick="akanAppendNum('3')">3</button>
+              <button class="num-btn" type="button" onclick="akanAppendNum('4')">4</button>
+              <button class="num-btn" type="button" onclick="akanAppendNum('5')">5</button>
+              <button class="num-btn" type="button" onclick="akanAppendNum('6')">6</button>
+              <button class="num-btn" type="button" onclick="akanAppendNum('7')">7</button>
+              <button class="num-btn" type="button" onclick="akanAppendNum('8')">8</button>
+              <button class="num-btn" type="button" onclick="akanAppendNum('9')">9</button>
+              <button class="num-btn" type="button" onclick="akanAppendNum('00')">00</button>
+              <button class="num-btn" type="button" onclick="akanAppendNum('0')">0</button>
+              <button class="num-btn" type="button" onclick="akanBackspace()">⌫</button>
+            </div>
+            <button class="num-btn submit-btn" type="button" onclick="submitAkanRow()">ထည့်မည်</button>
+          </div>
+        </div>
+
 
 </div>
 <script type="module" src="app.js"></script>
