@@ -418,6 +418,7 @@ function switchTab(name) {
     if (name === 'ledger') renderLedger();
     if (name === 'agents') renderAgents();
 }
+window.switchTab = switchTab;
 
 function openModal(id) { $(id).classList.add('open'); }
 function closeModal(id) { $(id).classList.remove('open'); }

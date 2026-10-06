@@ -95,6 +95,26 @@ main { flex: 1; padding: 14px 12px 40px; }
 .tabpane { display: none; }
 .tabpane.active { display: block; }
 
+/* ---------- Homescreen menu grid ---------- */
+.menu-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+}
+.menu-card {
+    background: linear-gradient(160deg, #1a2436 0%, #121b2e 100%);
+    border: 1px solid var(--border);
+    border-radius: 18px; padding: 20px 12px;
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+    cursor: pointer; color: var(--text);
+    box-shadow: 0 8px 24px rgba(0,0,0,.35);
+    transition: transform .12s ease, border-color .12s ease;
+    min-height: 128px; justify-content: center;
+    font-family: inherit;
+}
+.menu-card:active { transform: scale(.95); border-color: var(--accent); }
+.menu-icon { font-size: 38px; line-height: 1; }
+.menu-label { font-size: 16px; font-weight: 800; }
+.menu-sub { font-size: 11px; color: var(--muted); text-align: center; }
+
 /* ---------- Cards / lists ---------- */
 .card {
     background: var(--card); border: 1px solid var(--border);

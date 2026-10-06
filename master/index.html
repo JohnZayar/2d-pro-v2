@@ -29,13 +29,48 @@
       <span id="syncPill" class="off">⏳</span>
     </header>
     <nav class="tabs">
-      <button data-tab="sessions" class="active">📋 ပွဲများ</button>
+      <button data-tab="home" class="active">🏠 ပင်မ</button>
+      <button data-tab="sessions">📋 ပွဲများ</button>
       <button data-tab="ledger">📊 လယ်ဂျာ</button>
       <button data-tab="agents">👥 Agent</button>
       <button data-tab="settings">⚙️ ဆက်တင်</button>
     </nav>
     <main>
-      <section id="tab-sessions" class="tabpane active">
+      <section id="tab-home" class="tabpane active">
+        <div class="menu-grid">
+          <button class="menu-card" onclick="switchTab('sessions')">
+            <span class="menu-icon">📋</span>
+            <span class="menu-label">ပွဲများ</span>
+            <span class="menu-sub">Session စီမံခန့်ခွဲရန်</span>
+          </button>
+          <button class="menu-card" onclick="switchTab('ledger')">
+            <span class="menu-icon">📊</span>
+            <span class="menu-label">လယ်ဂျာ</span>
+            <span class="menu-sub">00-99 စာရင်းဇယား</span>
+          </button>
+          <button class="menu-card" onclick="switchTab('agents')">
+            <span class="menu-icon">👥</span>
+            <span class="menu-label">Agent</span>
+            <span class="menu-sub">Agent စာရင်း</span>
+          </button>
+          <button class="menu-card" onclick="switchTab('formula')">
+            <span class="menu-icon">🧮</span>
+            <span class="menu-label">ဖော်မြူလာ</span>
+            <span class="menu-sub">ဂဏန်းတွက်ချက်ရန်</span>
+          </button>
+          <button class="menu-card" onclick="switchTab('winning')">
+            <span class="menu-icon">🎯</span>
+            <span class="menu-label">ပေါက်သီး</span>
+            <span class="menu-sub">အနိုင်ဂဏန်း</span>
+          </button>
+          <button class="menu-card" onclick="switchTab('settings')">
+            <span class="menu-icon">⚙️</span>
+            <span class="menu-label">ဆက်တင်</span>
+            <span class="menu-sub">Sync • ဆာဗာ • ထွက်ရန်</span>
+          </button>
+        </div>
+      </section>
+      <section id="tab-sessions" class="tabpane">
         <div id="sessionList"></div>
         <button id="fabSession" class="fab">+</button>
       </section>
@@ -54,6 +89,18 @@
       <section id="tab-agents" class="tabpane">
         <div class="card"><div class="row"><b>Agent စာရင်း</b><button id="addAgentBtn" class="btn small">+ အသစ်</button></div></div>
         <div id="agentList" class="card"></div>
+      </section>
+      <section id="tab-formula" class="tabpane">
+        <div class="card">
+          <div class="row"><b>🧮 ဖော်မြူလာ</b></div>
+          <div class="empty">မကြာမီ ရရှိမည် — ဂဏန်းတွက်ချက်မှု လုပ်ဆောင်ချက်များ ထည့်သွင်းနေပါသည်။</div>
+        </div>
+      </section>
+      <section id="tab-winning" class="tabpane">
+        <div class="card">
+          <div class="row"><b>🎯 ပေါက်သီး</b></div>
+          <div class="empty">မကြာမီ ရရှိမည် — အနိုင်ဂဏန်း သတ်မှတ်မှု လုပ်ဆောင်ချက်များ ထည့်သွင်းနေပါသည်။</div>
+        </div>
       </section>
       <section id="tab-settings" class="tabpane">
         <div class="card">
