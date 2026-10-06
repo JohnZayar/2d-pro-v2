@@ -1151,8 +1151,14 @@ async function openDaily(sessionId) {
         ${winNum ? ` · 🏆 ပေါက်သီး <b style="color:var(--green)">${winNum}</b>` : ' · ပေါက်သီး မထည့်ရသေး'}</div>
         <table class="data"><tr><th>ထိုးသား</th><th>ထိုးငွေ</th><th>ပေါက်</th><th>ကျန်</th></tr>
         ${rows || '<tr><td colspan="4" class="muted">မှတ်တမ်း မရှိ</td></tr>'}
-        <tr class="total"><td>စုစုပေါင်း</td><td>${formatMoney(tBet)}</td><td>${formatMoney(tWin)}</td><td>${formatMoney(tNet)}</td></tr>
-        </table>`;
+        </table>
+        <div class="card" style="margin-top:10px"><div style="font-weight:700;margin-bottom:6px">📊 အချုပ်</div>
+        <table class="data">
+        <tr><td>တက်ငွေ</td><td style="text-align:right">${formatMoney(tBet)}</td></tr>
+        <tr><td>ကော်</td><td style="text-align:right">${tComm ? '−' + formatMoney(tComm) : '0'}</td></tr>
+        <tr><td>အပေါက် (${formatMoney(tWin)} × 80)</td><td style="text-align:right">${tWinDeduct ? '−' + formatMoney(tWinDeduct) : '0'}</td></tr>
+        <tr class="total"><td>ကျန်</td><td style="text-align:right">${(tNet < 0 ? '−' : '+') + formatMoney(Math.abs(tNet))}</td></tr>
+        </table></div>`;
     openGeneric('📑 Daily စာရင်းချုပ်', html);
 }
 
