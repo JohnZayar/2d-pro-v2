@@ -85,7 +85,6 @@ function bindUI() {
     $('addAgentBtn').addEventListener('click', () => openAgentModal(null));
     $('agSave').addEventListener('click', saveAgent);
 
-    $('setLimit').addEventListener('change', () => setSetting('limit', Number($('setLimit').value) || 50000).then(renderLedger));
     $('syncNowBtn').addEventListener('click', () => fullSync(true));
     $('logoutBtn').addEventListener('click', doLogout);
 
@@ -432,7 +431,6 @@ async function setSetting(key, value) {
 }
 
 async function loadSettingsIntoUI() {
-    $('setLimit').value = await getSetting('limit', 50000);
     const urlInput = $('serverUrlInput');
     if (urlInput) {
         const cur = pb.getBaseUrl();
@@ -499,19 +497,28 @@ function openGeneric(title, html) {
     openModal('modal-generic');
 }
 
-/* ================= LIMIT DIALOG (quick access from ledger) ================= */
+/* ================= LIMIT DIALOG (per-session) ================= */
+
+function sessionLimit(s) {
+    return Number(s && s.limit) || 50000;
+}
 
 async function openLimitDialog() {
-    $('limitInput').value = await getSetting('limit', 50000);
+    const s = state.sessions.find((x) => x.id === state.activeSessionId);
+    $('limitInput').value = sessionLimit(s);
     openModal('modal-limit');
 }
 window.openLimitDialog = openLimitDialog;
 
 async function saveLimit() {
     const v = Number($('limitInput').value) || 50000;
-    await setSetting('limit', v);
-    const setLimitInput = $('setLimit');
-    if (setLimitInput) setLimitInput.value = v;
+    const s = state.sessions.find((x) => x.id === state.activeSessionId);
+    if (s) {
+        s.limit = v;
+        s._updated = Date.now();
+        await updateRecord('sessions', s);
+        await loadSessions();
+    }
     closeModal('modal-limit');
     showToast('🚫 Limit ' + formatMoney(v) + ' သိမ်းပြီးပြီ');
     renderLedger();
@@ -605,7 +612,7 @@ async function saveSession() {
     const dt = new Date(Number(y), Number(m) - 1, Number(d));
     const name = `${dateStr} ${MM_DAYS[dt.getDay()]} (${timeType})`;
     const s = await createRecord('sessions', {
-        name, date: dateStr, timeType, is_open: true,
+        name, date: dateStr, timeType, is_open: true, limit: 50000,
     });
     closeModal('modal-session');
     setActiveSession(s.id);
@@ -931,7 +938,7 @@ async function renderLedger() {
         $('ledgerBoxes').textContent = '0';
         return;
     }
-    const limit = Number(await getSetting('limit', 50000));
+    const limit = sessionLimit(s);
     const recs = await db.query('lottery_records', 'by_session', s.id);
     const wins = await db.query('winning_numbers', 'by_session', s.id);
     const winNums = new Set(wins.map((w) => String(w.number).padStart(2, '0')));
@@ -1694,7 +1701,8 @@ async function shareVoucher() {
 /* ================= 🔴 အကျွံဂဏန်းများ (OVER-LIMIT) ================= */
 
 async function calcOverlimit(sessionId) {
-    const limit = Number(await getSetting('limit', 50000));
+    const s = state.sessions.find((x) => x.id === sessionId);
+    const limit = sessionLimit(s);
     const recs = await db.query('lottery_records', 'by_session', sessionId);
     const agg = {};
     for (const r of recs) {
