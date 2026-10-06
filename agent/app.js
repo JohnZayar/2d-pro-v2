@@ -28,6 +28,35 @@ let currentSessionId = null;
 let saveInFlight = false; // double-tap guard
 let pendingEntries = []; // typed but NOT yet saved: [{player_name, number, amount}]
 
+/** Get blocked numbers for a session (synced from Master via PocketBase). */
+async function getAgentBlocked(sessionId) {
+    try {
+        const s = await db.get('sessions', sessionId);
+        if (s && s.blocked_numbers) {
+            const arr = JSON.parse(s.blocked_numbers);
+            if (Array.isArray(arr)) return arr.filter((n) => /^\d{2}$/.test(n));
+        }
+    } catch (e) {}
+    return [];
+}
+
+/** Session lock: 11:55 AM / 3:55 PM cutoff + lock after winning numbers. */
+async function isAgentSessionLocked(sessionId) {
+    try {
+        const s = await db.get('sessions', sessionId);
+        if (!s) return { locked: false };
+        const wins = await db.query('winning_numbers', 'by_session', sessionId);
+        if (wins && wins.length) return { locked: true, reason: 'ပေါက်ဂဏန်း ထည့်ပြီးပြီ' };
+        if (s.date) {
+            const isAM = (s.timeType || '') === 'မနက်ပိုင်း';
+            const [hh, mm] = isAM ? [11, 55] : [15, 55];
+            const cutoff = new Date(s.date + `T${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}:00`);
+            if (new Date() > cutoff) return { locked: true, reason: 'ထိုးခွင့် ပိတ်ပြီ' };
+        }
+    } catch (e) {}
+    return { locked: false };
+}
+
 /* ================= Boot ================= */
 
 document.addEventListener('DOMContentLoaded', init);
@@ -533,6 +562,8 @@ async function getNextBatchNo(playerName) {
  * Nothing is saved yet; press 💾 Save (top button) to store as a new batch.
  */
 window.submitEntry = async function submitEntry() {
+    const lkE = await isAgentSessionLocked(currentSessionId);
+    if (lkE.locked) { showToast('🔒 ' + lkE.reason + ' — တင် မရပါ'); return; }
     const playerName = $('entryPlayerSelect').value || null;
     const noText = boxNo().value.trim();
     const amtText = boxAmt().value.trim().replace(/[^\d]/g, '');
@@ -560,14 +591,24 @@ window.submitEntry = async function submitEntry() {
         return;
     }
 
-    validItems.forEach((it) => {
+    // 🚫 ဒိုင်ပိတ်: blocked numbers cannot be bet
+    const blockedSet = new Set(await getAgentBlocked(currentSessionId));
+    const blockedHit = [];
+    const allowedItems = validItems.filter((it) => {
+        const nn = String(it.number).padStart(2, '0');
+        if (blockedSet.has(nn)) { blockedHit.push(nn); return false; }
+        return true;
+    });
+    if (!allowedItems.length) { clearInputs(); showToast('🚫 ဒိုင်ပိတ် ဂဏန်းတွေ ချည်း — တင် မရပါ'); return; }
+    allowedItems.forEach((it) => {
         pendingEntries.push({ player_name: playerName, number: it.number, amount: it.amount });
     });
     clearInputs();
     await renderEntryTable();
-    const skipped = invalidLines.length + (items.length - validItems.length);
+    const skipped = invalidLines.length + (items.length - validItems.length) + blockedHit.length;
+    const blkMsg = blockedHit.length ? ' (🚫 ' + [...new Set(blockedHit)].join(',') + ' ပိတ်)' : '';
     showToast('✅ ထည့်ပြီးပြီ' +
-        (skipped ? ' (⚠️ ' + skipped + ' လိုင်း ကျန်)' : ''));
+        (skipped ? ' (⚠️ ' + skipped + ' လိုင်း ကျန်)' : '') + blkMsg);
 };
 
 /**
@@ -578,6 +619,8 @@ window.savePendingBatch = async function savePendingBatch() {
     if (saveInFlight) return;
     if (!pendingEntries.length) { showToast('စာရင်း မရှိသေးပါ'); return; }
     if (!currentSessionId) { showToast('⚠️ Session မရှိသေးပါ'); return; }
+    const lkS = await isAgentSessionLocked(currentSessionId);
+    if (lkS.locked) { showToast('🔒 ' + lkS.reason + ' — သိမ်း မရပါ'); return; }
 
     saveInFlight = true;
     try {
@@ -1011,6 +1054,8 @@ document.addEventListener('input', (e) => {
 /** Board save → one new batch for the selected player. */
 window.saveBoard = async function saveBoard() {
     if (saveInFlight) return;
+    const lkB = await isAgentSessionLocked(currentSessionId);
+    if (lkB.locked) { showToast('🔒 ' + lkB.reason + ' — တင် မရပါ'); return; }
     const ta = $('boardTextarea');
     const text = ta.value;
     if (!text.trim()) { showToast('စာရွက် လွတ်နေတယ်'); return; }
@@ -1028,15 +1073,25 @@ window.saveBoard = async function saveBoard() {
             saveInFlight = false;
             return;
         }
-        validItems.forEach((it) => {
+        // 🚫 ဒိုင်ပိတ်: blocked numbers cannot be bet
+        const blockedSetB = new Set(await getAgentBlocked(currentSessionId));
+        const blockedHitB = [];
+        const allowedBoard = validItems.filter((it) => {
+            const nn = String(it.number).padStart(2, '0');
+            if (blockedSetB.has(nn)) { blockedHitB.push(nn); return false; }
+            return true;
+        });
+        if (!allowedBoard.length) { saveInFlight = false; showToast('🚫 ဒိုင်ပိတ် ဂဏန်းတွေ ချည်း — တင် မရပါ'); return; }
+        allowedBoard.forEach((it) => {
             pendingEntries.push({ player_name: playerName, number: it.number, amount: it.amount });
         });
         ta.value = '';
         closeBoard();
         await renderEntryTable();
-        const skipped = invalidLines.length + (items.length - validItems.length);
+        const skipped = invalidLines.length + (items.length - validItems.length) + blockedHitB.length;
+        const blkMsgB = blockedHitB.length ? ' (🚫 ' + [...new Set(blockedHitB)].join(',') + ' ပိတ်)' : '';
         showToast('✅ ထည့်ပြီးပြီ' +
-            (skipped ? ' (⚠️ ' + skipped + ' လိုင်း ကျန်)' : ''));
+            (skipped ? ' (⚠️ ' + skipped + ' လိုင်း ကျန်)' : '') + blkMsgB);
     } catch (e) {
         console.error('[agent] saveBoard failed', e);
         showToast('❌ သိမ်းမရပါ: ' + e.message);
