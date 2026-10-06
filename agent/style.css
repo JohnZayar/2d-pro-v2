@@ -453,34 +453,37 @@ select.field-input { appearance: auto; }
 /* ================= ENTRY SCREEN (စာရင်းသွင်းရန် — v1 POS style) ================= */
 
 .entry-topbar {
-    display: flex; align-items: center; gap: 8px;
+    display: flex; align-items: center; gap: 6px;
     background: linear-gradient(160deg, var(--card) 0%, #141d31 100%);
     border: 1px solid var(--border);
-    border-radius: var(--radius); padding: 8px 10px;
+    border-radius: var(--radius); padding: 5px 8px;
     box-shadow: var(--shadow);
     position: sticky; top: 64px; z-index: 40;
+}
+.entry-topbar .back-btn {
+    padding: 6px 10px; font-size: 13px; border-radius: 8px;
 }
 .sess-select {
     flex: 1; min-width: 0;
     background: #0a0f1a; color: var(--yellow);
     border: 1px solid var(--border); border-radius: 8px;
-    padding: 8px; font-size: 13px; font-weight: 700;
+    padding: 6px; font-size: 12px; font-weight: 700;
 }
-#entrySyncPill { font-size: 15px; white-space: nowrap; }
+#entrySyncPill { font-size: 13px; white-space: nowrap; }
 
 .entry-playerbar {
-    display: flex; align-items: center; gap: 8px;
+    display: flex; align-items: center; gap: 6px;
 }
 .player-select {
     flex: 1; min-width: 0;
     background: #0a0f1a; color: #38bdf8;
-    font-weight: 700; font-size: 14px;
+    font-weight: 700; font-size: 13px; padding: 8px 10px;
 }
 .entry-topbtns { display: flex; gap: 6px; }
 .top-btn {
     background: var(--card); border: 1px solid var(--border); color: var(--text);
-    border-radius: 10px; padding: 10px 14px;
-    font-size: 16px; font-weight: 700; cursor: pointer;
+    border-radius: 8px; padding: 7px 10px;
+    font-size: 14px; font-weight: 700; cursor: pointer;
 }
 .top-btn:active { transform: scale(.93); }
 .btn-save-top {
