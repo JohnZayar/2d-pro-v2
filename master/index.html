@@ -89,6 +89,89 @@
         <div id="sessionList"></div>
         <button id="fabSession" class="fab">+</button>
       </section>
+
+      <!-- ===== TAB: ENTRY (ထိုးကွက် — Agent-style) ===== -->
+      <section id="tab-entry" class="tabpane">
+        <div class="entry-topbar">
+          <button class="back-btn" onclick="switchTab('sessions')">‹ ပွဲများ</button>
+          <span id="entrySessionLabel" class="sess-label">Session</span>
+        </div>
+
+        <div class="entry-playerbar">
+          <select id="entryPlayerSelect" class="field-input player-select">
+            <option value="">-- ထိုးသား ရွေးပါ --</option>
+          </select>
+          <button class="top-btn kb-toggle-btn" id="entryKbToggle" type="button" onclick="toggleEntryKeyboard()" title="ကီးဘုတ် ဖွင့်/ပိတ်">⌨️</button>
+          <button class="top-btn" type="button" onclick="openEntryBoard()" title="Digital Board">📋</button>
+          <button class="top-btn btn-save-top" type="button" onclick="saveEntryBatch()">💾 Save</button>
+        </div>
+
+        <div class="table-container">
+          <table class="pos-table">
+            <thead>
+              <tr>
+                <th style="width:30%;">ထိုးသား</th>
+                <th style="width:30%;">ဂဏန်း</th>
+                <th style="width:30%;">ပမာဏ</th>
+                <th style="width:10%;text-align:center;">🗑️</th>
+              </tr>
+            </thead>
+            <tbody id="entryTableBody">
+              <tr><td colspan="4" class="empty-cell">စာရင်း မရှိသေးပါ။</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="footer-bar">
+          <span>Total: <b id="entryTotal">0</b></span>
+          <span>ကွက်: <b id="entryCount">0</b></span>
+        </div>
+
+        <!-- Color formula keypad (7x2, same as Agent), toggleable -->
+        <div class="keypad-panel" id="entryKeypad" hidden>
+          <div class="quick-btns-grid">
+            <button class="q-btn c-blue" type="button" onclick="entryApplyFormula('စုံမ')">စုံမ</button>
+            <button class="q-btn c-cyan" type="button" onclick="entryApplyFormula('မစုံ')">မစုံ</button>
+            <button class="q-btn c-blue" type="button" onclick="entryApplyFormula('ထိပ်')">ထိပ်</button>
+            <button class="q-btn c-lblue" type="button" onclick="entryApplyFormula('နောက်')">နောက်</button>
+            <button class="q-btn c-green" type="button" onclick="entryApplyFormula('ပတ်')">ပတ်</button>
+            <button class="q-btn c-orange" type="button" onclick="entryApplyFormula('ပူး')">ပူး</button>
+            <button class="q-btn c-pink" type="button" onclick="entryApplyFormula('ပါဝါ')">ပါဝါ</button>
+            <button class="q-btn c-lpink" type="button" onclick="entryApplyFormula('နက္ခတ်')">နက္ခတ်</button>
+            <button class="q-btn c-rose" type="button" onclick="entryApplyFormula('ဘရိတ်')">ဘရိတ်</button>
+            <button class="q-btn c-peach" type="button" onclick="entryApplyFormula('ခွေ')">ခွေ</button>
+            <button class="q-btn c-yellow" type="button" onclick="entryApplyFormula('ခွေပူးပါ')">ခွေပူးပါ</button>
+            <button class="q-btn c-yellow" type="button" onclick="entryApplyFormula('ညီအစ်ကို')">ညီအစ်ကို</button>
+            <button class="q-btn c-dorange" type="button" onclick="entryApplyFormula('စုံစုံ')">စုံစုံ</button>
+            <button class="q-btn c-dgreen" type="button" onclick="entryApplyFormula('မမ')">မမ</button>
+          </div>
+
+          <div class="input-row-3box">
+            <div class="box-wrap"><input type="text" id="boxNo" class="mbox active-box" placeholder="ဂဏန်း" readonly onclick="entrySetFocusBox('no')"></div>
+            <div class="box-wrap"><input type="text" id="boxAmt" class="mbox" placeholder="ဒဲ့" readonly onclick="entrySetFocusBox('amt')"></div>
+            <div class="box-wrap"><input type="text" id="boxRev" class="mbox" placeholder="အပြန်" readonly onclick="entrySetFocusBox('rev')"></div>
+            <button class="btn-r-box" type="button" onclick="entryToggleR()">R</button>
+          </div>
+
+          <div class="numpad-grid-wrapper">
+            <div class="numpad">
+              <button class="num-btn" type="button" onclick="entryAppendNum('1')">1</button>
+              <button class="num-btn" type="button" onclick="entryAppendNum('2')">2</button>
+              <button class="num-btn" type="button" onclick="entryAppendNum('3')">3</button>
+              <button class="num-btn" type="button" onclick="entryAppendNum('4')">4</button>
+              <button class="num-btn" type="button" onclick="entryAppendNum('5')">5</button>
+              <button class="num-btn" type="button" onclick="entryAppendNum('6')">6</button>
+              <button class="num-btn" type="button" onclick="entryAppendNum('7')">7</button>
+              <button class="num-btn" type="button" onclick="entryAppendNum('8')">8</button>
+              <button class="num-btn" type="button" onclick="entryAppendNum('9')">9</button>
+              <button class="num-btn" type="button" onclick="entryAppendNum('00')">00</button>
+              <button class="num-btn" type="button" onclick="entryAppendNum('0')">0</button>
+              <button class="num-btn" type="button" onclick="entryBackspace()">⌫</button>
+            </div>
+            <button class="num-btn submit-btn" type="button" onclick="submitEntryRow()">ထည့်မည်</button>
+          </div>
+        </div>
+      </section>
       <section id="tab-ledger" class="tabpane">
         <div id="ledgerHead"></div>
         <div class="ledger-summary">

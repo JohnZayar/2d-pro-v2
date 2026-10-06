@@ -6,7 +6,7 @@
 import * as db from '../shared/db.js';
 import * as pb from '../shared/pb.js';
 import * as sync from '../shared/sync.js';
-import { parseBoard } from '../shared/parser.js';
+import { parseBoard, parseBoardReport } from '../shared/parser.js';
 import {
     formatMoney, formatDateStr, getWeekMondayStr, remainingDigits,
     uid, showToast, escHtml, extractDigits
@@ -456,7 +456,11 @@ function switchTab(name) {
     });
     document.querySelectorAll('.tabpane').forEach((p) => p.classList.remove('active'));
     $('tab-' + name).classList.add('active');
+    // The entry keypad is a fixed overlay — hide it whenever leaving the entry tab.
+    const ekp = $('entryKeypad');
+    if (ekp && name !== 'entry' && !ekp.hidden) { ekp.hidden = true; $('entryKbToggle')?.classList.remove('active'); }
     if (name === 'ledger') renderLedger();
+    if (name === 'entry') renderEntry();
     if (name === 'agents') renderAgents();
     if (name === 'vouchers') renderVouchers();
     if (name === 'akan') renderOverlimit();
@@ -527,7 +531,7 @@ async function renderSessions() {
 }
 
 async function sessionAction(act, id) {
-    if (act === 'board') openBoard(id);
+    if (act === 'board') openEntry(id);
     else if (act === 'ledger') { setActiveSession(id); switchTab('ledger'); }
     else if (act === 'win') openWinning(id);
     else if (act === 'daily') openDaily(id);
@@ -618,38 +622,231 @@ function updateBoardPreview() {
 
 async function saveBoard() {
     const text = $('boardText').value;
-    const items = parseBoard(text);
-    if (!items.length) { showToast('ထည့်တာ မမှန်ပါ — စစ်ပါ'); return; }
+    const { items, invalidLines } = parseBoardReport(text);
+    // Guard: only real 2-digit numbers
+    const validItems = items.filter((it) => /^\d{2}$/.test(String(it.number)));
+    if (!validItems.length) { showToast('ထည့်တာ မမှန်ပါ — စစ်ပါ'); return; }
     const target = $('boardTarget').value;
     const isDain = target === '__DAIN__';
     const agent = isDain ? null : state.agents.find((a) => a.id === target);
+    const personName = isDain ? '' : (agent ? agent.name : '');
     const sessionId = state.boardSessionId;
-    const batchNo = 'B' + Date.now().toString(36);
 
-    $('boardSave').disabled = true;
-    try {
-        for (const it of items) {
-            await createRecord('lottery_records', {
-                session: sessionId,
-                number: String(it.number).padStart(2, '0'),
-                amount: Number(it.amount) || 0,
-                agent_name: isDain ? '' : (agent ? agent.name : ''),
-                record_type: isDain ? 'akan' : 'pos',
-                batch_no: batchNo,
-            });
+    validItems.forEach((it) => {
+        entryPending.push({
+            player_name: personName || null,
+            number: String(it.number).padStart(2, '0'),
+            amount: Number(it.amount) || 0,
+            record_type: isDain ? 'akan' : 'pos',
+        });
+    });
+    const skipped = invalidLines.length + (items.length - validItems.length);
+    showToast('✅ ' + validItems.length + ' ကွက် ထည့်ပြီးပြီ' +
+        (skipped ? ' (⚠️ ' + skipped + ' လိုင်း ကျန်)' : ''));
+    closeModal('modal-board');
+    await openEntry(sessionId);
+}
+
+/* ================= ENTRY SCREEN (ထိုးကွက် — Agent-style) ================= */
+
+let entryPending = [];      // typed but NOT yet saved: [{player_name, number, amount, record_type}]
+let entryActiveBox = 'no';  // 'no' | 'amt' | 'rev'
+let entrySaveInFlight = false;
+
+const ENTRY_FORMULA_INSERT = {
+    'ထိပ်': 'ထိပ်', 'နောက်': 'နောက်', 'ပတ်': 'ပတ်', 'ပူး': 'ပူး',
+    'ပါဝါ': 'ပါဝါ', 'နက္ခတ်': 'နက္ခတ်', 'ဘရိတ်': 'ဘရိတ်',
+    'ခွေ': 'ခွေ', 'ခွေပူးပါ': 'ခွေပူးပါ', 'ညီအစ်ကို': 'ညီအစ်ကို',
+    'စုံစုံ': 'စုံစုံ', 'မမ': 'မမ', 'စုံမ': 'စုံမ', 'မစုံ': 'မစုံ'
+};
+
+window.entrySetFocusBox = function entrySetFocusBox(boxName) {
+    entryActiveBox = boxName;
+    $('boxNo').classList.remove('active-box');
+    $('boxAmt').classList.remove('active-box');
+    $('boxRev').classList.remove('active-box');
+    if (boxName === 'no') $('boxNo').classList.add('active-box');
+    else if (boxName === 'amt') $('boxAmt').classList.add('active-box');
+    else if (boxName === 'rev') $('boxRev').classList.add('active-box');
+};
+
+window.entryAppendNum = function entryAppendNum(val) {
+    if (entryActiveBox === 'no') $('boxNo').value += val;
+    else if (entryActiveBox === 'amt') $('boxAmt').value += val;
+    else if (entryActiveBox === 'rev') $('boxRev').value += val;
+};
+
+window.entryBackspace = function entryBackspace() {
+    if (entryActiveBox === 'no') $('boxNo').value = $('boxNo').value.slice(0, -1);
+    else if (entryActiveBox === 'amt') $('boxAmt').value = $('boxAmt').value.slice(0, -1);
+    else if (entryActiveBox === 'rev') $('boxRev').value = $('boxRev').value.slice(0, -1);
+};
+
+function entryClearInputs() {
+    $('boxNo').value = ''; $('boxAmt').value = ''; $('boxRev').value = '';
+    entrySetFocusBox('no');
+}
+
+window.entryApplyFormula = function entryApplyFormula(fName) {
+    const insert = ENTRY_FORMULA_INSERT[fName] || fName;
+    const cur = $('boxNo').value.trim();
+    $('boxNo').value = cur ? cur + insert : insert;
+    entrySetFocusBox('amt');
+};
+
+window.entryToggleR = function entryToggleR() {
+    $('boxRev').value = $('boxRev').value.trim() ? '' : 'R';
+};
+
+/** Toggle the entry-screen keypad (fixed bottom overlay, same as Agent). */
+window.toggleEntryKeyboard = function toggleEntryKeyboard() {
+    const kp = $('entryKeypad');
+    if (!kp) return;
+    kp.hidden = !kp.hidden;
+    const btn = $('entryKbToggle');
+    if (btn) btn.classList.toggle('active', !kp.hidden);
+};
+
+/** Open the full Agent-style entry screen for a session. */
+async function openEntry(sessionId) {
+    setActiveSession(sessionId);
+    entryClearInputs();
+    await renderEntry();
+    switchTab('entry');
+}
+
+/** Refresh entry screen: session label, person select, pending table. */
+async function renderEntry() {
+    const s = state.sessions.find((x) => x.id === state.activeSessionId);
+    $('entrySessionLabel').textContent = s ? sessionLabel(s) : 'Session မရှိပါ';
+
+    // Person select: player names from this session's records, first-appearance order
+    const pSel = $('entryPlayerSelect');
+    const prev = pSel.value;
+    const recs = state.activeSessionId ? await db.query('lottery_records', 'by_session', state.activeSessionId) : [];
+    const order = [];
+    const seen = new Set();
+    recs.forEach((r) => {
+        const k = voucherPersonKey(r);
+        if (!seen.has(k)) { seen.add(k); order.push(k); }
+    });
+    pSel.innerHTML = '<option value="">-- ထိုးသား ရွေးပါ --</option>' +
+        order.map((k) => '<option value="' + escHtml(k) + '">' + escHtml(voucherPersonLabel(k)) + '</option>').join('');
+    if (prev && order.includes(prev)) pSel.value = prev;
+
+    renderEntryTable();
+}
+
+/** Pending entries table + totals. */
+function renderEntryTable() {
+    const tbody = $('entryTableBody');
+    const total = entryPending.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+    $('entryTotal').textContent = formatMoney(total);
+    $('entryCount').textContent = entryPending.length;
+    if (!entryPending.length) {
+        tbody.innerHTML = '<tr><td colspan="4" class="empty-cell">စာရင်း မရှိသေးပါ။</td></tr>';
+        return;
+    }
+    tbody.innerHTML = entryPending.map((e, i) =>
+        '<tr>' +
+            '<td>' + escHtml(e.player_name || (e.record_type === 'akan' ? 'ဒိုင် (အကန်)' : 'ကိုယ်တိုင်')) + '</td>' +
+            '<td class="cell-no">' + escHtml(String(e.number)) + '</td>' +
+            '<td class="cell-amt">' + formatMoney(e.amount) + '</td>' +
+            '<td class="cell-del"><button class="rec-del" onclick="entryDeleteRow(' + i + ')" title="ဖျက်မည်">🗑️</button></td>' +
+        '</tr>'
+    ).join('');
+}
+
+window.entryDeleteRow = function entryDeleteRow(i) {
+    entryPending.splice(i, 1);
+    renderEntryTable();
+};
+
+/** ထည့်မည် — expand the number-box formula and add to the PENDING table. */
+window.submitEntryRow = async function submitEntryRow() {
+    const playerName = $('entryPlayerSelect').value || null;
+    const noText = $('boxNo').value.trim();
+    const amtText = $('boxAmt').value.trim().replace(/[^\d]/g, '');
+    const revText = $('boxRev').value.trim();
+
+    if (!noText) { showToast('❌ ဂဏန်း (သို့) ဖော်မြူလာ ထည့်ပါ'); entrySetFocusBox('no'); return; }
+    const mainAmt = parseInt(amtText, 10) || 0;
+    if (mainAmt <= 0) { showToast('❌ ပမာဏ ထည့်ပါ'); entrySetFocusBox('amt'); return; }
+
+    let line = noText + '=' + mainAmt;
+    if (revText) {
+        if (/^r$/i.test(revText)) line += 'r' + mainAmt;
+        else {
+            const revAmt = parseInt(revText.replace(/[^\d]/g, ''), 10) || 0;
+            if (revAmt > 0) line += 'r' + revAmt;
         }
-        showToast(`✅ ${items.length} ကွက် သိမ်းပြီးပြီ`);
-        closeModal('modal-board');
-        setActiveSession(sessionId);
+    }
+
+    const { items, invalidLines } = parseBoardReport(line);
+    const validItems = items.filter((it) => /^\d{2}$/.test(String(it.number)));
+    if (!validItems.length) {
+        showToast('❌ ဖော်မြူလာ မသိပါ (ဂဏန်း မှားနေတယ်)' + (invalidLines.length ? ': ' + invalidLines[0] : ''));
+        return;
+    }
+    validItems.forEach((it) => {
+        entryPending.push({ player_name: playerName, number: String(it.number), amount: it.amount, record_type: 'pos' });
+    });
+    entryClearInputs();
+    renderEntryTable();
+    const skipped = invalidLines.length + (items.length - validItems.length);
+    showToast('✅ ထည့်ပြီးပြီ' + (skipped ? ' (⚠️ ' + skipped + ' လိုင်း ကျန်)' : ''));
+};
+
+/** 💾 Save — persist all pending entries as NEW batches (one batch_no per person/type). */
+window.saveEntryBatch = async function saveEntryBatch() {
+    if (entrySaveInFlight) return;
+    if (!entryPending.length) { showToast('စာရင်း မရှိသေးပါ'); return; }
+    if (!state.activeSessionId) { showToast('⚠️ Session မရှိသေးပါ'); return; }
+
+    entrySaveInFlight = true;
+    try {
+        // Group by (person, record_type), preserving first-appearance order
+        const order = [];
+        const byKey = {};
+        entryPending.forEach((e) => {
+            const k = (e.player_name || '') + '|' + (e.record_type || 'pos');
+            if (!byKey[k]) { byKey[k] = []; order.push(k); }
+            byKey[k].push(e);
+        });
+
+        let count = 0;
+        for (const k of order) {
+            const batchNo = 'B' + Date.now().toString(36) + count.toString(36);
+            for (const e of byKey[k]) {
+                await createRecord('lottery_records', {
+                    session: state.activeSessionId,
+                    number: String(e.number).padStart(2, '0'),
+                    amount: Number(e.amount) || 0,
+                    agent_name: e.player_name || '',
+                    player_name: e.player_name || '',
+                    record_type: e.record_type || 'pos',
+                    batch_no: batchNo,
+                });
+                count++;
+            }
+        }
+        entryPending = [];
+        renderEntryTable();
+        showToast('✅ သိမ်းပြီးပြီ');
         await loadSessions();
         renderSessions();
         renderLedger();
     } catch (e) {
         showToast('သိမ်းမရပါ: ' + e.message);
     } finally {
-        $('boardSave').disabled = false;
+        entrySaveInFlight = false;
     }
-}
+};
+
+/** 📋 button in entry screen → open the paste Digital Board modal. */
+window.openEntryBoard = function openEntryBoard() {
+    openBoard(state.activeSessionId);
+};
 
 /* ================= LEDGER ================= */
 
@@ -690,7 +887,7 @@ async function renderLedger() {
     }
     head.innerHTML = `<div class="card"><div class="row"><b>${escHtml(sessionLabel(s))}</b>
         <button class="btn small" id="ledgerBoardBtn">📝 ထိုးကွက်</button></div></div>`;
-    $('ledgerBoardBtn').addEventListener('click', () => openBoard(s.id));
+    $('ledgerBoardBtn').addEventListener('click', () => openEntry(s.id));
     grid.innerHTML = cells;
     $('ledgerTotal').textContent = formatMoney(total);
     $('ledgerBoxes').textContent = formatMoney(Math.round(total / rate));
