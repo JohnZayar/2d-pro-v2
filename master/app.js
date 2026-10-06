@@ -694,7 +694,16 @@ async function saveBoard() {
     const agent = state.agents.find((a) => a.id === target);
     const personName = agent ? agent.name : '';
 
-    validItems.forEach((it) => {
+    // 🚫 ဒိုင်ပိတ်: blocked numbers cannot be bet (incoming only)
+    const blockedSet2 = new Set(getBlocked(sessionId));
+    const blockedHit2 = [];
+    const allowedBoard = validItems.filter((it) => {
+        const nn = String(it.number).padStart(2, '0');
+        if (blockedSet2.has(nn)) { blockedHit2.push(nn); return false; }
+        return true;
+    });
+    if (blockedHit2.length) showToast('🚫 ဒိုင်ပိတ်: ' + [...new Set(blockedHit2)].join(', ') + ' — တင် မရပါ');
+    allowedBoard.forEach((it) => {
         entryPending.push({
             player_name: personName || null,
             number: String(it.number).padStart(2, '0'),
@@ -877,13 +886,23 @@ window.submitEntryRow = async function submitEntryRow() {
         showToast('❌ ဖော်မြူလာ မသိပါ (ဂဏန်း မှားနေတယ်)' + (invalidLines.length ? ': ' + invalidLines[0] : ''));
         return;
     }
-    validItems.forEach((it) => {
+    // 🚫 ဒိုင်ပိတ်: blocked numbers cannot be bet
+    const blockedSet = new Set(getBlocked(state.activeSessionId));
+    const blockedHit = [];
+    const allowedItems = validItems.filter((it) => {
+        const nn = String(it.number).padStart(2, '0');
+        if (blockedSet.has(nn)) { blockedHit.push(nn); return false; }
+        return true;
+    });
+    if (!allowedItems.length) { entryClearInputs(); showToast('🚫 ဒိုင်ပိတ် ဂဏန်းတွေ ချည်း — တင် မရပါ'); return; }
+    allowedItems.forEach((it) => {
         entryPending.push({ player_name: playerName, number: String(it.number), amount: it.amount, record_type: rType });
     });
     entryClearInputs();
     renderEntryTable();
-    const skipped = invalidLines.length + (items.length - validItems.length);
-    showToast(rType === 'akan' ? '✅ ထည့်ပြီးပြီ (⬆️ အထွက်)' : '✅ ထည့်ပြီးပြီ' + (skipped ? ' (⚠️ ' + skipped + ' လိုင်း ကျန်)' : ''));
+    const skipped = invalidLines.length + (items.length - validItems.length) + blockedHit.length;
+    const blkMsg = blockedHit.length ? ' (🚫 ' + [...new Set(blockedHit)].join(',') + ' ပိတ်)' : '';
+    showToast(rType === 'akan' ? '✅ ထည့်ပြီးပြီ (⬆️ အထွက်)' : '✅ ထည့်ပြီးပြီ' + (skipped ? ' (⚠️ ' + skipped + ' လိုင်း ကျန်)' : '') + blkMsg);
 };
 
 /** 💾 Save — persist all pending entries as NEW batches (one batch_no per person/type). */
