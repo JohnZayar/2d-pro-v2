@@ -27,7 +27,6 @@ const state = {
     overSessionId: null,
     lastVoucherText: '',
     lastOverText: '',
-    lastAkanText: '',
     syncTimer: null,
 };
 
@@ -103,10 +102,6 @@ function bindUI() {
     $('overSession').addEventListener('change', () => { state.overSessionId = $('overSession').value; renderOverlimit(); });
     $('overCopyBtn').addEventListener('click', copyOverlimit);
     $('overToAkanBtn').addEventListener('click', sendOverToAkan);
-    $('akanText').addEventListener('input', renderAkandain);
-    $('akanPasteBtn').addEventListener('click', pasteAkandain);
-    $('akanCopyBtn').addEventListener('click', copyAkandain);
-    $('akanClearBtn').addEventListener('click', () => { $('akanText').value = ''; renderAkandain(); });
     $('serverUrlSave').addEventListener('click', () => {
         const v = $('serverUrlInput').value.trim();
         if (v && !/^https?:\/\//i.test(v)) { showToast('URL က https:// နဲ့ စရမယ်'); return; }
@@ -456,9 +451,11 @@ function switchTab(name) {
     });
     document.querySelectorAll('.tabpane').forEach((p) => p.classList.remove('active'));
     $('tab-' + name).classList.add('active');
-    // The entry keypad is a fixed overlay — hide it whenever leaving the entry tab.
+    // The entry/akandain keypads are fixed overlays — hide them whenever leaving their tab.
     const ekp = $('entryKeypad');
     if (ekp && name !== 'entry' && !ekp.hidden) { ekp.hidden = true; $('entryKbToggle')?.classList.remove('active'); }
+    const akp = $('akanKeypad');
+    if (akp && name !== 'akandain' && !akp.hidden) { akp.hidden = true; $('akanKbToggle')?.classList.remove('active'); }
     if (name === 'ledger') renderLedger();
     if (name === 'entry') renderEntry();
     if (name === 'agents') renderAgents();
@@ -626,11 +623,31 @@ async function saveBoard() {
     // Guard: only real 2-digit numbers
     const validItems = items.filter((it) => /^\d{2}$/.test(String(it.number)));
     if (!validItems.length) { showToast('ထည့်တာ မမှန်ပါ — စစ်ပါ'); return; }
+    const sessionId = state.boardSessionId;
+    const skipped = invalidLines.length + (items.length - validItems.length);
+
+    // အကန်ဒိုင် mode → rows land in the OUTGOING pending table, not the entry table.
+    if (state.boardMode === 'akan') {
+        const bookie = (($('akanBookieInput') && $('akanBookieInput').value) || '').trim() || null;
+        validItems.forEach((it) => {
+            akanPending.push({
+                player_name: bookie,
+                number: String(it.number).padStart(2, '0'),
+                amount: Number(it.amount) || 0,
+                record_type: 'akan',
+            });
+        });
+        showToast('✅ ' + validItems.length + ' ကွက် ထည့်ပြီးပြီ (အထွက်)' +
+            (skipped ? ' (⚠️ ' + skipped + ' လိုင်း ကျန်)' : ''));
+        closeModal('modal-board');
+        await openAkandain(sessionId);
+        return;
+    }
+
     const target = $('boardTarget').value;
     const isDain = target === '__DAIN__';
     const agent = isDain ? null : state.agents.find((a) => a.id === target);
     const personName = isDain ? '' : (agent ? agent.name : '');
-    const sessionId = state.boardSessionId;
 
     validItems.forEach((it) => {
         entryPending.push({
@@ -640,7 +657,6 @@ async function saveBoard() {
             record_type: isDain ? 'akan' : 'pos',
         });
     });
-    const skipped = invalidLines.length + (items.length - validItems.length);
     showToast('✅ ' + validItems.length + ' ကွက် ထည့်ပြီးပြီ' +
         (skipped ? ' (⚠️ ' + skipped + ' လိုင်း ကျန်)' : ''));
     closeModal('modal-board');
@@ -845,7 +861,18 @@ window.saveEntryBatch = async function saveEntryBatch() {
 
 /** 📋 button in entry screen → open the paste Digital Board modal. */
 window.openEntryBoard = function openEntryBoard() {
+    state.boardMode = 'entry';
     openBoard(state.activeSessionId);
+};
+
+/** 📋 button in akandain screen → board feeds the OUTGOING pending table. */
+window.openAkanBoard = function openAkanBoard() {
+    state.boardMode = 'akan';
+    openBoard(state.activeSessionId);
+    const sel = $('boardTarget');
+    if (sel) sel.value = '__DAIN__';
+    const s = state.sessions.find((x) => x.id === state.activeSessionId);
+    $('boardTitle').textContent = '🔄 အကန်ဒိုင် (အထွက်) — ' + (s ? sessionLabel(s) : '');
 };
 
 /* ================= LEDGER ================= */
@@ -1509,53 +1536,221 @@ async function copyOverlimit() {
     showToast(ok ? '✅ အကျွံစာရင်း ကူးပြီးပြီ' : '❌ ကူးမရပါ');
 }
 
-/** One-tap: copy over-limit list into အကန်ဒိုင် textarea and go there. */
+/** One-tap: push over-limit list into the အကန်ဒိုင် OUTGOING pending table and go there. */
 async function sendOverToAkan() {
     const t = state.lastOverText;
     if (!t) { showToast('အကျွံ မရှိပါ'); return; }
+    const { items } = parseBoardReport(t);
+    const validItems = items.filter((it) => /^\d{2}$/.test(String(it.number)));
+    if (!validItems.length) { showToast('ထည့်တာ မမှန်ပါ'); return; }
+    const bookie = (($('akanBookieInput') && $('akanBookieInput').value) || '').trim() || null;
+    validItems.forEach((it) => {
+        akanPending.push({
+            player_name: bookie,
+            number: String(it.number).padStart(2, '0'),
+            amount: Number(it.amount) || 0,
+            record_type: 'akan',
+        });
+    });
     const ok = await copyTextHelper(t);
-    $('akanText').value = t;
-    renderAkandain();
-    switchTab('akandain');
-    showToast(ok ? '✅ အကန်ဒိုင်သို့ ပို့ပြီးပြီ (ကူးပြီးသား)' : '✅ အကန်ဒိုင်သို့ ပို့ပြီးပြီ');
+    await openAkandain(state.overSessionId || state.activeSessionId);
+    showToast('✅ အကန်ဒိုင်သို့ ပို့ပြီးပြီ (အထွက်)' + (ok ? ' — ကူးပြီးသား' : ''));
 }
 
-/* ================= 🔄 အကန်ဒိုင် (AKAN BETTING) ================= */
+/* ================= 🔄 အကန်ဒိုင် (AKAN — OUTGOING bets, Agent-style entry) ================= */
+/* Pho: "ကိုယ်ကသူများစီထိုးမှာမို့ အထွက်ပြပါ။ အဝင်မဟုတ်" — everything here is
+   OUTGOING (money leaves the shop). Saved with record_type 'akan' so the
+   ledger nets it out and vouchers exclude it, same as the house-akan flow. */
 
-function renderAkandain() {
-    const text = $('akanText').value;
-    const box = $('akanContent');
-    const items = parseBoard(text).filter((p) => /^\d{1,2}$/.test(String(p.number)));
-    if (!items.length) {
-        box.innerHTML = text.trim()
-            ? '<div class="empty">ဂဏန်း မတွေ့ပါ — "55 3000" ပုံစံနဲ့ ထည့်ပါ</div>'
-            : '';
-        state.lastAkanText = '';
+let akanPending = [];      // typed but NOT yet saved: [{player_name(bookie), number, amount, record_type:'akan'}]
+let akanActiveBox = 'no';  // 'no' | 'amt' | 'rev'
+let akanSaveInFlight = false;
+
+const AKAN_FORMULA_INSERT = {
+    'ထိပ်': 'ထိပ်', 'နောက်': 'နောက်', 'ပတ်': 'ပတ်', 'ပူး': 'ပူး',
+    'ပါဝါ': 'ပါဝါ', 'နက္ခတ်': 'နက္ခတ်', 'ဘရိတ်': 'ဘရိတ်',
+    'ခွေ': 'ခွေ', 'ခွေပူးပါ': 'ခွေပူးပါ', 'ညီအစ်ကို': 'ညီအစ်ကို',
+    'စုံစုံ': 'စုံစုံ', 'မမ': 'မမ', 'စုံမ': 'စုံမ', 'မစုံ': 'မစုံ'
+};
+
+window.akanSetFocusBox = function akanSetFocusBox(boxName) {
+    akanActiveBox = boxName;
+    $('akanBoxNo').classList.remove('active-box');
+    $('akanBoxAmt').classList.remove('active-box');
+    $('akanBoxRev').classList.remove('active-box');
+    if (boxName === 'no') $('akanBoxNo').classList.add('active-box');
+    else if (boxName === 'amt') $('akanBoxAmt').classList.add('active-box');
+    else if (boxName === 'rev') $('akanBoxRev').classList.add('active-box');
+};
+
+window.akanAppendNum = function akanAppendNum(val) {
+    if (akanActiveBox === 'no') $('akanBoxNo').value += val;
+    else if (akanActiveBox === 'amt') $('akanBoxAmt').value += val;
+    else if (akanActiveBox === 'rev') $('akanBoxRev').value += val;
+};
+
+window.akanBackspace = function akanBackspace() {
+    if (akanActiveBox === 'no') $('akanBoxNo').value = $('akanBoxNo').value.slice(0, -1);
+    else if (akanActiveBox === 'amt') $('akanBoxAmt').value = $('akanBoxAmt').value.slice(0, -1);
+    else if (akanActiveBox === 'rev') $('akanBoxRev').value = $('akanBoxRev').value.slice(0, -1);
+};
+
+function akanClearInputs() {
+    $('akanBoxNo').value = ''; $('akanBoxAmt').value = ''; $('akanBoxRev').value = '';
+    akanSetFocusBox('no');
+}
+
+window.akanApplyFormula = function akanApplyFormula(fName) {
+    const insert = AKAN_FORMULA_INSERT[fName] || fName;
+    const cur = $('akanBoxNo').value.trim();
+    $('akanBoxNo').value = cur ? cur + insert : insert;
+    akanSetFocusBox('amt');
+};
+
+window.akanToggleR = function akanToggleR() {
+    $('akanBoxRev').value = $('akanBoxRev').value.trim() ? '' : 'R';
+};
+
+/** Toggle the akandain-screen keypad (fixed bottom overlay, same as entry). */
+window.toggleAkanKeyboard = function toggleAkanKeyboard() {
+    const kp = $('akanKeypad');
+    if (!kp) return;
+    kp.hidden = !kp.hidden;
+    const btn = $('akanKbToggle');
+    if (btn) btn.classList.toggle('active', !kp.hidden);
+};
+
+/** Open the အကန်ဒိုင် (outgoing) entry screen for a session. */
+async function openAkandain(sessionId) {
+    setActiveSession(sessionId);
+    akanClearInputs();
+    await renderAkandain();
+    switchTab('akandain');
+}
+
+/** Refresh akandain screen: session label, bookie suggestions, pending table. */
+async function renderAkandain() {
+    const s = state.sessions.find((x) => x.id === state.activeSessionId);
+    $('akanSessionLabel').textContent = s ? sessionLabel(s) : 'Session မရှိပါ';
+
+    // Bookie suggestions: distinct bookie names from prior OUTGOING (akan) bets, all sessions.
+    const seen = new Set();
+    const order = [];
+    for (const sess of state.sessions) {
+        const recs = await db.query('lottery_records', 'by_session', sess.id);
+        for (const r of recs) {
+            if (r.record_type !== 'akan') continue;
+            const k = (r.player_name || r.agent_name || '').trim();
+            if (k && !seen.has(k)) { seen.add(k); order.push(k); }
+        }
+    }
+    $('akanBookieList').innerHTML = order.map((k) => '<option value="' + escHtml(k) + '">').join('');
+
+    renderAkanTable();
+}
+
+/** Pending OUTGOING table + totals. */
+function renderAkanTable() {
+    const tbody = $('akanTableBody');
+    const total = akanPending.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+    $('akanTotal').textContent = formatMoney(total);
+    $('akanCount').textContent = akanPending.length;
+    if (!akanPending.length) {
+        tbody.innerHTML = '<tr><td colspan="4" class="empty-cell">စာရင်း မရှိသေးပါ။</td></tr>';
         return;
     }
-    const total = items.reduce((s, p) => s + (Number(p.amount) || 0), 0);
-    box.innerHTML = '<div class="card">' +
-        items.map((p) =>
-            '<div class="rec-row"><span class="num">' + escHtml(String(p.number).padStart(2, '0')) + '</span>' +
-            '<span class="amt">' + formatMoney(p.amount) + '</span></div>'
-        ).join('') +
-        '<div class="row mt"><b>စုစုပေါင်း</b><b style="color:var(--accent)">' + formatMoney(total) + '</b></div>' +
-        '<div class="small muted mt">တခြားဒိုင်မှာ ထိုးမယ့် စာရင်း — ' + items.length + ' ကွက်</div></div>';
-
-    state.lastAkanText = items.map((p) => String(p.number).padStart(2, '0') + ' ' + Number(p.amount)).join('\n');
+    tbody.innerHTML = akanPending.map((e, i) =>
+        '<tr>' +
+            '<td class="cell-out">⬆️ ' + escHtml(e.player_name || '—') + '</td>' +
+            '<td class="cell-no">' + escHtml(String(e.number)) + '</td>' +
+            '<td class="cell-amt out-amt">' + formatMoney(e.amount) + '</td>' +
+            '<td class="cell-del"><button class="rec-del" onclick="akanDeleteRow(' + i + ')" title="ဖျက်မည်">🗑️</button></td>' +
+        '</tr>'
+    ).join('');
 }
 
-async function pasteAkandain() {
+window.akanDeleteRow = function akanDeleteRow(i) {
+    akanPending.splice(i, 1);
+    renderAkanTable();
+};
+
+/** ထည့်မည် — expand the number-box formula and add to the OUTGOING pending table. */
+window.submitAkanRow = async function submitAkanRow() {
+    const bookie = ($('akanBookieInput').value || '').trim() || null;
+    const noText = $('akanBoxNo').value.trim();
+    const amtText = $('akanBoxAmt').value.trim().replace(/[^\d]/g, '');
+    const revText = $('akanBoxRev').value.trim();
+
+    if (!noText) { showToast('❌ ဂဏန်း (သို့) ဖော်မြူလာ ထည့်ပါ'); akanSetFocusBox('no'); return; }
+    const mainAmt = parseInt(amtText, 10) || 0;
+    if (mainAmt <= 0) { showToast('❌ ပမာဏ ထည့်ပါ'); akanSetFocusBox('amt'); return; }
+
+    let line = noText + '=' + mainAmt;
+    if (revText) {
+        if (/^r$/i.test(revText)) line += 'r' + mainAmt;
+        else {
+            const revAmt = parseInt(revText.replace(/[^\d]/g, ''), 10) || 0;
+            if (revAmt > 0) line += 'r' + revAmt;
+        }
+    }
+
+    const { items, invalidLines } = parseBoardReport(line);
+    const validItems = items.filter((it) => /^\d{2}$/.test(String(it.number)));
+    if (!validItems.length) {
+        showToast('❌ ဖော်မြူလာ မသိပါ (ဂဏန်း မှားနေတယ်)' + (invalidLines.length ? ': ' + invalidLines[0] : ''));
+        return;
+    }
+    validItems.forEach((it) => {
+        akanPending.push({ player_name: bookie, number: String(it.number), amount: it.amount, record_type: 'akan' });
+    });
+    akanClearInputs();
+    renderAkanTable();
+    const skipped = invalidLines.length + (items.length - validItems.length);
+    showToast('✅ ထည့်ပြီးပြီ (အထွက်)' + (skipped ? ' (⚠️ ' + skipped + ' လိုင်း ကျန်)' : ''));
+};
+
+/** 💾 Save — persist all pending OUTGOING entries as NEW akan batches. */
+window.saveAkanBatch = async function saveAkanBatch() {
+    if (akanSaveInFlight) return;
+    if (!akanPending.length) { showToast('စာရင်း မရှိသေးပါ'); return; }
+    if (!state.activeSessionId) { showToast('⚠️ Session မရှိသေးပါ'); return; }
+
+    akanSaveInFlight = true;
     try {
-        const t = await navigator.clipboard.readText();
-        if (t) { $('akanText').value = t; renderAkandain(); showToast('✅ Paste ပြီးပြီ'); }
-        else showToast('ကူးထားတာ မရှိပါ');
-    } catch (e) { showToast('Paste မရပါ — ကိုယ်တိုင်ထည့်ပါ'); }
-}
+        // Group by bookie, preserving first-appearance order
+        const order = [];
+        const byKey = {};
+        akanPending.forEach((e) => {
+            const k = e.player_name || '';
+            if (!byKey[k]) { byKey[k] = []; order.push(k); }
+            byKey[k].push(e);
+        });
 
-async function copyAkandain() {
-    const t = state.lastAkanText;
-    if (!t) { showToast('ကူးစရာ မရှိပါ'); return; }
-    const ok = await copyTextHelper(t);
-    showToast(ok ? '✅ ကူးပြီးပြီ' : '❌ ကူးမရပါ');
-}
+        let count = 0;
+        for (const k of order) {
+            const batchNo = 'B' + Date.now().toString(36) + count.toString(36);
+            for (const e of byKey[k]) {
+                await createRecord('lottery_records', {
+                    session: state.activeSessionId,
+                    number: String(e.number).padStart(2, '0'),
+                    amount: Number(e.amount) || 0,
+                    agent_name: e.player_name || '',
+                    player_name: e.player_name || '',
+                    record_type: 'akan',
+                    batch_no: batchNo,
+                });
+                count++;
+            }
+        }
+        akanPending = [];
+        renderAkanTable();
+        showToast('✅ အထွက် သိမ်းပြီးပြီ');
+        await loadSessions();
+        renderSessions();
+        renderLedger();
+    } catch (e) {
+        showToast('သိမ်းမရပါ: ' + e.message);
+    } finally {
+        akanSaveInFlight = false;
+    }
+};

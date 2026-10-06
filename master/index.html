@@ -252,20 +252,89 @@
         <div id="overContent"></div>
       </section>
       <section id="tab-akandain" class="tabpane">
-        <div class="card">
-          <div class="row"><b>🔄 အကန်ဒိုင်</b></div>
-          <div class="small muted mt">တခြားဒိုင်မှာ ကိုယ်မစားချင်လို့ သွားထိုးတာ — အကျွံစာရင်းက ကူးလာတဲ့ ဂဏန်းတွေ ဒီမှာ Paste ချပါ</div>
-          <div class="field mt">
-            <label>ဂဏန်းများ</label>
-            <textarea id="akanText" rows="5" placeholder="ဥပမာ:&#10;55 3000&#10;12 1500"></textarea>
+        <div class="akan-banner">
+          <div class="akan-banner-main">🔄 အကန်ဒိုင် <span class="out-badge">⬆️ အထွက်</span></div>
+          <div class="akan-banner-sub">ကိုယ်က တခြားဒိုင်မှာ သွားထိုးတာ — ငွေထွက်ပါတယ် (အဝင် မဟုတ်)</div>
+        </div>
+
+        <div class="entry-topbar">
+          <button class="back-btn" onclick="switchTab('sessions')">‹ ပွဲများ</button>
+          <span id="akanSessionLabel" class="sess-label">Session</span>
+        </div>
+
+        <div class="entry-playerbar">
+          <input id="akanBookieInput" list="akanBookieList" class="field-input player-select" placeholder="-- အကန်ဒိုင်ရွေးရန် --" autocomplete="off">
+          <datalist id="akanBookieList"></datalist>
+          <button class="top-btn kb-toggle-btn" id="akanKbToggle" type="button" onclick="toggleAkanKeyboard()" title="ကီးဘုတ် ဖွင့်/ပိတ်">⌨️</button>
+          <button class="top-btn" type="button" onclick="openAkanBoard()" title="Digital Board">📋</button>
+          <button class="top-btn btn-save-top" type="button" onclick="saveAkanBatch()">💾 Save</button>
+        </div>
+
+        <div class="table-container akan-table">
+          <table class="pos-table">
+            <thead>
+              <tr>
+                <th style="width:30%;">ဒိုင် ⬆️</th>
+                <th style="width:30%;">ဂဏန်း</th>
+                <th style="width:30%;">ပမာဏ</th>
+                <th style="width:10%;text-align:center;">🗑️</th>
+              </tr>
+            </thead>
+            <tbody id="akanTableBody">
+              <tr><td colspan="4" class="empty-cell">စာရင်း မရှိသေးပါ။</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="footer-bar akan-footer">
+          <span>အထွက် Total: <b id="akanTotal">0</b></span>
+          <span>ကွက်: <b id="akanCount">0</b></span>
+        </div>
+
+        <!-- Color formula keypad (7x2, same as entry), toggleable -->
+        <div class="keypad-panel" id="akanKeypad" hidden>
+          <div class="quick-btns-grid">
+            <button class="q-btn c-blue" type="button" onclick="akanApplyFormula('စုံမ')">စုံမ</button>
+            <button class="q-btn c-cyan" type="button" onclick="akanApplyFormula('မစုံ')">မစုံ</button>
+            <button class="q-btn c-blue" type="button" onclick="akanApplyFormula('ထိပ်')">ထိပ်</button>
+            <button class="q-btn c-lblue" type="button" onclick="akanApplyFormula('နောက်')">နောက်</button>
+            <button class="q-btn c-green" type="button" onclick="akanApplyFormula('ပတ်')">ပတ်</button>
+            <button class="q-btn c-orange" type="button" onclick="akanApplyFormula('ပူး')">ပူး</button>
+            <button class="q-btn c-pink" type="button" onclick="akanApplyFormula('ပါဝါ')">ပါဝါ</button>
+            <button class="q-btn c-lpink" type="button" onclick="akanApplyFormula('နက္ခတ်')">နက္ခတ်</button>
+            <button class="q-btn c-rose" type="button" onclick="akanApplyFormula('ဘရိတ်')">ဘရိတ်</button>
+            <button class="q-btn c-peach" type="button" onclick="akanApplyFormula('ခွေ')">ခွေ</button>
+            <button class="q-btn c-yellow" type="button" onclick="akanApplyFormula('ခွေပူးပါ')">ခွေပူးပါ</button>
+            <button class="q-btn c-yellow" type="button" onclick="akanApplyFormula('ညီအစ်ကို')">ညီအစ်ကို</button>
+            <button class="q-btn c-dorange" type="button" onclick="akanApplyFormula('စုံစုံ')">စုံစုံ</button>
+            <button class="q-btn c-dgreen" type="button" onclick="akanApplyFormula('မမ')">မမ</button>
           </div>
-          <div class="btn-grid">
-            <button class="btn small gray" id="akanPasteBtn">📋 Paste</button>
-            <button class="btn small gray" id="akanCopyBtn">📋 ကူးရန်</button>
-            <button class="btn small red" id="akanClearBtn">🗑️ ရှင်းမယ်</button>
+
+          <div class="input-row-3box">
+            <div class="box-wrap"><input type="text" id="akanBoxNo" class="mbox active-box" placeholder="ဂဏန်း" readonly onclick="akanSetFocusBox('no')"></div>
+            <div class="box-wrap"><input type="text" id="akanBoxAmt" class="mbox" placeholder="ဒဲ့" readonly onclick="akanSetFocusBox('amt')"></div>
+            <div class="box-wrap"><input type="text" id="akanBoxRev" class="mbox" placeholder="အပြန်" readonly onclick="akanSetFocusBox('rev')"></div>
+            <button class="btn-r-box" type="button" onclick="akanToggleR()">R</button>
+          </div>
+
+          <div class="numpad-grid-wrapper">
+            <div class="numpad">
+              <button class="num-btn" type="button" onclick="akanAppendNum('1')">1</button>
+              <button class="num-btn" type="button" onclick="akanAppendNum('2')">2</button>
+              <button class="num-btn" type="button" onclick="akanAppendNum('3')">3</button>
+              <button class="num-btn" type="button" onclick="akanAppendNum('4')">4</button>
+              <button class="num-btn" type="button" onclick="akanAppendNum('5')">5</button>
+              <button class="num-btn" type="button" onclick="akanAppendNum('6')">6</button>
+              <button class="num-btn" type="button" onclick="akanAppendNum('7')">7</button>
+              <button class="num-btn" type="button" onclick="akanAppendNum('8')">8</button>
+              <button class="num-btn" type="button" onclick="akanAppendNum('9')">9</button>
+              <button class="num-btn" type="button" onclick="akanAppendNum('00')">00</button>
+              <button class="num-btn" type="button" onclick="akanAppendNum('0')">0</button>
+              <button class="num-btn" type="button" onclick="akanBackspace()">⌫</button>
+            </div>
+            <button class="num-btn submit-btn" type="button" onclick="submitAkanRow()">ထည့်မည်</button>
           </div>
         </div>
-        <div id="akanContent"></div>
       </section>
       <section id="tab-weekly" class="tabpane">
         <div class="card">
