@@ -793,7 +793,8 @@ async function renderEntryPersonOptions() {
 
     const recs = state.activeSessionId ? await db.query('lottery_records', 'by_session', state.activeSessionId) : [];
     recs.forEach((r) => { if (r.record_type !== 'akan') add(voucherPersonKey(r)); });
-    (state.agents || []).forEach((a) => add(a.name));
+    // ထိုးသား + Agent only — အကန်ဒိုင် never mixes in here
+    (state.agents || []).forEach((a) => { if ((a.person_type || 'agent') !== 'akan') add(a.name); });
     const ph = '-- ထိုးသား ရွေးပါ --';
     pSel.innerHTML = '<option value="">' + escHtml(ph) + '</option>' +
         order.map((k) => '<option value="' + escHtml(k) + '">' + escHtml(voucherPersonLabel(k)) + '</option>').join('');
