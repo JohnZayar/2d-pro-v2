@@ -1113,19 +1113,20 @@ async function openDaily(sessionId) {
         const amt = Number(r.amount) || 0;
         per[key].bet += isAkan ? -amt : amt;
         // Win column shows the RAW winning amount only — never multiplied by payout rate.
-        // For akan (outgoing) this is what the bookie owes Pho back.
-        if (winNum && String(r.number).padStart(2, '0') === winNum) {
+        // Akan (outgoing) has no winnings here: Pho pays the bookie, so the row stays MINUS.
+        if (winNum && String(r.number).padStart(2, '0') === winNum && !isAkan) {
             per[key].win += amt;
         }
     }
     let rows = '', tBet = 0, tWin = 0;
     for (const [key, v] of Object.entries(per)) {
         const label = pLabel[key];
-        const ag = v.isAkan ? null : state.agents.find((a) => a.name === label);
+        const ag = state.agents.find((a) => a.name === label);
         const comm = ag ? (Number(ag.commission) || 0) : 0;
         const commAmt = Math.round(v.bet * comm / 100);
-        // Incoming: net = in - commission - payout. Outgoing (akan): net = out + win-back.
-        const net = v.isAkan ? v.bet + v.win : v.bet - commAmt - v.win;
+        // Uniform formula for every row (bettors AND akan):
+        // ကျန် = ထိုးငွေ - ကော် - အပေါက်. Bettors are PLUS (Pho receives), bookies MINUS (Pho pays).
+        const net = v.bet - commAmt - v.win;
         tBet += v.bet; tWin += v.win;
         const nameHtml = v.isAkan
             ? `<span style="color:var(--red);font-weight:700">⬆️ ${escHtml(label)}</span>`
