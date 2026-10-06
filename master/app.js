@@ -1102,27 +1102,33 @@ async function openDaily(sessionId) {
     const wins = await db.query('winning_numbers', 'by_session', sessionId);
     const winNum = wins.length ? String(wins[0].number).padStart(2, '0') : null;
 
-    // per-agent aggregation
+    // per-person aggregation: incoming and outgoing (akan) shown as separate rows
     const per = {};
+    const pLabel = {};
     for (const r of recs) {
-        const key = r.record_type === 'akan' ? '🏠 အကန်' : (r.agent_name || '(အမည် မရှိ)');
-        if (!per[key]) per[key] = { bet: 0, win: 0, type: r.record_type };
+        const isAkan = r.record_type === 'akan';
+        const pkey = voucherPersonKey(r) || '(အမည် မရှိ)';
+        const key = (isAkan ? 'akan:' : 'pos:') + pkey;
+        if (!per[key]) { per[key] = { bet: 0, win: 0, isAkan }; pLabel[key] = voucherPersonLabel(pkey); }
         const amt = Number(r.amount) || 0;
-        per[key].bet += r.record_type === 'akan' ? -amt : amt;
-        if (winNum && String(r.number).padStart(2, '0') === winNum && r.record_type !== 'akan') {
-            const ag = state.agents.find((a) => a.name === r.agent_name);
-            const payout = ag ? (Number(ag.payout_rate) || 80) : 80;
-            per[key].win += amt * payout;
+        per[key].bet += isAkan ? -amt : amt;
+        // Win column shows the RAW winning amount only — never multiplied by payout rate
+        if (winNum && String(r.number).padStart(2, '0') === winNum && !isAkan) {
+            per[key].win += amt;
         }
     }
     let rows = '', tBet = 0, tWin = 0;
-    for (const [name, v] of Object.entries(per)) {
-        const ag = state.agents.find((a) => a.name === name);
+    for (const [key, v] of Object.entries(per)) {
+        const label = pLabel[key];
+        const ag = state.agents.find((a) => a.name === label);
         const comm = ag ? (Number(ag.commission) || 0) : 0;
         const commAmt = Math.round(v.bet * comm / 100);
         const net = v.bet - commAmt - v.win;
         tBet += v.bet; tWin += v.win;
-        rows += `<tr><td>${escHtml(name)}</td><td>${formatMoney(v.bet)}</td><td>${formatMoney(v.win)}</td><td>${formatMoney(net)}</td></tr>`;
+        const nameHtml = v.isAkan
+            ? `<span style="color:var(--red);font-weight:700">⬆️ ${escHtml(label)}</span>`
+            : escHtml(label);
+        rows += `<tr><td>${nameHtml}</td><td>${formatMoney(v.bet)}</td><td>${formatMoney(v.win)}</td><td>${formatMoney(net)}</td></tr>`;
     }
     const html = `
         <div class="muted small" style="margin-bottom:8px">${escHtml(s ? sessionLabel(s) : '')}
