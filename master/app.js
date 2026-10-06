@@ -1199,7 +1199,7 @@ async function openBigSmall(sessionId) {
         const rows = Object.keys(agg)
             .filter((n) => agg[n] !== 0)
             .map((n) => ({ n, a: agg[n] }))
-            .sort((x, y) => y.a - x.a);
+            .sort((x, y) => Number(y.n) - Number(x.n)); // by NUMBER desc: 99, 98, 97…
         $('bigsmallList').innerHTML = rows.length
             ? rows.map((r) =>
                 `<div class="voucher-row"><span class="v-no">${r.n}</span><span class="v-amt">${formatMoney(r.a)}</span></div>`).join('')
