@@ -135,10 +135,9 @@
       </section>
       <section id="tab-ledger" class="tabpane">
         <div id="ledgerHead"></div>
-        <button class="summary-toggle" id="ledgerSummaryToggle" type="button" onclick="toggleLedgerSummary()">စုစုပေါင်း / အကွက် <span id="ledgerSummaryArrow">▼</span></button>
-        <div class="ledger-summary" id="ledgerSummary" hidden>
+        <div class="ledger-summary" id="ledgerSummary">
           <div class="sumbox"><div class="lbl">စုစုပေါင်း</div><div class="val" id="ledgerTotal">0</div></div>
-          <div class="sumbox"><div class="lbl">အကွက်</div><div class="val" id="ledgerBoxes">0</div></div>
+          <div class="sumbox sumbox-tap" id="limitBox" onclick="openLimitDialog()"><div class="lbl">အကွက် <span class="tap-hint">· နှိပ်၍ Limit ပြောင်း</span></div><div class="val" id="ledgerBoxes">0</div></div>
         </div>
         <div id="ledgerGrid"></div>
       </section>
@@ -332,6 +331,18 @@
         <input id="winNumber" type="text" inputmode="numeric" maxlength="2" placeholder="ဥပမာ 57">
       </div>
       <button id="winSave" class="btn block green">သိမ်းမည်</button>
+    </div>
+  </div>
+
+  <!-- Limit -->
+  <div id="modal-limit" class="modal">
+    <div class="sheet">
+      <button class="close-x" data-close>×</button>
+      <h2>🚫 Limit (အကျွံ) ပြောင်းရန်</h2>
+      <div class="field"><label>Limit ပမာဏ (တဂဏန်းချင်း အများဆုံး)</label>
+        <input id="limitInput" type="number" inputmode="numeric" placeholder="ဥပမာ 10000">
+      </div>
+      <button id="limitSave" class="btn block green">သိမ်းမည်</button>
     </div>
   </div>
 

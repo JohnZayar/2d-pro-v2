@@ -85,6 +85,7 @@ function bindUI() {
     });
 
     $('winSave').addEventListener('click', saveWinning);
+    $('limitSave').addEventListener('click', saveLimit);
     $('addAgentBtn').addEventListener('click', () => openAgentModal(null));
     $('agSave').addEventListener('click', saveAgent);
 
@@ -463,15 +464,6 @@ function switchTab(name) {
 }
 window.switchTab = switchTab;
 
-window.toggleLedgerSummary = function toggleLedgerSummary() {
-    const el = $('ledgerSummary');
-    const arrow = $('ledgerSummaryArrow');
-    if (!el) return;
-    const show = el.hidden;
-    el.hidden = !show;
-    if (arrow) arrow.textContent = show ? '▲' : '▼';
-};
-
 function openModal(id) { $(id).classList.add('open'); }
 function closeModal(id) { $(id).classList.remove('open'); }
 
@@ -479,6 +471,24 @@ function openGeneric(title, html) {
     $('genTitle').textContent = title;
     $('genBody').innerHTML = html;
     openModal('modal-generic');
+}
+
+/* ================= LIMIT DIALOG (quick access from ledger) ================= */
+
+async function openLimitDialog() {
+    $('limitInput').value = await getSetting('limit', 50000);
+    openModal('modal-limit');
+}
+window.openLimitDialog = openLimitDialog;
+
+async function saveLimit() {
+    const v = Number($('limitInput').value) || 50000;
+    await setSetting('limit', v);
+    const setLimitInput = $('setLimit');
+    if (setLimitInput) setLimitInput.value = v;
+    closeModal('modal-limit');
+    showToast('🚫 Limit ' + formatMoney(v) + ' သိမ်းပြီးပြီ');
+    renderLedger();
 }
 
 /* ================= SESSIONS ================= */
