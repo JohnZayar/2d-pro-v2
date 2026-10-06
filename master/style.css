@@ -148,7 +148,7 @@ main { flex: 1; padding: 14px 12px 40px; }
 .session-card .btn-grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
-    grid-auto-rows: minmax(48px, auto);
+    grid-auto-rows: 52px;
     gap: 8px;
     align-items: stretch;
 }
