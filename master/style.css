@@ -691,3 +691,5 @@ table.wtable th:first-child, table.wtable td:first-child {
 }
 table.wtable th:first-child { z-index: 3; }
 table.wtable td.muted { color: var(--muted); }
+table.wtable .wpos { color: #22c55e; font-weight: 700; }
+table.wtable .wneg { color: #ef4444; font-weight: 700; }

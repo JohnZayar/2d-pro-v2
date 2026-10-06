@@ -1273,7 +1273,11 @@ async function renderWeekly() {
     // akan (red) rows always at the bottom
     rows.sort((a, b) => (a.e.isAkan ? 1 : 0) - (b.e.isAkan ? 1 : 0));
 
-    const signMoney = (n) => (n < 0 ? '−' : '+') + formatMoney(Math.abs(Math.round(n * 10) / 10));
+    const signMoney = (n) => {
+        const v = Math.round(n * 10) / 10;
+        const cls = v < 0 ? 'wneg' : (v > 0 ? 'wpos' : '');
+        return `<span class="${cls}">${(v < 0 ? '−' : '+') + formatMoney(Math.abs(v))}</span>`;
+    };
     const MM_DAY = ['တနင်္လာ', 'အင်္ဂါ', 'ဗုဒ္ဓဟူး', 'ကြာသပတေး', 'သောကြာ'];
     let html = '<table class="wtable"><tr><th>အမည်</th>';
     days.forEach((d, i) => {
