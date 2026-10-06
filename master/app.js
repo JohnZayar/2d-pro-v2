@@ -1113,33 +1113,33 @@ async function openDaily(sessionId) {
         const amt = Number(r.amount) || 0;
         per[key].bet += isAkan ? -amt : amt;
         // ပေါက် column DISPLAYS the raw winning amount only.
-        // Behind the scenes ("နောက်ကွယ်ကတွက်မယ်") the net deducts win × payout (80).
-        // Akan (outgoing) has no winnings: Pho pays the bookie, row stays MINUS.
-        if (winNum && String(r.number).padStart(2, '0') === winNum && !isAkan) {
+        // Behind the scenes ("နောက်ကွယ်ကတွက်မယ်") the net uses win × payout (80).
+        // Bettors: Pho PAYS winnings (deduct). Akan: bookie PAYS Pho (add).
+        if (winNum && String(r.number).padStart(2, '0') === winNum) {
             const ag0 = state.agents.find((a) => a.name === pLabel[key]);
             const payout = ag0 ? (Number(ag0.payout_rate) || 80) : 80;
             per[key].win += amt;
             per[key].winDeduct += amt * payout;
         }
     }
-    let rows = '', tBet = 0, tWin = 0, tComm = 0, tWinDeduct = 0;
+    let rows = '', tBet = 0, tWin = 0, tComm = 0, tWinDeductPos = 0, tWinDeductAkan = 0, tNet = 0;
     for (const [key, v] of Object.entries(per)) {
         const label = pLabel[key];
         const ag = state.agents.find((a) => a.name === label);
         const comm = ag ? (Number(ag.commission) || 0) : 0;
         const commAmt = Math.round(v.bet * comm / 100);
-        // Uniform formula for every row (bettors AND akan):
-        // ကျန် = ထိုးငွေ − ကော် − (အပေါက် × 80, နောက်ကွယ်မှာ).
-        // Bettors PLUS (Pho receives), bookies MINUS (Pho pays).
-        const net = v.bet - commAmt - v.winDeduct;
-        tBet += v.bet; tWin += v.win; tComm += commAmt; tWinDeduct += v.winDeduct;
+        // Bettors: ကျန် = ထိုးငွေ − ကော် − (အပေါက် × 80). Pho pays winners.
+        // Akan: ကျန် = ထိုးငွေ − ကော် + (အပေါက် × 80). Bookie pays Pho.
+        const net = v.isAkan ? v.bet - commAmt + v.winDeduct : v.bet - commAmt - v.winDeduct;
+        tBet += v.bet; tWin += v.win; tComm += commAmt; tNet += net;
+        if (v.isAkan) tWinDeductAkan += v.winDeduct; else tWinDeductPos += v.winDeduct;
         const nameHtml = v.isAkan
             ? `<span style="color:var(--red);font-weight:700">⬆️ ${escHtml(label)}</span>`
             : escHtml(label);
         rows += `<tr><td>${nameHtml}</td><td>${formatMoney(v.bet)}</td><td>${formatMoney(v.win)}</td><td>${formatMoney(net)}</td></tr>`;
     }
     // Total deducts commission and the background (win × 80), not the displayed raw win.
-    const tNet = tBet - tComm - tWinDeduct;
+    // tNet is the sum of row nets (handles both bettor and akan directions).
     const html = `
         <div class="muted small" style="margin-bottom:8px">${escHtml(s ? sessionLabel(s) : '')}
         ${winNum ? ` · 🏆 ပေါက်သီး <b style="color:var(--green)">${winNum}</b>` : ' · ပေါက်သီး မထည့်ရသေး'}</div>
@@ -1150,7 +1150,8 @@ async function openDaily(sessionId) {
         <table class="data">
         <tr><td>တက်ငွေ</td><td style="text-align:right">${formatMoney(tBet)}</td></tr>
         <tr><td>ကော်</td><td style="text-align:right">${tComm ? '−' + formatMoney(tComm) : '0'}</td></tr>
-        <tr><td>အပေါက် (${formatMoney(tWin)} × 80)</td><td style="text-align:right">${tWinDeduct ? '−' + formatMoney(tWinDeduct) : '0'}</td></tr>
+        <tr><td>အပေါက် ပေး (${formatMoney(tWin)} × 80)</td><td style="text-align:right">${tWinDeductPos ? '−' + formatMoney(tWinDeductPos) : '0'}</td></tr>
+        ${tWinDeductAkan ? `<tr><td>အပေါက် ရ (ဒိုင်ဆီက)</td><td style="text-align:right">+${formatMoney(tWinDeductAkan)}</td></tr>` : ''}
         <tr class="total"><td>ကျန်</td><td style="text-align:right">${(tNet < 0 ? '−' : '+') + formatMoney(Math.abs(tNet))}</td></tr>
         </table></div>`;
     openGeneric('📑 Daily စာရင်းချုပ်', html);
