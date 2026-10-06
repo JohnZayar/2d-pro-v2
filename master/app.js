@@ -70,12 +70,11 @@ function bindUI() {
     $('boardPaste').addEventListener('click', async () => {
         try {
             const t = await navigator.clipboard.readText();
-            if (t) { $('boardText').value = t; updateBoardPreview(); }
+            if (t) { $('boardText').value = t; }
         } catch (e) { showToast('Paste မရပါ — ကိုယ်တိုင်ထည့်ပါ'); }
     });
     $('boardBack').addEventListener('click', () => closeModal('modal-board'));
     $('boardSave').addEventListener('click', saveBoard);
-    $('boardText').addEventListener('input', updateBoardPreview);
     document.querySelectorAll('[data-close]').forEach((b) => {
         b.addEventListener('click', () => b.closest('.modal').classList.remove('open'));
     });
@@ -636,26 +635,18 @@ async function openBoard(sessionId) {
     state.boardSessionId = sessionId;
     const s = state.sessions.find((x) => x.id === sessionId);
     $('boardTitle').textContent = '📝 ထိုးကွက် — ' + (s ? sessionLabel(s) : '');
+    $('boardTargetWrap').style.display = '';
+    // Target: registered ထိုးသား + Agent (no akan mixing; entry board is incoming-only)
     const sel = $('boardTarget');
-    let opts = '<option value="__DAIN__">🏠 ဒိုင် (အကန်)</option>';
+    let opts = '';
     for (const a of state.agents) {
-        if ((a.person_type || 'agent') !== 'agent') continue;
+        if ((a.person_type || 'agent') === 'akan') continue;
         opts += `<option value="${escHtml(a.id)}">${escHtml(a.name)}</option>`;
     }
     sel.innerHTML = opts;
     $('boardText').value = '';
-    updateBoardPreview();
     openModal('modal-board');
     setTimeout(() => $('boardText').focus(), 300);
-}
-
-function updateBoardPreview() {
-    const text = $('boardText').value;
-    if (!text.trim()) { $('boardPreview').textContent = 'စာရိုက်ပါ…'; return; }
-    const items = parseBoard(text);
-    const total = items.reduce((t, x) => t + (Number(x.amount) || 0), 0);
-    $('boardPreview').innerHTML =
-        `✅ <b>${items.length}</b> ကွက် ဝင်မယ် · စုစုပေါင်း <b>${formatMoney(total)}</b>`;
 }
 
 async function saveBoard() {
@@ -686,16 +677,15 @@ async function saveBoard() {
     }
 
     const target = $('boardTarget').value;
-    const isDain = target === '__DAIN__';
-    const agent = isDain ? null : state.agents.find((a) => a.id === target);
-    const personName = isDain ? '' : (agent ? agent.name : '');
+    const agent = state.agents.find((a) => a.id === target);
+    const personName = agent ? agent.name : '';
 
     validItems.forEach((it) => {
         entryPending.push({
             player_name: personName || null,
             number: String(it.number).padStart(2, '0'),
             amount: Number(it.amount) || 0,
-            record_type: isDain ? 'akan' : 'pos',
+            record_type: 'pos', // entry board is incoming-only
         });
     });
     showToast('✅ ' + validItems.length + ' ကွက် ထည့်ပြီးပြီ' +
@@ -918,8 +908,8 @@ window.openEntryBoard = function openEntryBoard() {
 window.openAkanBoard = function openAkanBoard() {
     state.boardMode = 'akan';
     openBoard(state.activeSessionId);
-    const sel = $('boardTarget');
-    if (sel) sel.value = '__DAIN__';
+    // Bookie is chosen on the akandain screen — hide the board's target row.
+    $('boardTargetWrap').style.display = 'none';
     const s = state.sessions.find((x) => x.id === state.activeSessionId);
     $('boardTitle').textContent = '🔄 အကန်ဒိုင် (အထွက်) — ' + (s ? sessionLabel(s) : '');
 };
