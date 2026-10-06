@@ -1644,27 +1644,48 @@ function openBlocked(sessionId) {
 async function openAllTotal(sessionId) {
     const s = state.sessions.find((x) => x.id === sessionId);
     const recs = await db.query('lottery_records', 'by_session', sessionId);
-    let pos = 0, akan = 0, posCount = 0, akanCount = 0;
+    const wins = await db.query('winning_numbers', 'by_session', sessionId);
+    const winNum = wins.length ? String(wins[0].number).padStart(2, '0') : null;
+
+    // per-person: incoming only (pos), grouped by voucherPersonKey (agent grouped)
+    const per = {};
+    let tBet = 0, tWin = 0;
     for (const r of recs) {
+        if (r.record_type === 'akan') continue;
+        const pkey = voucherPersonKey(r) || '(အမည် မရှိ)';
+        if (!per[pkey]) per[pkey] = { bet: 0, win: 0 };
         const amt = Number(r.amount) || 0;
-        if (r.record_type === 'akan') { akan += amt; akanCount++; }
-        else { pos += amt; posCount++; }
+        per[pkey].bet += amt;
+        tBet += amt;
+        if (winNum && String(r.number).padStart(2, '0') === winNum) {
+            per[pkey].win += amt;
+            tWin += amt;
+        }
     }
-    const net = pos - akan;
+    let rows = '';
+    for (const [name, v] of Object.entries(per)) {
+        rows += `<tr><td>${escHtml(voucherPersonLabel(name))}</td><td>${formatMoney(v.bet)}</td><td>${formatMoney(v.win)}</td></tr>`;
+    }
     const html = `
-        <div class="muted small" style="margin-bottom:8px">${escHtml(s ? sessionLabel(s) : '')}</div>
+        <div class="muted small" style="margin-bottom:8px">${escHtml(s ? sessionLabel(s) : '')}
+        ${winNum ? ` · 🏆 ပေါက်သီး <b style="color:var(--green)">${winNum}</b>` : ' · ပေါက်သီး မထည့်ရသေး'}</div>
         <table class="data">
-            <tr><th>အမျိုးအစား</th><th>မှတ်တမ်း</th><th>ပမာဏ</th></tr>
-            <tr><td>📝 ထိုးငွေ</td><td>${posCount}</td><td>${formatMoney(pos)}</td></tr>
-            <tr><td>🏠 အကန်</td><td>${akanCount}</td><td>${formatMoney(akan)}</td></tr>
-            <tr class="total"><td>💰 ALL Total (net)</td><td>${posCount + akanCount}</td><td>${formatMoney(net)}</td></tr>
+            <tr><th>တက်ငွေ စုစုပေါင်း</th><td style="font-weight:700">${formatMoney(tBet)}</td></tr>
+            <tr><th>အပေါက် စုစုပေါင်း</th><td style="font-weight:700">${formatMoney(tWin)}</td></tr>
         </table>
+        <details style="margin-top:10px">
+            <summary style="cursor:pointer;font-weight:700;padding:6px 0">👤 တဦးချင်း ▼</summary>
+            <table class="data" style="margin-top:6px">
+                <tr><th>အမည်</th><th>တက်ငွေ</th><th>အပေါက်</th></tr>
+                ${rows || '<tr><td colspan="3" class="muted">စာရင်း မရှိပါ</td></tr>'}
+            </table>
+        </details>
         <div class="row" style="margin-top:10px">
             <button class="btn small gray" id="allTotalCopy">📋 ကူးရန်</button>
         </div>`;
     openGeneric('💰 ALL Total', html);
     $('allTotalCopy').addEventListener('click', async () => {
-        const text = `ထိုးငွေ: ${formatMoney(pos)}\nအကန်: ${formatMoney(akan)}\nALL Total: ${formatMoney(net)}`;
+        const text = `တက်ငွေ စုစုပေါင်း: ${formatMoney(tBet)}\nအပေါက် စုစုပေါင်း: ${formatMoney(tWin)}`;
         try {
             await navigator.clipboard.writeText(text);
             showToast('📋 ကူးပြီးပြီ');
