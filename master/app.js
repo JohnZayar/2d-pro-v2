@@ -935,6 +935,7 @@ async function renderLedger() {
     if (!s) {
         head.innerHTML = '<div class="empty">ပွဲ ရွေးပါ — 📋 ပွဲများ tab ကနေ လယ်ဂျာ နှိပ်ပါ</div>';
         grid.innerHTML = '';
+        $('ledgerTotal').textContent = '0';
         $('ledgerBoxes').textContent = '0';
         return;
     }
@@ -966,6 +967,7 @@ async function renderLedger() {
         <button class="btn small" id="ledgerBoardBtn">📝 ထိုးကွက်</button></div></div>`;
     $('ledgerBoardBtn').addEventListener('click', () => openEntry(s.id));
     grid.innerHTML = cells;
+    $('ledgerTotal').textContent = formatMoney(total);
     $('ledgerBoxes').textContent = formatMoney(Math.round(total / rate));
 }
 
