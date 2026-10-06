@@ -144,6 +144,30 @@ main { flex: 1; padding: 14px 12px 40px; }
 .btn-grid { display: flex; flex-wrap: wrap; gap: 8px; }
 .btn-grid .btn { flex: 1 1 30%; min-width: 90px; }
 
+/* ---------- Session action grid: uniform 3-col boxes ---------- */
+.session-card .btn-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    grid-auto-rows: minmax(48px, auto);
+    gap: 8px;
+    align-items: stretch;
+}
+.session-card .btn-grid .btn {
+    flex: none;
+    min-width: 0;
+    width: 100%;
+    margin: 0;
+    padding: 8px 4px;
+    font-size: 13px;
+    line-height: 1.25;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    white-space: normal;
+    word-break: break-word;
+}
+
 /* ---------- Ledger grid ---------- */
 .ledger-summary { display: flex; gap: 10px; margin-bottom: 12px; }
 .sumbox {
