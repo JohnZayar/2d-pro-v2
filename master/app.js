@@ -1204,29 +1204,30 @@ async function renderWeekly() {
 
     const weekSessions = state.sessions.filter((s) => s.date && daySet.has(s.date));
 
-    // agg key: (akan? 'akan:':'pos:') + pkey + '|' + timeType  (v1 style: person x time rows)
+    // agg key: (akan? 'akan:':'pos:') + pkey
+    // perDay[5] -> { am: {bet,win,winDeduct,has}, pm: {...} }
     const agg = {};
     const rowOrder = [];
     const blankCell = () => ({ bet: 0, win: 0, winDeduct: 0, has: false });
     for (const s of weekSessions) {
         const dayIdx = days.findIndex((d) => d.ds === s.date);
         if (dayIdx < 0) continue;
-        const timeType = s.timeType || '';
+        const isAM = (s.timeType || '') === 'မနက်ပိုင်း';
         const recs = await db.query('lottery_records', 'by_session', s.id);
         const wins = await db.query('winning_numbers', 'by_session', s.id);
         const winNum = wins.length ? String(wins[0].number).padStart(2, '0') : null;
         for (const r of recs) {
             const isAkan = r.record_type === 'akan';
             const pkey = voucherPersonKey(r) || '(အမည် မရှိ)';
-            const rk = (isAkan ? 'akan:' : 'pos:') + pkey + '|' + timeType;
+            const rk = (isAkan ? 'akan:' : 'pos:') + pkey;
             if (!agg[rk]) {
                 agg[rk] = {
-                    isAkan, label: voucherPersonLabel(pkey), pkey, timeType,
-                    perDay: [0, 1, 2, 3, 4].map(blankCell),
+                    isAkan, label: voucherPersonLabel(pkey), pkey,
+                    perDay: [0, 1, 2, 3, 4].map(() => ({ am: blankCell(), pm: blankCell() })),
                 };
                 rowOrder.push(rk);
             }
-            const d = agg[rk].perDay[dayIdx];
+            const d = isAM ? agg[rk].perDay[dayIdx].am : agg[rk].perDay[dayIdx].pm;
             const amt = Number(r.amount) || 0;
             if (amt !== 0) d.has = true;
             d.bet += isAkan ? -amt : amt;
@@ -1245,23 +1246,25 @@ async function renderWeekly() {
         return;
     }
 
-    // Compute per-cell nets and totals
-    const dayTotals = [0, 0, 0, 0, 0];
+    // Compute nets; dayTotals[5] = {am, pm} nets
+    const dayTotals = [0, 1, 2, 3, 4].map(() => ({ am: 0, pm: 0 }));
     let grandTotal = 0;
     const rows = rowOrder.map((rk) => {
         const e = agg[rk];
         const ag = state.agents.find((a) => a.name === e.label);
         const comm = ag ? (Number(ag.commission) || 0) : 0;
-        const cells = [];
+        const cells = []; // 10 cells: [day0am, day0pm, day1am, ...]
         let rowTotal = 0;
         for (let i = 0; i < 5; i++) {
-            const d = e.perDay[i];
-            if (!d.has) { cells.push(null); continue; }
-            const commAmt = Math.round(d.bet * comm / 100);
-            const net = e.isAkan ? d.bet - commAmt + d.winDeduct : d.bet - commAmt - d.winDeduct;
-            cells.push({ bet: d.bet, win: d.win, net });
-            rowTotal += net;
-            dayTotals[i] += net;
+            for (const k of ['am', 'pm']) {
+                const d = e.perDay[i][k];
+                if (!d.has) { cells.push(null); continue; }
+                const commAmt = Math.round(d.bet * comm / 100);
+                const net = e.isAkan ? d.bet - commAmt + d.winDeduct : d.bet - commAmt - d.winDeduct;
+                cells.push({ bet: d.bet, win: d.win, net });
+                rowTotal += net;
+                dayTotals[i][k] += net;
+            }
         }
         grandTotal += rowTotal;
         return { e, cells, rowTotal };
@@ -1269,24 +1272,27 @@ async function renderWeekly() {
 
     const signMoney = (n) => (n < 0 ? '−' : '+') + formatMoney(Math.abs(Math.round(n * 10) / 10));
     const MM_DAY = ['တနင်္လာ', 'အင်္ဂါ', 'ဗုဒ္ဓဟူး', 'ကြာသပတေး', 'သောကြာ'];
-    let html = '<table class="wtable"><tr><th>အမည်</th>';
+    let html = '<table class="wtable"><tr><th rowspan="2">အမည်</th>';
     days.forEach((d, i) => {
-        html += `<th class="wday" colspan="2">${MM_DAY[i]}<br><span style="font-size:11px">${signMoney(dayTotals[i])}</span></th>`;
+        const dt = dayTotals[i].am + dayTotals[i].pm;
+        html += `<th colspan="2">${MM_DAY[i]}<br><span style="font-size:11px">${signMoney(dt)}</span></th>`;
     });
-    html += `<th>Total<br><span style="font-size:11px">${signMoney(grandTotal)}</span></th></tr>`;
+    html += `<th rowspan="2">Total<br><span style="font-size:11px">${signMoney(grandTotal)}</span></th></tr><tr>`;
+    for (let i = 0; i < 5; i++) html += '<th class="wamc">နံနက်</th><th class="wpmc">ညနေ</th>';
+    html += '</tr>';
 
     rows.forEach((r, ri) => {
-        const isAM = (r.e.timeType || '') === 'မနက်ပိုင်း';
-        const rowCls = isAM ? 'wam' : 'wpm';
-        const nameHtml = (r.e.isAkan ? '⬆️ ' : '') + escHtml(r.e.label) +
-            ` <span style="font-size:11px;color:var(--muted)">(${escHtml(shortTimeType(r.e.timeType))})</span>`;
+        const nameHtml = (r.e.isAkan ? '⬆️ ' : '') + escHtml(r.e.label);
         const nameCell = r.e.isAkan
             ? `<td><span style="color:var(--red);font-weight:700">${nameHtml}</span></td>`
             : `<td><b>${nameHtml}</b></td>`;
-        html += `<tr class="${rowCls}">${nameCell}`;
-        r.cells.forEach((c, di) => {
-            const cellAttr = c ? ` data-wcell="${ri}:${di}" style="cursor:pointer"` : '';
-            html += c ? `<td class="wday"${cellAttr}>${formatMoney(c.bet)} / ${formatMoney(c.win)}</td>` : '<td class="wday muted">-</td>';
+        html += `<tr>${nameCell}`;
+        r.cells.forEach((c, ci) => {
+            const isAM = ci % 2 === 0;
+            const tintCls = isAM ? 'wamc' : 'wpmc';
+            const dayIdx = Math.floor(ci / 2);
+            const cellAttr = c ? ` data-wcell="${ri}:${dayIdx}:${isAM ? 'am' : 'pm'}" style="cursor:pointer"` : '';
+            html += c ? `<td class="wday ${tintCls}"${cellAttr}>${formatMoney(c.bet)} / ${formatMoney(c.win)}</td>` : `<td class="wday ${tintCls} muted">-</td>`;
         });
         html += `<td><b>${signMoney(r.rowTotal)}</b></td></tr>`;
     });
@@ -1294,8 +1300,8 @@ async function renderWeekly() {
     box.innerHTML = html;
     box.querySelectorAll('[data-wcell]').forEach((td) => {
         td.addEventListener('click', () => {
-            const [ri, di] = td.getAttribute('data-wcell').split(':').map(Number);
-            openWeeklyCell(_weeklyRows[ri], _weeklyDays[di]);
+            const [ri, di, ampm] = td.getAttribute('data-wcell').split(':');
+            openWeeklyCell(_weeklyRows[Number(ri)], _weeklyDays[Number(di)], ampm);
         });
     });
     _weeklyRows = rows;
@@ -1305,9 +1311,10 @@ async function renderWeekly() {
 let _weeklyRows = [];
 let _weeklyDays = [];
 
-async function openWeeklyCell(row, day) {
+async function openWeeklyCell(row, day, ampm) {
     const e = row.e;
-    const sessions = state.sessions.filter((s) => s.date === day.ds && (s.timeType || '') === (e.timeType || ''));
+    const wantTime = ampm === 'am' ? 'မနက်ပိုင်း' : 'ညနေပိုင်း';
+    const sessions = state.sessions.filter((s) => s.date === day.ds && (s.timeType || '') === wantTime);
     const recs = [];
     for (const s of sessions) {
         const rs = await db.query('lottery_records', 'by_session', s.id);
@@ -1320,7 +1327,7 @@ async function openWeeklyCell(row, day) {
         }
     }
     if (!recs.length) { showToast('မှတ်တမ်း မရှိပါ'); return; }
-    let html = `<div style="font-weight:700;margin-bottom:8px">${escHtml(e.label)} (${escHtml(shortTimeType(e.timeType))}) — ${escHtml(day.name)}</div>`;
+    let html = `<div style="font-weight:700;margin-bottom:8px">${escHtml(e.label)} (${ampm === 'am' ? 'နံနက်' : 'ညနေ'}) — ${escHtml(day.name)}</div>`;
     html += '<div style="max-height:50vh;overflow-y:auto">';
     recs.forEach((r, i) => {
         html += `<div style="display:flex;align-items:center;gap:8px;padding:8px;border-bottom:1px solid var(--border)">` +

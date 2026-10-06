@@ -677,8 +677,10 @@ table.wtable th { background: rgba(255,255,255,.04); font-weight: 700; }
 table.wtable td:first-child, table.wtable th:first-child {
     text-align: left; min-width: 110px; max-width: 150px;
 }
-/* morning/evening row tints so records don't mix */
-table.wtable tr.wam td { background: rgba(59,130,246,.07); }
-table.wtable tr.wpm td { background: rgba(249,115,22,.07); }
+/* morning/evening column tints so records don't mix */
+table.wtable td.wamc { background: rgba(59,130,246,.07); }
+table.wtable td.wpmc { background: rgba(249,115,22,.07); }
+table.wtable th.wamc { background: rgba(59,130,246,.12); }
+table.wtable th.wpmc { background: rgba(249,115,22,.12); }
 /* stronger separator between day columns */
 table.wtable th.wday, table.wtable td.wday { border-left: 2px solid var(--accent); }
