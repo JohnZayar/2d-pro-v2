@@ -23,6 +23,11 @@ const state = {
     activeSessionId: localStorage.getItem('v2_active_session') || null,
     boardSessionId: null,
     editingAgentId: null,
+    voucherSessionId: null,
+    overSessionId: null,
+    lastVoucherText: '',
+    lastOverText: '',
+    lastAkanText: '',
     syncTimer: null,
 };
 
@@ -88,6 +93,20 @@ function bindUI() {
     $('setRate').addEventListener('change', () => setSetting('box_rate', Number($('setRate').value) || 2000).then(renderLedger));
     $('syncNowBtn').addEventListener('click', () => fullSync(true));
     $('logoutBtn').addEventListener('click', doLogout);
+
+    // vouchers / overlimit / akandain
+    $('voucherSession').addEventListener('change', () => { state.voucherSessionId = $('voucherSession').value; renderVouchers(); });
+    $('voucherPerson').addEventListener('change', renderVoucherContent);
+    $('voucherCopyBtn').addEventListener('click', copyVoucher);
+    $('voucherPrintBtn').addEventListener('click', printVoucher);
+    $('voucherShareBtn').addEventListener('click', shareVoucher);
+    $('overSession').addEventListener('change', () => { state.overSessionId = $('overSession').value; renderOverlimit(); });
+    $('overCopyBtn').addEventListener('click', copyOverlimit);
+    $('overToAkanBtn').addEventListener('click', sendOverToAkan);
+    $('akanText').addEventListener('input', renderAkandain);
+    $('akanPasteBtn').addEventListener('click', pasteAkandain);
+    $('akanCopyBtn').addEventListener('click', copyAkandain);
+    $('akanClearBtn').addEventListener('click', () => { $('akanText').value = ''; renderAkandain(); });
     $('serverUrlSave').addEventListener('click', () => {
         const v = $('serverUrlInput').value.trim();
         if (v && !/^https?:\/\//i.test(v)) { showToast('URL က https:// နဲ့ စရမယ်'); return; }
@@ -439,6 +458,9 @@ function switchTab(name) {
     $('tab-' + name).classList.add('active');
     if (name === 'ledger') renderLedger();
     if (name === 'agents') renderAgents();
+    if (name === 'vouchers') renderVouchers();
+    if (name === 'akan') renderOverlimit();
+    if (name === 'akandain') renderAkandain();
 }
 window.switchTab = switchTab;
 
@@ -891,4 +913,298 @@ async function openRemaining() {
         prevRemaining = rem;
     }
     openGeneric('🔢 ကျန်ဂဏန်း (၁၀ ပတ်)', html);
+}
+
+/* ================= 🧾 ဘောက်ချာများ (VOUCHERS) ================= */
+
+/** Session records in saved order (never re-sorted beyond entry order). */
+async function sessionRecordsOrdered(sessionId) {
+    const recs = await db.query('lottery_records', 'by_session', sessionId);
+    return recs.slice().sort((a, b) =>
+        (a.created || a._updated || 0) - (b.created || b._updated || 0));
+}
+
+function voucherPersonKey(r) {
+    return r.player_name || r.agent_name || '';
+}
+function voucherPersonLabel(k) {
+    return k || 'ကိုယ်တိုင်';
+}
+
+function fillSessionSelect(sel, selectedId) {
+    sel.innerHTML = state.sessions.map((s) =>
+        `<option value="${escHtml(s.id)}"${s.id === selectedId ? ' selected' : ''}>${escHtml(sessionLabel(s))}</option>`
+    ).join('');
+}
+
+async function renderVouchers() {
+    const sessSel = $('voucherSession');
+    if (!state.voucherSessionId || !state.sessions.find((s) => s.id === state.voucherSessionId)) {
+        state.voucherSessionId = state.activeSessionId;
+    }
+    fillSessionSelect(sessSel, state.voucherSessionId);
+
+    const sid = sessSel.value;
+    state.voucherSessionId = sid;
+    if (!sid) {
+        $('voucherContent').innerHTML = '<div class="empty">ပွဲ မရှိသေးပါ</div>';
+        state.lastVoucherText = '';
+        return;
+    }
+    let recs = await sessionRecordsOrdered(sid);
+    recs = recs.filter((r) => r.record_type !== 'akan');
+
+    const order = [];
+    const seen = {};
+    recs.forEach((r) => {
+        const k = voucherPersonKey(r);
+        if (!seen[k]) { seen[k] = 1; order.push(k); }
+    });
+
+    const pSel = $('voucherPerson');
+    const prev = pSel.value;
+    pSel.innerHTML = '<option value="__all">အားလုံး</option>' + order.map((k) =>
+        `<option value="${escHtml(k)}">${escHtml(voucherPersonLabel(k))}</option>`).join('');
+    pSel.value = (prev && (prev === '__all' || order.includes(prev))) ? prev : '__all';
+
+    renderVoucherContent();
+}
+
+async function renderVoucherContent() {
+    const sid = $('voucherSession').value;
+    const sel = $('voucherPerson').value;
+    const box = $('voucherContent');
+    if (!sid) { box.innerHTML = ''; state.lastVoucherText = ''; return; }
+
+    let recs = await sessionRecordsOrdered(sid);
+    recs = recs.filter((r) => r.record_type !== 'akan');
+    if (sel !== '__all') recs = recs.filter((r) => voucherPersonKey(r) === sel);
+    if (!recs.length) {
+        box.innerHTML = '<div class="empty">စာရင်း မရှိသေးပါ</div>';
+        state.lastVoucherText = '';
+        return;
+    }
+
+    // Group: player (first-appearance order) → batch (first-appearance order) → entry order
+    const playerOrder = [];
+    const byPlayer = {};
+    recs.forEach((r) => {
+        const k = voucherPersonKey(r);
+        if (!byPlayer[k]) { byPlayer[k] = []; playerOrder.push(k); }
+        byPlayer[k].push(r);
+    });
+
+    const players = playerOrder.map((k) => {
+        const pRecs = byPlayer[k];
+        const batchOrder = [];
+        const byBatch = {};
+        pRecs.forEach((r) => {
+            const b = (r.batch_no === undefined || r.batch_no === null) ? '__none__' : String(r.batch_no);
+            if (!byBatch[b]) { byBatch[b] = []; batchOrder.push(b); }
+            byBatch[b].push(r);
+        });
+        const batches = batchOrder.map((b, i) => ({
+            label: 'no(' + (i + 1) + ')',
+            items: byBatch[b],
+        }));
+        return { key: k, label: voucherPersonLabel(k), batches };
+    });
+
+    // On-screen HTML
+    let html = '';
+    players.forEach((p) => {
+        html += '<div class="v-player-block"><div class="v-player-name">' + escHtml(p.label) + '</div>';
+        p.batches.forEach((b) => {
+            html += '<div class="v-batch"><div class="v-batch-no">' + escHtml(b.label) + '</div>' +
+                b.items.map((r) =>
+                    '<div class="voucher-row"><span class="v-no">' +
+                    escHtml(String(r.number).padStart(2, '0')) + '</span>' +
+                    '<span class="v-amt">' + formatMoney(r.amount) + '</span></div>'
+                ).join('') + '</div>';
+        });
+        html += '</div>';
+    });
+    box.innerHTML = html;
+
+    // Plain text (Pho's approved format: name → no(X) → "55 500" lines, no counts/aggregation)
+    const lines = [];
+    players.forEach((p, pi) => {
+        if (pi > 0) lines.push('');
+        lines.push(p.label);
+        p.batches.forEach((b, bi) => {
+            if (bi > 0) lines.push('');
+            lines.push(b.label);
+            b.items.forEach((r) => {
+                lines.push(String(r.number).padStart(2, '0') + ' ' + String(Number(r.amount) || 0));
+            });
+        });
+    });
+    state.lastVoucherText = lines.join('\n');
+}
+
+async function copyTextHelper(text) {
+    try {
+        await navigator.clipboard.writeText(text);
+        return true;
+    } catch (e) {
+        try {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+            const ok = document.execCommand('copy');
+            document.body.removeChild(ta);
+            return ok;
+        } catch (e2) { return false; }
+    }
+}
+
+async function copyVoucher() {
+    const t = state.lastVoucherText;
+    if (!t) { showToast('ဘောက်ချာ မရှိသေးပါ'); return; }
+    const ok = await copyTextHelper(t);
+    showToast(ok ? '✅ ကူးပြီးပြီ' : '❌ ကူးမရပါ');
+}
+
+function printVoucher() {
+    const t = state.lastVoucherText;
+    if (!t) { showToast('ဘောက်ချာ မရှိသေးပါ'); return; }
+    const esc = escHtml(t);
+    const s = state.sessions.find((x) => x.id === state.voucherSessionId);
+    $('printArea').innerHTML =
+        '<div class="print-receipt">' +
+        '<div class="pr-title">🧾 ဘောက်ချာ</div>' +
+        '<div class="pr-sub">' + escHtml(s ? sessionLabel(s) : '') + '</div>' +
+        '<div class="pr-line"></div>' +
+        '<pre class="pr-pre">' + esc + '</pre>' +
+        '<div class="pr-line"></div>' +
+        '</div>';
+    window.print();
+}
+
+async function shareVoucher() {
+    const t = state.lastVoucherText;
+    if (!t) { showToast('ဘောက်ချာ မရှိသေးပါ'); return; }
+    if (navigator.share) {
+        try { await navigator.share({ text: t }); } catch (e) { /* dismissed */ }
+    } else {
+        await copyVoucher();
+    }
+}
+
+/* ================= 🔴 အကျွံဂဏန်းများ (OVER-LIMIT) ================= */
+
+async function calcOverlimit(sessionId) {
+    const limit = Number(await getSetting('limit', 50000));
+    const recs = await db.query('lottery_records', 'by_session', sessionId);
+    const agg = {};
+    for (const r of recs) {
+        const n = String(r.number).padStart(2, '0');
+        const amt = Number(r.amount) || 0;
+        agg[n] = (agg[n] || 0) + (r.record_type === 'akan' ? -amt : amt);
+    }
+    const over = [];
+    for (let i = 0; i < 100; i++) {
+        const n = String(i).padStart(2, '0');
+        const total = agg[n] || 0;
+        if (total > limit) over.push({ number: n, total, excess: total - limit });
+    }
+    return { limit, over };
+}
+
+async function renderOverlimit() {
+    const sessSel = $('overSession');
+    if (!state.overSessionId || !state.sessions.find((s) => s.id === state.overSessionId)) {
+        state.overSessionId = state.activeSessionId;
+    }
+    fillSessionSelect(sessSel, state.overSessionId);
+
+    const sid = sessSel.value;
+    state.overSessionId = sid;
+    const box = $('overContent');
+    if (!sid) {
+        box.innerHTML = '<div class="empty">ပွဲ မရှိသေးပါ</div>';
+        $('overLimitLabel').textContent = '';
+        state.lastOverText = '';
+        return;
+    }
+    const { limit, over } = await calcOverlimit(sid);
+    $('overLimitLabel').textContent = 'Limit ' + formatMoney(limit);
+
+    if (!over.length) {
+        box.innerHTML = '<div class="empty">✅ အကျွံ မရှိပါ<br>Limit ' + formatMoney(limit) + ' ကျော်တာ မရှိဘူး</div>';
+        state.lastOverText = '';
+        return;
+    }
+
+    box.innerHTML = '<div class="card"><table class="data">' +
+        '<tr><th>ဂဏန်း</th><th>စုစုပေါင်း</th><th>အကျွံ</th></tr>' +
+        over.map((o) =>
+            '<tr class="over-row"><td>' + escHtml(o.number) + '</td>' +
+            '<td>' + formatMoney(o.total) + '</td>' +
+            '<td><b>' + formatMoney(o.excess) + '</b></td></tr>'
+        ).join('') +
+        '</table><div class="small muted mt">အနီရောင် = Limit ကျော်နေတဲ့ ဂဏန်းများ — ပိုနေတာကို တခြားဒိုင်မှာ သွားကန်ပါ</div></div>';
+
+    state.lastOverText = over.map((o) => o.number + ' ' + o.excess).join('\n');
+}
+
+async function copyOverlimit() {
+    const t = state.lastOverText;
+    if (!t) { showToast('အကျွံ မရှိပါ'); return; }
+    const ok = await copyTextHelper(t);
+    showToast(ok ? '✅ အကျွံစာရင်း ကူးပြီးပြီ' : '❌ ကူးမရပါ');
+}
+
+/** One-tap: copy over-limit list into အကန်ဒိုင် textarea and go there. */
+async function sendOverToAkan() {
+    const t = state.lastOverText;
+    if (!t) { showToast('အကျွံ မရှိပါ'); return; }
+    const ok = await copyTextHelper(t);
+    $('akanText').value = t;
+    renderAkandain();
+    switchTab('akandain');
+    showToast(ok ? '✅ အကန်ဒိုင်သို့ ပို့ပြီးပြီ (ကူးပြီးသား)' : '✅ အကန်ဒိုင်သို့ ပို့ပြီးပြီ');
+}
+
+/* ================= 🔄 အကန်ဒိုင် (AKAN BETTING) ================= */
+
+function renderAkandain() {
+    const text = $('akanText').value;
+    const box = $('akanContent');
+    const items = parseBoard(text).filter((p) => /^\d{1,2}$/.test(String(p.number)));
+    if (!items.length) {
+        box.innerHTML = text.trim()
+            ? '<div class="empty">ဂဏန်း မတွေ့ပါ — "55 3000" ပုံစံနဲ့ ထည့်ပါ</div>'
+            : '';
+        state.lastAkanText = '';
+        return;
+    }
+    const total = items.reduce((s, p) => s + (Number(p.amount) || 0), 0);
+    box.innerHTML = '<div class="card">' +
+        items.map((p) =>
+            '<div class="rec-row"><span class="num">' + escHtml(String(p.number).padStart(2, '0')) + '</span>' +
+            '<span class="amt">' + formatMoney(p.amount) + '</span></div>'
+        ).join('') +
+        '<div class="row mt"><b>စုစုပေါင်း</b><b style="color:var(--accent)">' + formatMoney(total) + '</b></div>' +
+        '<div class="small muted mt">တခြားဒိုင်မှာ ထိုးမယ့် စာရင်း — ' + items.length + ' ကွက်</div></div>';
+
+    state.lastAkanText = items.map((p) => String(p.number).padStart(2, '0') + ' ' + Number(p.amount)).join('\n');
+}
+
+async function pasteAkandain() {
+    try {
+        const t = await navigator.clipboard.readText();
+        if (t) { $('akanText').value = t; renderAkandain(); showToast('✅ Paste ပြီးပြီ'); }
+        else showToast('ကူးထားတာ မရှိပါ');
+    } catch (e) { showToast('Paste မရပါ — ကိုယ်တိုင်ထည့်ပါ'); }
+}
+
+async function copyAkandain() {
+    const t = state.lastAkanText;
+    if (!t) { showToast('ကူးစရာ မရှိပါ'); return; }
+    const ok = await copyTextHelper(t);
+    showToast(ok ? '✅ ကူးပြီးပြီ' : '❌ ကူးမရပါ');
 }

@@ -92,7 +92,8 @@
             <button class="btn small" onclick="switchTab('vouchers')">🧾 ဘောက်ချာများ</button>
             <button class="btn small gray" onclick="switchTab('daily')">📅 တစ်နေ့စာစာရင်းချုပ်</button>
             <button class="btn small gray" onclick="switchTab('weekly')">📈 တပတ်စာစာရင်းချုပ်</button>
-            <button class="btn small gray" onclick="switchTab('akan')">🔢 အကျွံဂဏန်းများ / 🎰 အကန်ဒိုင်</button>
+            <button class="btn small gray" onclick="switchTab('akan')">🔴 အကျွံဂဏန်းများ</button>
+            <button class="btn small gray" onclick="switchTab('akandain')">🔄 အကန်ဒိုင်</button>
           </div>
         </div>
         <div id="sessionList"></div>
@@ -150,14 +151,52 @@
       <section id="tab-vouchers" class="tabpane">
         <div class="card">
           <div class="row"><b>🧾 ဘောက်ချာများ</b></div>
-          <div class="empty">မကြာမီ ရရှိမည် — ဘောက်ချာ လုပ်ဆောင်ချက်များ ထည့်သွင်းနေပါသည်။</div>
+          <div class="field mt">
+            <label>ပွဲ</label>
+            <select id="voucherSession"></select>
+          </div>
+          <div class="field">
+            <label>ထိုးသား</label>
+            <select id="voucherPerson"><option value="__all">အားလုံး</option></select>
+          </div>
+          <div class="btn-grid">
+            <button class="btn small gray" id="voucherCopyBtn">📋 ကူးရန်</button>
+            <button class="btn small gray" id="voucherPrintBtn">🖨️ Print</button>
+            <button class="btn small gray" id="voucherShareBtn">📤 Share</button>
+          </div>
         </div>
+        <div id="voucherContent"></div>
       </section>
       <section id="tab-akan" class="tabpane">
         <div class="card">
-          <div class="row"><b>🔢 အကျွံဂဏန်းများ / 🎰 အကန်ဒိုင်</b></div>
-          <div class="empty">မကြာမီ ရရှိမည် — အကျွံ/အကန် လုပ်ဆောင်ချက်များ ထည့်သွင်းနေပါသည်။</div>
+          <div class="row"><b>🔴 အကျွံဂဏန်းများ</b><span class="small muted" id="overLimitLabel"></span></div>
+          <div class="small muted mt">Limit ကျော်တဲ့ ဂဏန်းတွေ — ပိုနေတာကို တခြားဒိုင်မှာ သွားကန်ဖို့</div>
+          <div class="field mt">
+            <label>ပွဲ</label>
+            <select id="overSession"></select>
+          </div>
+          <div class="btn-grid">
+            <button class="btn small gray" id="overCopyBtn">📋 အကျွံစာရင်း ကူးရန်</button>
+            <button class="btn small" id="overToAkanBtn">🔄 အကန်ဒိုင်သို့ ပို့ရန်</button>
+          </div>
         </div>
+        <div id="overContent"></div>
+      </section>
+      <section id="tab-akandain" class="tabpane">
+        <div class="card">
+          <div class="row"><b>🔄 အကန်ဒိုင်</b></div>
+          <div class="small muted mt">တခြားဒိုင်မှာ ကိုယ်မစားချင်လို့ သွားထိုးတာ — အကျွံစာရင်းက ကူးလာတဲ့ ဂဏန်းတွေ ဒီမှာ Paste ချပါ</div>
+          <div class="field mt">
+            <label>ဂဏန်းများ</label>
+            <textarea id="akanText" rows="5" placeholder="ဥပမာ:&#10;55 3000&#10;12 1500"></textarea>
+          </div>
+          <div class="btn-grid">
+            <button class="btn small gray" id="akanPasteBtn">📋 Paste</button>
+            <button class="btn small gray" id="akanCopyBtn">📋 ကူးရန်</button>
+            <button class="btn small red" id="akanClearBtn">🗑️ ရှင်းမယ်</button>
+          </div>
+        </div>
+        <div id="akanContent"></div>
       </section>
       <section id="tab-weekly" class="tabpane">
         <div class="card">
@@ -266,6 +305,8 @@
       <div id="genBody"></div>
     </div>
   </div>
+
+  <div id="printArea" class="print-area" aria-hidden="true"></div>
 
 </div>
 <script type="module" src="app.js"></script>

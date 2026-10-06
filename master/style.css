@@ -265,3 +265,51 @@ table.data tr.total td { font-weight: 700; color: var(--accent); border-top: 2px
     .modal { align-items: center; padding: 24px; }
     .sheet { border-radius: 18px; border-bottom: 1px solid var(--border); }
 }
+
+/* ---------- 🧾 Vouchers ---------- */
+.v-player-block {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 14px; margin-bottom: 12px;
+}
+.v-player-name {
+    font-size: 17px; font-weight: 800; color: var(--accent);
+    margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid var(--border);
+}
+.v-batch { margin-bottom: 10px; }
+.v-batch:last-child { margin-bottom: 0; }
+.v-batch-no {
+    font-size: 13px; font-weight: 700; color: var(--yellow);
+    margin-bottom: 4px;
+}
+.voucher-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 6px 2px; border-bottom: 1px dashed rgba(43,58,85,.6); font-size: 14px;
+}
+.voucher-row:last-child { border-bottom: none; }
+.voucher-row .v-no { font-weight: 700; letter-spacing: 1px; }
+.voucher-row .v-amt { color: var(--muted); font-weight: 600; }
+
+/* ---------- 🔴 Over-limit ---------- */
+table.data tr.over-row td { color: var(--red); }
+table.data tr.over-row td:first-child { font-weight: 800; font-size: 15px; }
+
+/* ---------- Print ---------- */
+.print-area { display: none; }
+
+@media print {
+    body { background: #fff !important; color: #000 !important; }
+    body > *:not(#printArea) { display: none !important; }
+    #printArea { display: block !important; }
+    .print-receipt {
+        font-family: ui-monospace, Menlo, Consolas, monospace;
+        color: #000; max-width: 320px; margin: 0 auto; padding: 8px;
+        font-size: 14px; line-height: 1.9;
+    }
+    .pr-title { font-size: 20px; font-weight: 800; text-align: center; }
+    .pr-sub { text-align: center; font-size: 13px; }
+    .pr-line { border-top: 2px dashed #000; margin: 8px 0; }
+    .pr-pre {
+        font-family: inherit; font-size: 15px; font-weight: 600;
+        white-space: pre-wrap; margin: 0;
+    }
+}
