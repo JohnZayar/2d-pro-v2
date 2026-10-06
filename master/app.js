@@ -513,6 +513,9 @@ async function renderSessions() {
                 <button class="btn small gray" data-act="vouchers" data-id="${s.id}">🧾 ဘောက်ချာများ</button>
                 <button class="btn small gray" data-act="overlimit" data-id="${s.id}">🔴 အကျွံ</button>
                 <button class="btn small gray" data-act="akandain" data-id="${s.id}">🔄 အကန်ဒိုင်</button>
+                <button class="btn small gray" data-act="soon1" data-id="${s.id}">➕ —</button>
+                <button class="btn small gray" data-act="soon2" data-id="${s.id}">➕ —</button>
+                <button class="btn small gray" data-act="soon3" data-id="${s.id}">➕ —</button>
                 <button class="btn small red" data-act="del" data-id="${s.id}">🗑️</button>
             </div>
         </div>`;
@@ -533,6 +536,7 @@ async function sessionAction(act, id) {
     else if (act === 'vouchers') { setActiveSession(id); switchTab('vouchers'); }
     else if (act === 'overlimit') { setActiveSession(id); switchTab('akan'); }
     else if (act === 'akandain') { setActiveSession(id); switchTab('akandain'); }
+    else if (act === 'soon1' || act === 'soon2' || act === 'soon3') { setActiveSession(id); showToast('မကြာမီ ရရှိမည်'); }
     else if (act === 'del') deleteSession(id);
 }
 
