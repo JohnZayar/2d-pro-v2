@@ -25,16 +25,38 @@
   <!-- ============ MAIN ============ -->
   <div id="page-main" class="page">
     <header class="topbar">
-      <span class="title">🎯 2D Master Pro</span>
+      <div class="topbar-left">
+        <button class="menu-icon" onclick="toggleDrawer()" aria-label="မီနူး">☰</button>
+        <span class="title">🎯 2D Master Pro</span>
+      </div>
       <span id="syncPill" class="off">⏳</span>
     </header>
-    <nav class="tabs">
-      <button data-tab="home" class="active">🏠 ပင်မ</button>
-      <button data-tab="sessions">📋 ပွဲများ</button>
-      <button data-tab="ledger">📊 လယ်ဂျာ</button>
-      <button data-tab="agents">👥 Agent</button>
-      <button data-tab="settings">⚙️ ဆက်တင်</button>
-    </nav>
+    <div class="drawer-backdrop" id="drawerBackdrop" onclick="closeDrawer()"></div>
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <h3>🌟 2D Master Pro</h3>
+        <p>v2</p>
+      </div>
+      <div class="sidebar-menu">
+        <div class="menu-link" onclick="goDrawer('home')"><span>🏠</span><span>ပင်မစာမျက်နှာ (Home)</span></div>
+        <div class="menu-link" onclick="goDrawer('sessions')"><span>⭐</span><span>ကစားပွဲစဉ်များ</span></div>
+        <div class="menu-link" onclick="goDrawer('ledger')"><span>📊</span><span>လယ်ဂျာ</span></div>
+        <div class="menu-link" onclick="goDrawer('agents')"><span>👥</span><span>လူအသစ်စာရင်းသွင်းရန်</span></div>
+        <div class="menu-link" onclick="goDrawer('formula')"><span>🧮</span><span>ဖော်မြူလာ</span></div>
+        <div class="menu-link" onclick="goDrawer('daily')"><span>📅</span><span>တစ်နေ့စာစာရင်းချုပ်</span></div>
+        <div class="menu-link" onclick="goDrawer('weekly')"><span>📈</span><span>တပတ်စာစာရင်းချုပ်</span></div>
+        <div class="menu-link" onclick="goDrawer('winning')"><span>🎯</span><span>ပေါက်သီး</span></div>
+        <div class="menu-link" onclick="goDrawer('settings')"><span>⚙️</span><span>ဆက်တင်များ</span></div>
+        <div class="menu-link" onclick="doLogout()"><span>🚪</span><span>အကောင့်ထွက်ရန်</span></div>
+        <div class="linkcode-box">
+          <div class="lc-label">🔗 Agent ချိတ်ဆက်ကုဒ် (Agent တွေကို ပေးရန်)</div>
+          <div class="lc-row">
+            <div class="lc-code" id="linkCodeDrawer">—</div>
+            <button class="lc-copy" onclick="copyLinkCode()">ကူးရန်</button>
+          </div>
+        </div>
+      </div>
+    </aside>
     <main>
       <section id="tab-home" class="tabpane active">
         <div class="menu-grid">

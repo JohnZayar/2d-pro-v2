@@ -64,10 +64,6 @@ function bindUI() {
     $('loginBtn').addEventListener('click', doLogin);
     $('loginPass').addEventListener('keydown', (e) => { if (e.key === 'Enter') doLogin(); });
 
-    document.querySelectorAll('nav.tabs button').forEach((b) => {
-        b.addEventListener('click', () => switchTab(b.dataset.tab));
-    });
-
     $('fabSession').addEventListener('click', openSessionModal);
     $('nsSave').addEventListener('click', saveSession);
 
@@ -229,6 +225,8 @@ async function ensureTenant() {
     if (lc) lc.textContent = state.tenantPbId;
     const lcHome = $('linkCodeHome');
     if (lcHome) lcHome.textContent = state.tenantPbId;
+    const lcDrawer = $('linkCodeDrawer');
+    if (lcDrawer) lcDrawer.textContent = state.tenantPbId;
 }
 
 /* Copy the Agent link code to clipboard */
@@ -445,9 +443,6 @@ async function loadSettingsIntoUI() {
 /* ================= TABS & MODALS ================= */
 
 function switchTab(name) {
-    document.querySelectorAll('nav.tabs button').forEach((b) => {
-        b.classList.toggle('active', b.dataset.tab === name);
-    });
     document.querySelectorAll('.tabpane').forEach((p) => p.classList.remove('active'));
     $('tab-' + name).classList.add('active');
     // The entry/akandain keypads are fixed overlays — hide them whenever leaving their tab.
@@ -463,6 +458,25 @@ function switchTab(name) {
     if (name === 'akandain') renderAkandain();
 }
 window.switchTab = switchTab;
+
+/* ================= SIDE DRAWER (v1 style) ================= */
+
+function toggleDrawer() {
+    $('sidebar').classList.toggle('open');
+    $('drawerBackdrop').classList.toggle('show');
+}
+function closeDrawer() {
+    $('sidebar').classList.remove('open');
+    $('drawerBackdrop').classList.remove('show');
+}
+function goDrawer(name) {
+    closeDrawer();
+    switchTab(name);
+}
+window.toggleDrawer = toggleDrawer;
+window.closeDrawer = closeDrawer;
+window.goDrawer = goDrawer;
+window.doLogout = doLogout;
 
 function openModal(id) { $(id).classList.add('open'); }
 function closeModal(id) { $(id).classList.remove('open'); }

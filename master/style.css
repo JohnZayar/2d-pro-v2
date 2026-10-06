@@ -79,17 +79,43 @@ header.topbar {
 #syncPill.busy { color: var(--yellow); border-color: #713f12; }
 #syncPill.off { color: var(--red); border-color: #7f1d1d; }
 
-/* ---------- Tab bar ---------- */
-nav.tabs {
-    display: flex; background: var(--bg2); border-bottom: 1px solid var(--border);
-    position: sticky; top: 53px; z-index: 49;
+.topbar-left { display: flex; align-items: center; gap: 10px; }
+.menu-icon { font-size: 20px; cursor: pointer; color: var(--text); background: none; border: none; padding: 4px 8px; line-height: 1; }
+
+/* ---------- Side drawer (v1 style) ---------- */
+.sidebar {
+    position: fixed; top: 0; left: -280px; width: 270px; height: 100dvh;
+    background: var(--bg2); z-index: 2000; display: flex; flex-direction: column;
+    transition: left 0.25s ease; box-shadow: 8px 0 25px rgba(0,0,0,0.5);
+    border-right: 1px solid var(--border);
 }
-nav.tabs button {
-    flex: 1; background: none; border: none; color: var(--muted);
-    padding: 12px 4px; font-size: 13px; font-weight: 600; cursor: pointer;
-    border-bottom: 3px solid transparent;
+.sidebar.open { left: 0; }
+.sidebar-header { padding: 18px; border-bottom: 1px solid var(--border); text-align: center; }
+.sidebar-header h3 { color: var(--accent); font-size: 16px; margin: 0 0 4px; }
+.sidebar-header p { color: var(--muted); font-size: 11px; margin: 0; }
+.sidebar-menu { flex: 1; padding: 10px 0; overflow-y: auto; }
+.menu-link {
+    padding: 12px 20px; display: flex; align-items: center; gap: 12px;
+    color: var(--text); font-size: 14px; font-weight: 600; cursor: pointer;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
 }
-nav.tabs button.active { color: var(--accent); border-bottom-color: var(--accent); }
+.menu-link:active { background: var(--card2); }
+.drawer-backdrop {
+    position: fixed; top: 0; left: 0; width: 100vw; height: 100dvh;
+    background: rgba(0,0,0,0.6); z-index: 1999; display: none;
+}
+.drawer-backdrop.show { display: block; }
+.linkcode-box { padding: 14px 20px; border-top: 1px solid var(--border); }
+.lc-label { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+.lc-row { display: flex; gap: 8px; align-items: center; }
+.lc-code {
+    flex: 1; min-width: 0; font-size: 11px; color: var(--accent);
+    word-break: break-all; background: var(--card2); padding: 8px; border-radius: 6px;
+}
+.lc-copy {
+    flex-shrink: 0; background: var(--accent2); color: #fff; border: none;
+    padding: 8px 12px; border-radius: 6px; font-size: 12px; font-weight: 700; cursor: pointer;
+}
 
 main { flex: 1; padding: 14px 12px 40px; }
 .tabpane { display: none; }
