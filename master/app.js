@@ -213,7 +213,29 @@ async function ensureTenant() {
     } catch (e) { /* ignore */ }
     const lc = $('linkCode');
     if (lc) lc.textContent = state.tenantPbId;
+    const lcHome = $('linkCodeHome');
+    if (lcHome) lcHome.textContent = state.tenantPbId;
 }
+
+/* Copy the Agent link code to clipboard */
+function copyLinkCode() {
+    const code = state.tenantPbId || '';
+    if (!code) return;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(code).then(() => alert('ကူးပြီးပါပြီ ✅')).catch(() => fallbackCopy(code));
+    } else {
+        fallbackCopy(code);
+    }
+}
+function fallbackCopy(text) {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); alert('ကူးပြီးပါပြီ ✅'); } catch (e) { alert('ကူးမရပါ: ' + text); }
+    document.body.removeChild(ta);
+}
+window.copyLinkCode = copyLinkCode;
 
 /* ================= SYNC ================= */
 

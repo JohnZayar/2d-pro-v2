@@ -111,9 +111,23 @@ main { flex: 1; padding: 14px 12px 40px; }
     font-family: inherit;
 }
 .menu-card:active { transform: scale(.95); border-color: var(--accent); }
-.menu-icon { font-size: 38px; line-height: 1; }
-.menu-label { font-size: 16px; font-weight: 800; }
+.menu-icon { font-size: 34px; line-height: 1; }
+.menu-label { font-size: 13px; font-weight: bold; color: #f1c40f; text-align: center; }
 .menu-sub { font-size: 11px; color: var(--muted); text-align: center; }
+
+/* ---------- Formula guide ---------- */
+.formula-guide .guide-title { color: var(--accent); font-size: 15px; margin: 0 0 12px; }
+.guide-body { font-size: 12.5px; color: #d1d5db; display: flex; flex-direction: column; gap: 8px; line-height: 1.6; }
+.guide-body code {
+    background: var(--bg2); border: 1px solid var(--border); border-radius: 5px;
+    padding: 1px 5px; font-family: ui-monospace, Menlo, monospace; font-size: 11.5px;
+    color: var(--accent); white-space: nowrap;
+}
+.guide-board { margin-top: 4px; padding-top: 10px; border-top: 1px solid var(--border); line-height: 2; }
+.guide-board b { color: var(--accent); }
+
+/* ---------- Homescreen link code ---------- */
+.linkcode-card .code-box { margin-top: 10px; }
 
 /* ---------- Cards / lists ---------- */
 .card {

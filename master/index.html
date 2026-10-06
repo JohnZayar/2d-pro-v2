@@ -39,8 +39,8 @@
       <section id="tab-home" class="tabpane active">
         <div class="menu-grid">
           <button class="menu-card" onclick="switchTab('sessions')">
-            <span class="menu-icon">📋</span>
-            <span class="menu-label">ပွဲများ</span>
+            <span class="menu-icon">⭐</span>
+            <span class="menu-label">ကစားပွဲစဉ်များ</span>
             <span class="menu-sub">Session စီမံခန့်ခွဲရန်</span>
           </button>
           <button class="menu-card" onclick="switchTab('ledger')">
@@ -50,13 +50,18 @@
           </button>
           <button class="menu-card" onclick="switchTab('agents')">
             <span class="menu-icon">👥</span>
-            <span class="menu-label">Agent</span>
+            <span class="menu-label">လူအသစ်စာရင်းသွင်းရန်</span>
             <span class="menu-sub">Agent စာရင်း</span>
           </button>
           <button class="menu-card" onclick="switchTab('formula')">
             <span class="menu-icon">🧮</span>
             <span class="menu-label">ဖော်မြူလာ</span>
-            <span class="menu-sub">ဂဏန်းတွက်ချက်ရန်</span>
+            <span class="menu-sub">အသုံးပြုပုံ လမ်းညွှန်</span>
+          </button>
+          <button class="menu-card" onclick="switchTab('weekly')">
+            <span class="menu-icon">📊</span>
+            <span class="menu-label">တပတ်စာစာရင်းချုပ်</span>
+            <span class="menu-sub">အပတ်စဉ် စာရင်း</span>
           </button>
           <button class="menu-card" onclick="switchTab('winning')">
             <span class="menu-icon">🎯</span>
@@ -65,9 +70,14 @@
           </button>
           <button class="menu-card" onclick="switchTab('settings')">
             <span class="menu-icon">⚙️</span>
-            <span class="menu-label">ဆက်တင်</span>
+            <span class="menu-label">ဆက်တင်များ</span>
             <span class="menu-sub">Sync • ဆာဗာ • ထွက်ရန်</span>
           </button>
+        </div>
+        <div class="card mt linkcode-card">
+          <div class="row"><b>🔗 Agent ချိတ်ဆက်ကုဒ်</b><span class="small muted">Agent တွေကို ပေးရန်</span></div>
+          <div class="code-box" id="linkCodeHome">—</div>
+          <button class="btn small gray block mt" onclick="copyLinkCode()">ကူးရန်</button>
         </div>
       </section>
       <section id="tab-sessions" class="tabpane">
@@ -91,9 +101,36 @@
         <div id="agentList" class="card"></div>
       </section>
       <section id="tab-formula" class="tabpane">
+        <div class="card formula-guide">
+          <h3 class="guide-title">📖 ဖော်မြူလာ အသုံးပြုပုံ လမ်းညွှန်</h3>
+          <div class="guide-body">
+            <div><b>ဒဲ့ / အသွားအပြန်:</b> <code>12</code> = ဒဲ့, <code>12R</code> / <code>12အာ</code> / <code>12@</code> = 12, 21 (အသွားအပြန်)</div>
+            <div><b>1. ထိပ် (ဥပမာ - 5ထိပ်):</b> 50 မှ 59 ထိ (၁၀ ကွက်). <code>6.4.5ထိပ်</code> = ၃၀ ကွက်</div>
+            <div><b>2. နောက် (ဥပမာ - 5နောက်):</b> 05 မှ 95 ထိ (၁၀ ကွက်)</div>
+            <div><b>3. ပတ် / အပါ / အပတ် / ပါ (ဥပမာ - 5ပတ်):</b> ထိပ်နှင့်နောက် အားလုံး (၁၉ ကွက်) — ၄ မျိုး အတူတူ</div>
+            <div><b>4. အပူး / ပူး:</b> 00, 11, 22, 33, 44, 55, 66, 77, 88, 99 (၁၀ ကွက်)</div>
+            <div><b>5. ပါဝါ:</b> 05, 50, 16, 61, 27, 72, 38, 83, 49, 94 (၁၀ ကွက်)</div>
+            <div><b>6. ဘရိတ် / BK (ဥပမာ - 2ဘရိတ်):</b> ပေါင်းခြင်း ၂ သို့မဟုတ် ၁၂ ဖြစ်သော ဂဏန်းများ. <code>570BK</code> = ၃၀ ကွက်</div>
+            <div><b>7. ခွေ / အခွေ (ဥပမာ - 123ခွေ):</b> ရွေးထားသောဂဏန်းများဖြင့် အပြန်အလှန်, အပူးမပါ (၆ ကွက်)</div>
+            <div><b>8. ခွေပူး / ခွေပူးပါ / အခွေအပူး (ဥပမာ - 123ခွေပူး):</b> အပူးများပါ အပါအဝင် (၉ ကွက်)</div>
+            <div><b>9. နက္ခတ်:</b> 07, 18, 24, 53, 69, 70, 81, 42, 35, 96 (၁၀ ကွက်)</div>
+            <div><b>10. စုံစုံ၊ မမ၊ စုံမ၊ မစုံ:</b> သက်ဆိုင်ရာ စုံ/မ ဂဏန်းစုံများ</div>
+            <div><b>11. ညီအစ်ကို:</b> 01, 12, 23 ကဲ့သို့ ဂဏန်းကပ် ကွက်များ</div>
+            <div><b>12. ဂဏန်းတလုံး (ဥပမာ - 4-5-6):</b> တစ်လုံးချင်း အပါ ဖြစ်မည် (၅၇ ကွက်)</div>
+            <div class="guide-board">
+              <b>📋 Board တွင် ငွေတွဲရိုက်နည်း:</b><br>
+              <code>12=500</code> · <code>12 500</code> · <code>12/500</code> · <code>12,500</code> · <code>12-500</code><br>
+              <code>12=500r200</code> / <code>12=500@200</code> = ဒဲ့ 500, အပြန် 200<br>
+              <code>12,13,14 500r100</code> = သုံးကွက် ဒဲ့ 500, အပြန် 100<br>
+              <code>6ထိပ်7000@3000</code> = ထိပ် 7000, နောက် 3000
+            </div>
+          </div>
+        </div>
+      </section>
+      <section id="tab-weekly" class="tabpane">
         <div class="card">
-          <div class="row"><b>🧮 ဖော်မြူလာ</b></div>
-          <div class="empty">မကြာမီ ရရှိမည် — ဂဏန်းတွက်ချက်မှု လုပ်ဆောင်ချက်များ ထည့်သွင်းနေပါသည်။</div>
+          <div class="row"><b>📊 တပတ်စာစာရင်းချုပ်</b></div>
+          <div class="empty">မကြာမီ ရရှိမည် — အပတ်စဉ် စာရင်းအင်း လုပ်ဆောင်ချက်များ ထည့်သွင်းနေပါသည်။</div>
         </div>
       </section>
       <section id="tab-winning" class="tabpane">
