@@ -971,6 +971,8 @@ window.openAkanBoard = function openAkanBoard() {
 
 /* ================= LEDGER ================= */
 
+let _ledgerPerson = '__all'; // '__all' or voucherPersonKey
+
 async function renderLedger() {
     const head = $('ledgerHead');
     const grid = $('ledgerGrid');
@@ -987,9 +989,23 @@ async function renderLedger() {
     const wins = await db.query('winning_numbers', 'by_session', s.id);
     const winNums = new Set(wins.map((w) => String(w.number).padStart(2, '0')));
 
+    // person filter list (grouped: agent-synced under agent name)
+    const persons = [];
+    const seen = new Set();
+    for (const r of recs) {
+        const k = voucherPersonKey(r) || '(အမည် မရှိ)';
+        if (!seen.has(k)) { seen.add(k); persons.push(k); }
+    }
+    persons.sort();
+
+    // filter by selected person
+    const filtered = _ledgerPerson === '__all'
+        ? recs
+        : recs.filter((r) => (voucherPersonKey(r) || '(အမည် မရှိ)') === _ledgerPerson);
+
     // aggregate pos - akan
     const agg = {};
-    for (const r of recs) {
+    for (const r of filtered) {
         const n = String(r.number).padStart(2, '0');
         const amt = Number(r.amount) || 0;
         agg[n] = (agg[n] || 0) + (r.record_type === 'akan' ? -amt : amt);
@@ -1005,9 +1021,16 @@ async function renderLedger() {
         if (winNums.has(n)) cls.push('win');
         cells += `<div class="${cls.join(' ')}"><span class="n">${n}</span><span class="a">${a ? formatMoney(a) : ''}</span></div>`;
     }
+    const personOpts = `<option value="__all">👥 All</option>` +
+        persons.map((p) => `<option value="${escHtml(p)}"${p === _ledgerPerson ? ' selected' : ''}>${escHtml(voucherPersonLabel(p))}</option>`).join('');
     head.innerHTML = `<div class="card"><div class="row"><b>${escHtml(sessionLabel(s))}</b>
+        <select id="ledgerPersonSel" class="input" style="max-width:160px">${personOpts}</select>
         <button class="btn small" id="ledgerBoardBtn">📝 ထိုးကွက်</button></div></div>`;
     $('ledgerBoardBtn').addEventListener('click', () => openEntry(s.id));
+    $('ledgerPersonSel').addEventListener('change', (e) => {
+        _ledgerPerson = e.target.value;
+        renderLedger();
+    });
     grid.innerHTML = cells;
     $('ledgerTotal').textContent = formatMoney(total);
     $('ledgerBoxes').textContent = limit ? (total / limit).toFixed(1) : '0';
