@@ -664,23 +664,30 @@ table.data tr.over-row td:first-child { font-weight: 800; font-size: 15px; }
     -webkit-overflow-scrolling: touch;
 }
 
-/* Weekly summary: proper grid table */
-table.wtable { border-collapse: collapse; font-size: 12px; min-width: 100%; }
+/* Weekly summary: clean grid, sticky narrow name column */
+table.wtable { border-collapse: separate; border-spacing: 0; font-size: 13px; min-width: 100%; }
 table.wtable th, table.wtable td {
-    border: 1px solid var(--border);
-    padding: 8px 6px;
+    border-right: 1px solid rgba(255,255,255,.14);
+    border-bottom: 1px solid rgba(255,255,255,.14);
+    padding: 10px 8px;
     text-align: center;
     white-space: nowrap;
-    min-width: 86px;
+    min-width: 88px;
+    background: var(--bg);
 }
-table.wtable th { background: rgba(255,255,255,.04); font-weight: 700; }
-table.wtable td:first-child, table.wtable th:first-child {
-    text-align: left; min-width: 110px; max-width: 150px;
+table.wtable th {
+    font-weight: 700; font-size: 12px;
+    background: rgba(255,255,255,.05);
+    border-top: 1px solid rgba(255,255,255,.14);
 }
-/* morning/evening column tints so records don't mix */
-table.wtable td.wamc { background: rgba(59,130,246,.07); }
-table.wtable td.wpmc { background: rgba(249,115,22,.07); }
-table.wtable th.wamc { background: rgba(59,130,246,.12); }
-table.wtable th.wpmc { background: rgba(249,115,22,.12); }
-/* stronger separator between day columns */
-table.wtable th.wday, table.wtable td.wday { border-left: 2px solid var(--accent); }
+table.wtable th:first-child, table.wtable td:first-child {
+    position: sticky; left: 0; z-index: 2;
+    min-width: 72px; max-width: 88px;
+    overflow: hidden; text-overflow: ellipsis;
+    text-align: left;
+    border-left: 1px solid rgba(255,255,255,.14);
+    background: var(--card);
+    box-shadow: 2px 0 4px rgba(0,0,0,.3);
+}
+table.wtable th:first-child { z-index: 3; }
+table.wtable td.muted { color: var(--muted); }

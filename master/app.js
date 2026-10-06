@@ -1274,8 +1274,8 @@ async function renderWeekly() {
     const MM_DAY = ['တနင်္လာ', 'အင်္ဂါ', 'ဗုဒ္ဓဟူး', 'ကြာသပတေး', 'သောကြာ'];
     let html = '<table class="wtable"><tr><th>အမည်</th>';
     days.forEach((d, i) => {
-        html += `<th class="wday wamc">${MM_DAY[i]} နံနက်<br><span style="font-size:11px">${signMoney(dayTotals[i].am)}</span></th>`;
-        html += `<th class="wpmc">${MM_DAY[i]} ညနေ<br><span style="font-size:11px">${signMoney(dayTotals[i].pm)}</span></th>`;
+        html += `<th>${MM_DAY[i]} နံနက်<br><span style="font-size:11px">${signMoney(dayTotals[i].am)}</span></th>`;
+        html += `<th>${MM_DAY[i]} ညနေ<br><span style="font-size:11px">${signMoney(dayTotals[i].pm)}</span></th>`;
     });
     html += `<th>Total<br><span style="font-size:11px">${signMoney(grandTotal)}</span></th></tr>`;
 
@@ -1287,10 +1287,9 @@ async function renderWeekly() {
         html += `<tr>${nameCell}`;
         r.cells.forEach((c, ci) => {
             const isAM = ci % 2 === 0;
-            const tintCls = isAM ? 'wamc' : 'wpmc';
             const dayIdx = Math.floor(ci / 2);
             const cellAttr = c ? ` data-wcell="${ri}:${dayIdx}:${isAM ? 'am' : 'pm'}" style="cursor:pointer"` : '';
-            html += c ? `<td class="wday ${tintCls}"${cellAttr}>${formatMoney(c.bet)} / ${formatMoney(c.win)}</td>` : `<td class="wday ${tintCls} muted">-</td>`;
+            html += c ? `<td${cellAttr}>${formatMoney(c.bet)} / ${formatMoney(c.win)}</td>` : '<td class="muted">-</td>';
         });
         html += `<td><b>${signMoney(r.rowTotal)}</b></td></tr>`;
     });
