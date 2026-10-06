@@ -676,6 +676,9 @@ table.wtable th, table.wtable td {
 table.wtable th { background: rgba(255,255,255,.04); font-weight: 700; }
 table.wtable td:first-child, table.wtable th:first-child {
     text-align: left; min-width: 110px; max-width: 150px;
-    position: sticky; left: 0; background: var(--card); z-index: 1;
 }
-table.wtable th:first-child { background: var(--card); }
+/* morning/evening row tints so records don't mix */
+table.wtable tr.wam td { background: rgba(59,130,246,.07); }
+table.wtable tr.wpm td { background: rgba(249,115,22,.07); }
+/* stronger separator between day columns */
+table.wtable th.wday, table.wtable td.wday { border-left: 2px solid var(--accent); }

@@ -1221,7 +1221,7 @@ async function renderWeekly() {
             const rk = (isAkan ? 'akan:' : 'pos:') + pkey + '|' + timeType;
             if (!agg[rk]) {
                 agg[rk] = {
-                    isAkan, label: voucherPersonLabel(pkey), timeType,
+                    isAkan, label: voucherPersonLabel(pkey), pkey, timeType,
                     perDay: [0, 1, 2, 3, 4].map(blankCell),
                 };
                 rowOrder.push(rk);
@@ -1271,25 +1271,93 @@ async function renderWeekly() {
     const MM_DAY = ['တနင်္လာ', 'အင်္ဂါ', 'ဗုဒ္ဓဟူး', 'ကြာသပတေး', 'သောကြာ'];
     let html = '<table class="wtable"><tr><th>အမည်</th>';
     days.forEach((d, i) => {
-        html += `<th>${MM_DAY[i]}<br><span style="font-size:11px">${signMoney(dayTotals[i])}</span></th>`;
+        html += `<th class="wday" colspan="2">${MM_DAY[i]}<br><span style="font-size:11px">${signMoney(dayTotals[i])}</span></th>`;
     });
     html += `<th>Total<br><span style="font-size:11px">${signMoney(grandTotal)}</span></th></tr>`;
 
-    rows.forEach((r) => {
+    rows.forEach((r, ri) => {
+        const isAM = (r.e.timeType || '') === 'မနက်ပိုင်း';
+        const rowCls = isAM ? 'wam' : 'wpm';
         const nameHtml = (r.e.isAkan ? '⬆️ ' : '') + escHtml(r.e.label) +
             ` <span style="font-size:11px;color:var(--muted)">(${escHtml(shortTimeType(r.e.timeType))})</span>`;
         const nameCell = r.e.isAkan
             ? `<td><span style="color:var(--red);font-weight:700">${nameHtml}</span></td>`
             : `<td><b>${nameHtml}</b></td>`;
-        html += `<tr>${nameCell}`;
-        r.cells.forEach((c) => {
-            html += c ? `<td>${formatMoney(c.bet)} / ${formatMoney(c.win)}</td>` : '<td class="muted">-</td>';
+        html += `<tr class="${rowCls}">${nameCell}`;
+        r.cells.forEach((c, di) => {
+            const cellAttr = c ? ` data-wcell="${ri}:${di}" style="cursor:pointer"` : '';
+            html += c ? `<td class="wday"${cellAttr}>${formatMoney(c.bet)} / ${formatMoney(c.win)}</td>` : '<td class="wday muted">-</td>';
         });
         html += `<td><b>${signMoney(r.rowTotal)}</b></td></tr>`;
     });
     html += '</table>';
     box.innerHTML = html;
+    box.querySelectorAll('[data-wcell]').forEach((td) => {
+        td.addEventListener('click', () => {
+            const [ri, di] = td.getAttribute('data-wcell').split(':').map(Number);
+            openWeeklyCell(_weeklyRows[ri], _weeklyDays[di]);
+        });
+    });
+    _weeklyRows = rows;
+    _weeklyDays = days;
 }
+
+let _weeklyRows = [];
+let _weeklyDays = [];
+
+async function openWeeklyCell(row, day) {
+    const e = row.e;
+    const sessions = state.sessions.filter((s) => s.date === day.ds && (s.timeType || '') === (e.timeType || ''));
+    const recs = [];
+    for (const s of sessions) {
+        const rs = await db.query('lottery_records', 'by_session', s.id);
+        for (const r of rs) {
+            const isAkan = r.record_type === 'akan';
+            if (isAkan !== e.isAkan) continue;
+            const pkey = voucherPersonKey(r) || '(အမည် မရှိ)';
+            if (pkey !== e.pkey) continue;
+            recs.push(r);
+        }
+    }
+    if (!recs.length) { showToast('မှတ်တမ်း မရှိပါ'); return; }
+    let html = `<div style="font-weight:700;margin-bottom:8px">${escHtml(e.label)} (${escHtml(shortTimeType(e.timeType))}) — ${escHtml(day.name)}</div>`;
+    html += '<div style="max-height:50vh;overflow-y:auto">';
+    recs.forEach((r, i) => {
+        html += `<div style="display:flex;align-items:center;gap:8px;padding:8px;border-bottom:1px solid var(--border)">` +
+            `<span style="flex:1"><b>${escHtml(String(r.number))}</b> — ${formatMoney(r.amount)}</span>` +
+            `<button class="btn small" data-wedit="${i}">✏️</button>` +
+            `<button class="btn small danger" data-wdel="${i}">🗑️</button></div>`;
+    });
+    html += '</div>';
+    $('wcellBody').innerHTML = html;
+    openModal('modal-wcell');
+    $('wcellBody').querySelectorAll('[data-wedit]').forEach((b) => {
+        b.addEventListener('click', async () => {
+            const r = recs[Number(b.getAttribute('data-wedit'))];
+            const nv = prompt('ပမာဏ ပြင်ရန်', String(r.amount));
+            if (nv === null) return;
+            const v = Number(nv);
+            if (!v || v <= 0) { showToast('ပမာဏ မှားနေတယ်'); return; }
+            r.amount = v;
+            r._updated = Date.now();
+            await updateRecord('lottery_records', r);
+            closeModal('modal-wcell');
+            renderWeekly();
+            showToast('ပြင်ပြီးပြီ');
+        });
+    });
+    $('wcellBody').querySelectorAll('[data-wdel]').forEach((b) => {
+        b.addEventListener('click', async () => {
+            const r = recs[Number(b.getAttribute('data-wdel'))];
+            if (!confirm(`"${r.number}" ဖျက်မလား?`)) return;
+            await deleteRecord('lottery_records', r);
+            closeModal('modal-wcell');
+            renderWeekly();
+            showToast('ဖျက်ပြီးပြီ');
+        });
+    });
+}
+window.openWeeklyCell = openWeeklyCell;
 
 /* ================= COPY TOTAL ================= */
 
