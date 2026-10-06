@@ -1112,18 +1112,20 @@ async function openDaily(sessionId) {
         if (!per[key]) { per[key] = { bet: 0, win: 0, isAkan }; pLabel[key] = voucherPersonLabel(pkey); }
         const amt = Number(r.amount) || 0;
         per[key].bet += isAkan ? -amt : amt;
-        // Win column shows the RAW winning amount only — never multiplied by payout rate
-        if (winNum && String(r.number).padStart(2, '0') === winNum && !isAkan) {
+        // Win column shows the RAW winning amount only — never multiplied by payout rate.
+        // For akan (outgoing) this is what the bookie owes Pho back.
+        if (winNum && String(r.number).padStart(2, '0') === winNum) {
             per[key].win += amt;
         }
     }
     let rows = '', tBet = 0, tWin = 0;
     for (const [key, v] of Object.entries(per)) {
         const label = pLabel[key];
-        const ag = state.agents.find((a) => a.name === label);
+        const ag = v.isAkan ? null : state.agents.find((a) => a.name === label);
         const comm = ag ? (Number(ag.commission) || 0) : 0;
         const commAmt = Math.round(v.bet * comm / 100);
-        const net = v.bet - commAmt - v.win;
+        // Incoming: net = in - commission - payout. Outgoing (akan): net = out + win-back.
+        const net = v.isAkan ? v.bet + v.win : v.bet - commAmt - v.win;
         tBet += v.bet; tWin += v.win;
         const nameHtml = v.isAkan
             ? `<span style="color:var(--red);font-weight:700">⬆️ ${escHtml(label)}</span>`
