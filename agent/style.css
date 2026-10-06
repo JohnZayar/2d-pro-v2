@@ -554,7 +554,7 @@ select.field-input { appearance: auto; }
 }
 .q-btn {
     border: none; border-radius: 6px;
-    padding: 4px 1px; font-size: 9px; font-weight: 800;
+    padding: 7px 1px; font-size: 9px; font-weight: 800;
     color: #fff; cursor: pointer; font-family: inherit;
     box-shadow: 0 3px 8px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.25);
     transition: transform .08s ease, filter .08s ease;
