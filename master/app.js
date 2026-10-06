@@ -98,12 +98,6 @@ function bindUI() {
     $('overSession').addEventListener('change', () => { state.overSessionId = $('overSession').value; renderOverlimit(); });
     $('overCopyBtn').addEventListener('click', copyOverlimit);
     $('overToAkanBtn').addEventListener('click', sendOverToAkan);
-    // Bookie input uses a datalist (renders inline below the input) — hide the
-    // fixed formula keyboard on focus so the name suggestions aren't covered.
-    $('akanBookieInput').addEventListener('focus', () => {
-        const kp = $('akanKeypad');
-        if (kp && !kp.hidden) { kp.hidden = true; $('akanKbToggle')?.classList.remove('active'); }
-    });
     $('serverUrlSave').addEventListener('click', () => {
         const v = $('serverUrlInput').value.trim();
         if (v && !/^https?:\/\//i.test(v)) { showToast('URL က https:// နဲ့ စရမယ်'); return; }
@@ -675,7 +669,7 @@ async function saveBoard() {
 
     // အကန်ဒိုင် mode → rows land in the OUTGOING pending table, not the entry table.
     if (state.boardMode === 'akan') {
-        const bookie = (($('akanBookieInput') && $('akanBookieInput').value) || '').trim() || null;
+        const bookie = (($('akanBookieSelect') && $('akanBookieSelect').value) || '').trim() || null;
         validItems.forEach((it) => {
             akanPending.push({
                 player_name: bookie,
@@ -1627,7 +1621,7 @@ async function sendOverToAkan() {
     const { items } = parseBoardReport(t);
     const validItems = items.filter((it) => /^\d{2}$/.test(String(it.number)));
     if (!validItems.length) { showToast('ထည့်တာ မမှန်ပါ'); return; }
-    const bookie = (($('akanBookieInput') && $('akanBookieInput').value) || '').trim() || null;
+    const bookie = (($('akanBookieSelect') && $('akanBookieSelect').value) || '').trim() || null;
     validItems.forEach((it) => {
         akanPending.push({
             player_name: bookie,
@@ -1712,11 +1706,20 @@ async function openAkandain(sessionId) {
     switchTab('akandain');
 }
 
-/** Refresh akandain screen: session label, bookie suggestions, pending table. */
+/** Refresh akandain screen: session label, bookie select, pending table. */
 async function renderAkandain() {
     const s = state.sessions.find((x) => x.id === state.activeSessionId);
     $('akanSessionLabel').textContent = s ? sessionLabel(s) : 'Session မရှိပါ';
 
+    await renderAkanBookieOptions();
+    renderAkanTable();
+}
+
+/** Bookie dropdown options: prior OUTGOING (akan) bookies from all sessions,
+ *  plus registered အကန်ဒိုင် persons. Native <select> — reliable on phones. */
+async function renderAkanBookieOptions() {
+    const sel = $('akanBookieSelect');
+    const prev = sel.value;
     // Bookie suggestions: distinct bookie names from prior OUTGOING (akan) bets, all sessions,
     // plus registered အကန်ဒိုင် persons.
     const seen = new Set();
@@ -1734,9 +1737,9 @@ async function renderAkandain() {
         const k = (a.name || '').trim();
         if (k && !seen.has(k)) { seen.add(k); order.push(k); }
     }
-    $('akanBookieList').innerHTML = order.map((k) => '<option value="' + escHtml(k) + '">').join('');
-
-    renderAkanTable();
+    sel.innerHTML = '<option value="">-- အကန်ဒိုင်ရွေးရန် --</option>' +
+        order.map((k) => '<option value="' + escHtml(k) + '">' + escHtml(k) + '</option>').join('');
+    if (prev && order.includes(prev)) sel.value = prev;
 }
 
 /** Pending OUTGOING table + totals. */
@@ -1766,7 +1769,7 @@ window.akanDeleteRow = function akanDeleteRow(i) {
 
 /** ထည့်မည် — expand the number-box formula and add to the OUTGOING pending table. */
 window.submitAkanRow = async function submitAkanRow() {
-    const bookie = ($('akanBookieInput').value || '').trim() || null;
+    const bookie = ($('akanBookieSelect').value || '').trim() || null;
     const noText = $('akanBoxNo').value.trim();
     const amtText = $('akanBoxAmt').value.trim().replace(/[^\d]/g, '');
     const revText = $('akanBoxRev').value.trim();

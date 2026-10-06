@@ -237,8 +237,9 @@
         </div>
 
         <div class="entry-playerbar">
-          <input id="akanBookieInput" list="akanBookieList" class="field-input player-select" placeholder="-- အကန်ဒိုင်ရွေးရန် --" autocomplete="off">
-          <datalist id="akanBookieList"></datalist>
+          <select id="akanBookieSelect" class="field-input player-select">
+            <option value="">-- အကန်ဒိုင်ရွေးရန် --</option>
+          </select>
           <button class="top-btn kb-toggle-btn" id="akanKbToggle" type="button" onclick="toggleAkanKeyboard()" title="ကီးဘုတ် ဖွင့်/ပိတ်">⌨️</button>
           <button class="top-btn" type="button" onclick="openAkanBoard()" title="Digital Board">📋</button>
           <button class="top-btn btn-save-top" type="button" onclick="saveAkanBatch()">💾 Save</button>
