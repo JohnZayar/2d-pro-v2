@@ -58,8 +58,13 @@
             <span class="menu-label">ဖော်မြူလာ</span>
             <span class="menu-sub">အသုံးပြုပုံ လမ်းညွှန်</span>
           </button>
+          <button class="menu-card" onclick="switchTab('daily')">
+            <span class="menu-icon">📅</span>
+            <span class="menu-label">တစ်နေ့စာစာရင်းချုပ်</span>
+            <span class="menu-sub">နေ့စဉ် စာရင်းချုပ်</span>
+          </button>
           <button class="menu-card" onclick="switchTab('weekly')">
-            <span class="menu-icon">📊</span>
+            <span class="menu-icon">📈</span>
             <span class="menu-label">တပတ်စာစာရင်းချုပ်</span>
             <span class="menu-sub">အပတ်စဉ် စာရင်း</span>
           </button>
@@ -81,6 +86,15 @@
         </div>
       </section>
       <section id="tab-sessions" class="tabpane">
+        <div class="card">
+          <div class="row"><b>📋 ပွဲများ</b><span class="small muted">ဘက်စုံ စာရင်းများ</span></div>
+          <div class="btn-grid mt">
+            <button class="btn small" onclick="switchTab('vouchers')">🧾 ဘောက်ချာများ</button>
+            <button class="btn small gray" onclick="switchTab('daily')">📅 တစ်နေ့စာစာရင်းချုပ်</button>
+            <button class="btn small gray" onclick="switchTab('weekly')">📈 တပတ်စာစာရင်းချုပ်</button>
+            <button class="btn small gray" onclick="switchTab('akan')">🔢 အကျွံဂဏန်းများ / 🎰 အကန်ဒိုင်</button>
+          </div>
+        </div>
         <div id="sessionList"></div>
         <button id="fabSession" class="fab">+</button>
       </section>
@@ -125,6 +139,24 @@
               <code>6ထိပ်7000@3000</code> = ထိပ် 7000, နောက် 3000
             </div>
           </div>
+        </div>
+      </section>
+      <section id="tab-daily" class="tabpane">
+        <div class="card">
+          <div class="row"><b>📅 တစ်နေ့စာစာရင်းချုပ်</b></div>
+          <div class="empty">မကြာမီ ရရှိမည် — နေ့စဉ် စာရင်းချုပ် လုပ်ဆောင်ချက်များ ထည့်သွင်းနေပါသည်။</div>
+        </div>
+      </section>
+      <section id="tab-vouchers" class="tabpane">
+        <div class="card">
+          <div class="row"><b>🧾 ဘောက်ချာများ</b></div>
+          <div class="empty">မကြာမီ ရရှိမည် — ဘောက်ချာ လုပ်ဆောင်ချက်များ ထည့်သွင်းနေပါသည်။</div>
+        </div>
+      </section>
+      <section id="tab-akan" class="tabpane">
+        <div class="card">
+          <div class="row"><b>🔢 အကျွံဂဏန်းများ / 🎰 အကန်ဒိုင်</b></div>
+          <div class="empty">မကြာမီ ရရှိမည် — အကျွံ/အကန် လုပ်ဆောင်ချက်များ ထည့်သွင်းနေပါသည်။</div>
         </div>
       </section>
       <section id="tab-weekly" class="tabpane">
