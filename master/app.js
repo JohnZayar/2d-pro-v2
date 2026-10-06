@@ -262,13 +262,16 @@ function serverPayload(obj) {
     return out;
 }
 
-/** Create: direct-to-server when online (server id becomes local id), else queue. */
+/** Create: save locally + queue. Immediate server sync ONLY for sessions (need server ID for refs).
+ *  Records save instantly to phone — background sync pushes to server without blocking. */
 async function createRecord(collection, data) {
     const obj = Object.assign({ id: uid(), _updated: Date.now() }, data);
     obj.tenant = state.tenantPbId;
     await db.put(collection, obj);
 
-    if (pb.isLoggedIn() && sync.isOnline()) {
+    // Sessions need immediate server ID (records reference it) — keep blocking sync here.
+    // All other collections (lottery_records etc.) go through background queue only → instant save.
+    if (collection === 'sessions' && pb.isLoggedIn() && sync.isOnline()) {
         try {
             const created = await pb.create(collection, serverPayload(obj));
             const oldId = obj.id;
@@ -277,7 +280,7 @@ async function createRecord(collection, data) {
             obj._updated = Date.now();
             await db.del(collection, oldId);
             await db.put(collection, obj);
-            if (collection === 'sessions') await remapSessionRefs(oldId, created.id);
+            await remapSessionRefs(oldId, created.id);
             updateSyncPill();
             return obj;
         } catch (e) {
