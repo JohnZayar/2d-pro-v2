@@ -1682,6 +1682,8 @@ async function sessionRecordsOrdered(sessionId) {
 }
 
 function voucherPersonKey(r) {
+    // Agent-synced: group under agent_name only (hide individual player names in Master)
+    if (r.agent_name && r.player_name && r.agent_name !== r.player_name) return r.agent_name;
     return r.player_name || r.agent_name || '';
 }
 function voucherPersonLabel(k) {
