@@ -1552,14 +1552,30 @@ function getBlocked(sessionId) {
     try {
         const raw = localStorage.getItem(blockedKey(sessionId));
         const arr = raw ? JSON.parse(raw) : [];
-        return Array.isArray(arr) ? arr.filter((n) => /^\d{2}$/.test(n)) : [];
-    } catch (e) { return []; }
+        if (Array.isArray(arr) && arr.length) return arr.filter((n) => /^\d{2}$/.test(n));
+    } catch (e) {}
+    // fallback to PocketBase-synced field
+    try {
+        const s = state.sessions.find((x) => x.id === sessionId);
+        if (s && s.blocked_numbers) {
+            const arr2 = JSON.parse(s.blocked_numbers);
+            if (Array.isArray(arr2)) return arr2.filter((n) => /^\d{2}$/.test(n));
+        }
+    } catch (e) {}
+    return [];
 }
 
-function setBlocked(sessionId, arr) {
+async function setBlocked(sessionId, arr) {
     const clean = Array.from(new Set(arr.map((n) => String(n).padStart(2, '0'))))
         .filter((n) => /^\d{2}$/.test(n)).sort();
     localStorage.setItem(blockedKey(sessionId), JSON.stringify(clean));
+    // sync to PocketBase so Agent can also block
+    const s = state.sessions.find((x) => x.id === sessionId);
+    if (s) {
+        s.blocked_numbers = JSON.stringify(clean);
+        s._updated = Date.now();
+        try { await updateRecord('sessions', s); } catch (e) { console.warn('blocked sync failed', e); }
+    }
     return clean;
 }
 
