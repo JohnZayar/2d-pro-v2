@@ -1272,14 +1272,12 @@ async function renderWeekly() {
 
     const signMoney = (n) => (n < 0 ? '−' : '+') + formatMoney(Math.abs(Math.round(n * 10) / 10));
     const MM_DAY = ['တနင်္လာ', 'အင်္ဂါ', 'ဗုဒ္ဓဟူး', 'ကြာသပတေး', 'သောကြာ'];
-    let html = '<table class="wtable"><tr><th rowspan="2">အမည်</th>';
+    let html = '<table class="wtable"><tr><th>အမည်</th>';
     days.forEach((d, i) => {
-        const dt = dayTotals[i].am + dayTotals[i].pm;
-        html += `<th colspan="2">${MM_DAY[i]}<br><span style="font-size:11px">${signMoney(dt)}</span></th>`;
+        html += `<th class="wday wamc">${MM_DAY[i]} နံနက်<br><span style="font-size:11px">${signMoney(dayTotals[i].am)}</span></th>`;
+        html += `<th class="wpmc">${MM_DAY[i]} ညနေ<br><span style="font-size:11px">${signMoney(dayTotals[i].pm)}</span></th>`;
     });
-    html += `<th rowspan="2">Total<br><span style="font-size:11px">${signMoney(grandTotal)}</span></th></tr><tr>`;
-    for (let i = 0; i < 5; i++) html += '<th class="wamc">နံနက်</th><th class="wpmc">ညနေ</th>';
-    html += '</tr>';
+    html += `<th>Total<br><span style="font-size:11px">${signMoney(grandTotal)}</span></th></tr>`;
 
     rows.forEach((r, ri) => {
         const nameHtml = (r.e.isAkan ? '⬆️ ' : '') + escHtml(r.e.label);
