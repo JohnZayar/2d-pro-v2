@@ -305,6 +305,29 @@ table.data tr.total td { font-weight: 700; color: var(--accent); border-top: 2px
 .voucher-row .v-no { font-weight: 700; letter-spacing: 1px; }
 .voucher-row .v-amt { color: var(--muted); font-weight: 600; }
 
+/* ---------- 🧾 Voucher tables (neat grid with totals) ---------- */
+.v-table {
+    width: 100%; border-collapse: collapse; margin-top: 6px;
+    font-size: 14px; background: rgba(0,0,0,.15); border-radius: 8px; overflow: hidden;
+}
+.v-table th, .v-table td {
+    border: 1px solid var(--border); padding: 7px 10px; text-align: center;
+}
+.v-table thead th {
+    background: rgba(56,189,248,.12); color: var(--accent);
+    font-size: 13px; font-weight: 700;
+}
+.v-table tbody td:first-child { font-weight: 700; letter-spacing: 1px; font-size: 15px; }
+.v-table tbody td:last-child { color: var(--muted); font-weight: 600; }
+.v-table tbody tr:nth-child(even) { background: rgba(255,255,255,.02); }
+.v-table tfoot td {
+    font-weight: 800; border-top: 2px solid var(--accent);
+    background: rgba(56,189,248,.08); font-size: 14px;
+}
+.v-table tfoot td:last-child { color: var(--yellow); }
+.v-table .v-actions { white-space: nowrap; }
+.v-table .v-actions button { margin: 0 2px; }
+
 /* ---------- 🔴 Over-limit ---------- */
 table.data tr.over-row td { color: var(--red); }
 table.data tr.over-row td:first-child { font-weight: 800; font-size: 15px; }

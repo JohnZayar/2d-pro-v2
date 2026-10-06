@@ -1152,29 +1152,31 @@ async function renderVoucherContent() {
             byBatch[b].push(r);
         });
         const batches = batchOrder.map((b, i) => ({
-            label: 'no(' + (i + 1) + ')',
+            label: 'NO ' + (i + 1),
             items: byBatch[b],
         }));
         return { key: k, label: voucherPersonLabel(k), batches };
     });
 
-    // On-screen HTML
+    // On-screen HTML: neat table per batch with per-batch total
     let html = '';
     players.forEach((p) => {
         html += '<div class="v-player-block"><div class="v-player-name">' + escHtml(p.label) + '</div>';
         p.batches.forEach((b) => {
+            const bTotal = b.items.reduce((s, r) => s + (Number(r.amount) || 0), 0);
             html += '<div class="v-batch"><div class="v-batch-no">' + escHtml(b.label) + '</div>' +
+                '<table class="v-table"><thead><tr><th>ဂဏန်း</th><th>ပမာဏ</th></tr></thead><tbody>' +
                 b.items.map((r) =>
-                    '<div class="voucher-row"><span class="v-no">' +
-                    escHtml(String(r.number).padStart(2, '0')) + '</span>' +
-                    '<span class="v-amt">' + formatMoney(r.amount) + '</span></div>'
-                ).join('') + '</div>';
+                    '<tr><td>' + escHtml(String(r.number).padStart(2, '0')) + '</td>' +
+                    '<td>' + formatMoney(r.amount) + '</td></tr>'
+                ).join('') +
+                '</tbody><tfoot><tr><td>Total</td><td>' + formatMoney(bTotal) + '</td></tr></tfoot></table></div>';
         });
         html += '</div>';
     });
     box.innerHTML = html;
 
-    // Plain text (Pho's approved format: name → no(X) → "55 500" lines, no counts/aggregation)
+    // Plain text (Pho's format: name → NO X → "55 500" lines → Total per batch)
     const lines = [];
     players.forEach((p, pi) => {
         if (pi > 0) lines.push('');
@@ -1182,9 +1184,13 @@ async function renderVoucherContent() {
         p.batches.forEach((b, bi) => {
             if (bi > 0) lines.push('');
             lines.push(b.label);
+            let bTotal = 0;
             b.items.forEach((r) => {
-                lines.push(String(r.number).padStart(2, '0') + ' ' + String(Number(r.amount) || 0));
+                const amt = Number(r.amount) || 0;
+                bTotal += amt;
+                lines.push(String(r.number).padStart(2, '0') + ' ' + amt);
             });
+            lines.push('Total ' + bTotal);
         });
     });
     state.lastVoucherText = lines.join('\n');
