@@ -547,11 +547,11 @@ select.field-input { appearance: auto; }
     margin-top: 14px; /* clear space between entries table and keypad */
 }
 .quick-btns-grid {
-    display: grid; grid-template-columns: repeat(6, 1fr); gap: 5px;
+    display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px;
 }
 .q-btn {
     border: none; border-radius: 8px;
-    padding: 6px 2px; font-size: 11px; font-weight: 800;
+    padding: 5px 2px; font-size: 10px; font-weight: 800;
     color: #fff; cursor: pointer; font-family: inherit;
     box-shadow: 0 3px 8px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.25);
     transition: transform .08s ease, filter .08s ease;
