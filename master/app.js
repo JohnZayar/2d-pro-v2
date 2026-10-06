@@ -840,7 +840,7 @@ async function isSessionLocked(sessionId) {
     // cutoff time
     if (s.date) {
         const isAM = (s.timeType || '') === 'မနက်ပိုင်း';
-        const [hh, mm] = isAM ? [11, 55] : [15, 5];
+        const [hh, mm] = isAM ? [11, 55] : [15, 55];
         const cutoff = new Date(s.date + `T${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}:00`);
         if (new Date() > cutoff) return { locked: true, reason: 'ထိုးခွင့် ပိတ်ပြီ' };
     }
@@ -1369,6 +1369,7 @@ async function openWeeklyCell(row, day, ampm) {
     }
     if (!recs.length) { showToast('မှတ်တမ်း မရှိပါ'); return; }
     let html = `<div style="font-weight:700;margin-bottom:8px">${escHtml(e.label)} (${ampm === 'am' ? 'နံနက်' : 'ညနေ'}) — ${escHtml(day.name)}</div>`;
+    html += `<button class="btn small block" id="wcellWinBtn" style="margin-bottom:8px">🏆 ပေါက်သီး ပြင်/ထည့်</button>`;
     html += '<div style="max-height:50vh;overflow-y:auto">';
     recs.forEach((r, i) => {
         html += `<div style="display:flex;align-items:center;gap:8px;padding:8px;border-bottom:1px solid var(--border)">` +
@@ -1379,16 +1380,30 @@ async function openWeeklyCell(row, day, ampm) {
     html += '</div>';
     $('wcellBody').innerHTML = html;
     openModal('modal-wcell');
+    const winBtn = $('wcellWinBtn');
+    if (winBtn) {
+        winBtn.addEventListener('click', async () => {
+            // find the session for this cell
+            const sess = state.sessions.find((s) => s.date === day.ds && (s.timeType || '') === (ampm === 'am' ? 'မနက်ပိုင်း' : 'ညနေပိုင်း'));
+            if (!sess) { showToast('Session မတွေ့ပါ'); return; }
+            closeModal('modal-wcell');
+            openWinning(sess.id);
+        });
+    }
     $('wcellBody').querySelectorAll('[data-wedit]').forEach((b) => {
         b.addEventListener('click', async () => {
             const r0 = recs[Number(b.getAttribute('data-wedit'))];
             const lkW = await isSessionLocked(r0.session);
             if (lkW.locked) { showToast('🔒 ' + lkW.reason + ' — ပြင် မရပါ'); return; }
             const r = r0;
+            const nn = prompt('ဂဏန်း ပြင်ရန် (၂ လုံး)', String(r.number));
+            if (nn === null) return;
+            if (!/^\\d{2}$/.test(nn.trim())) { showToast('ဂဏန်း ၂ လုံး ထည့်ပါ'); return; }
             const nv = prompt('ပမာဏ ပြင်ရန်', String(r.amount));
             if (nv === null) return;
             const v = Number(nv);
             if (!v || v <= 0) { showToast('ပမာဏ မှားနေတယ်'); return; }
+            r.number = nn.trim();
             r.amount = v;
             r._updated = Date.now();
             await updateRecord('lottery_records', r);
