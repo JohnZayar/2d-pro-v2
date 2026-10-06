@@ -644,7 +644,7 @@ function groupByNumberKeepOrder(recs) {
 }
 
 function batchLabel(b) {
-    return 'no(' + (Number(b) || 0) + ')';
+    return 'NO ' + (Number(b) || 0);
 }
 
 /** "02:28 PM" style timestamp for voucher batch headers (v1 format). */
@@ -763,12 +763,11 @@ window.renderRecordsView = async function renderRecordsView() {
         p.batches.forEach((b) => {
             html += '<div class="v-batch">' +
                 '<div class="v-batch-no" onclick="openBatchDetail(\'' + escHtml(p.key) + '\',' + b.no + ')" title="အသေးစိတ် ကြည့်ရန် (ပြင်/ဖျက်)">' + escHtml(b.label) + '</div>' +
+                '<table class="v-table"><thead><tr><th>ဂဏန်း</th><th>ပမာဏ</th></tr></thead><tbody>' +
                 b.items.map((r) =>
-                    '<div class="voucher-row">' +
-                        '<span class="v-no">' + escHtml(r.number) + '</span>' +
-                        '<span class="v-amt">' + formatMoney(r.amount) + '</span>' +
-                    '</div>'
+                    '<tr><td>' + escHtml(r.number) + '</td><td>' + formatMoney(r.amount) + '</td></tr>'
                 ).join('') +
+                '</tbody><tfoot><tr><td>Total</td><td>' + formatMoney(b.totalAmt) + '</td></tr></tfoot></table>' +
                 '</div>';
         });
         html += '</div>';
@@ -784,20 +783,18 @@ function buildVoucherText() {
     const v = lastVoucher;
     if (!v || !v.players.length) return '';
     const lines = [];
-    lines.push('🧾 ဘောက်ချာ' + (v.playerFilter === '__all' ? ' - အားလုံး' : ' - ' + v.players[0].label));
-    lines.push('📅 ' + v.dateLabel + ' | ' + v.sessionName);
-    lines.push('─────────────');
-    v.players.forEach((p) => {
-        p.batches.forEach((b) => {
-            lines.push(p.label + ' (' + b.label + ')' + (b.time ? '  ' + b.time : ''));
+    v.players.forEach((p, pi) => {
+        if (pi > 0) lines.push('');
+        lines.push(p.label);
+        p.batches.forEach((b, bi) => {
+            if (bi > 0) lines.push('');
+            lines.push(b.label);
             b.items.forEach((r) => {
-                lines.push('  ဂဏန်း: ' + r.number + ' — ' + formatMoney(r.amount) + ' ကျပ်');
+                lines.push(r.number + ' ' + (Number(r.amount) || 0));
             });
-            lines.push('  Total ' + formatMoney(b.totalAmt));
+            lines.push('Total ' + b.totalAmt);
         });
     });
-    lines.push('─────────────');
-    lines.push('စုစုပေါင်း: ' + formatMoney(v.totalAmt));
     return lines.join('\n');
 }
 
@@ -835,14 +832,15 @@ window.printVoucher = function printVoucher() {
     const area = $('printArea');
     let body = '';
     v.players.forEach((p) => {
+        body += '<div class="pr-player">' + escHtml(p.label) + '</div>';
         p.batches.forEach((b) => {
-            body += '<div class="pr-batch">' + escHtml(p.label) + ' (' + escHtml(b.label) + ')' +
-                (b.time ? ' <span class="pr-time">' + escHtml(b.time) + '</span>' : '') + '</div>';
-            b.items.forEach((r) => {
-                body += '<div class="pr-row"><span>ဂဏန်း: ' + escHtml(r.number) + '</span>' +
-                    '<span>' + formatMoney(r.amount) + ' ကျပ်</span></div>';
-            });
-            body += '<div class="pr-batch-total"><span>Total</span><span>' + formatMoney(b.totalAmt) + '</span></div>';
+            body += '<div class="pr-batch">' + escHtml(b.label) +
+                (b.time ? ' <span class="pr-time">' + escHtml(b.time) + '</span>' : '') + '</div>' +
+                '<table class="pr-table"><thead><tr><th>ဂဏန်း</th><th>ပမာဏ</th></tr></thead><tbody>' +
+                b.items.map((r) =>
+                    '<tr><td>' + escHtml(r.number) + '</td><td>' + formatMoney(r.amount) + '</td></tr>'
+                ).join('') +
+                '</tbody><tfoot><tr><td>Total</td><td>' + formatMoney(b.totalAmt) + '</td></tr></tfoot></table>';
         });
     });
     area.innerHTML =
@@ -881,16 +879,18 @@ window.openBatchDetail = async function openBatchDetail(playerKey, batchNo) {
 
     $('batchDetailTitle').textContent = '🧾 ' + playerLabel(batchDetailCtx.playerKey) +
         ' (' + batchLabel(batchDetailCtx.batchNo) + ')';
-    $('batchDetailList').innerHTML = recs.length ? recs.map((r) =>
-        '<div class="record-row">' +
-            '<span class="rec-no">' + escHtml(r.number) + '</span>' +
-            '<span class="rec-amt">' + formatMoney(r.amount) + '</span>' +
-            '<span class="rec-actions">' +
+    $('batchDetailList').innerHTML = recs.length ?
+        '<table class="v-table v-table-edit"><thead><tr><th>ဂဏန်း</th><th>ပမာဏ</th><th></th></tr></thead><tbody>' +
+        recs.map((r) =>
+        '<tr>' +
+            '<td>' + escHtml(r.number) + '</td>' +
+            '<td>' + formatMoney(r.amount) + '</td>' +
+            '<td class="v-actions">' +
                 '<button class="rec-edit" onclick="openEditRecord(\'' + r.id + '\')" title="ပြင်မည်">✏️</button>' +
                 '<button class="rec-del" onclick="deleteRecord(\'' + r.id + '\')" title="ဖျက်မည်">🗑️</button>' +
-            '</span>' +
-        '</div>'
-    ).join('') : '<div class="empty-state">စာရင်း မရှိပါ</div>';
+            '</td>' +
+        '</tr>'
+    ).join('') + '</tbody></table>' : '<div class="empty-state">စာရင်း မရှိပါ</div>';
     $('batchDetailModal').hidden = false;
 };
 
@@ -1195,14 +1195,14 @@ function renderPlayerGroups(recs, emptyMsg) {
         html += '<div class="player-group">' +
             '<div class="player-group-name">' + escHtml(playerLabel(k)) + '</div>';
         batchOrder.forEach((b) => {
+            const bAmt = byBatch[b].reduce((s, r) => s + (Number(r.amount) || 0), 0);
             html += '<div class="v-batch">' +
                 '<div class="v-batch-no">' + escHtml(batchLabel(b)) + '</div>' +
+                '<table class="v-table"><thead><tr><th>ဂဏန်း</th><th>ပမာဏ</th></tr></thead><tbody>' +
                 byBatch[b].map((r) =>
-                    '<div class="voucher-row">' +
-                        '<span class="v-no">' + escHtml(r.number) + '</span>' +
-                        '<span class="v-amt">' + formatMoney(r.amount) + '</span>' +
-                    '</div>'
+                    '<tr><td>' + escHtml(r.number) + '</td><td>' + formatMoney(r.amount) + '</td></tr>'
                 ).join('') +
+                '</tbody><tfoot><tr><td>Total</td><td>' + formatMoney(bAmt) + '</td></tr></tfoot></table>' +
                 '</div>';
         });
         html += '</div>';
@@ -1258,8 +1258,7 @@ window.renderWeekly = async function renderWeekly() {
 
         const dayName = BURMESE_DAYS[d.getDay()];
         html += '<div class="day-section">' +
-            '<div class="day-head"><span>📅 ' + dayName + ' <span class="muted-sm">' + formatDateStr(d) + '</span></span>' +
-            '<b>' + formatMoney(dayAmt) + '</b></div>';
+            '<div class="day-head"><span>📅 ' + dayName + ' <span class="muted-sm">' + formatDateStr(d) + '</span></span></div>';
 
         const perPlayer = {};
         const pOrder = [];
@@ -1269,10 +1268,11 @@ window.renderWeekly = async function renderWeekly() {
             perPlayer[k].amount += Number(r.amount) || 0;
             perPlayer[k].count += 1;
         });
-        html += pOrder.map((k) =>
-            '<div class="day-player"><span>👤 ' + escHtml(playerLabel(k)) + '</span>' +
-            '<span>' + formatMoney(perPlayer[k].amount) + '</span></div>'
-        ).join('');
+        html += '<table class="v-table"><thead><tr><th>ထိုးသား</th><th>ပမာဏ</th></tr></thead><tbody>' +
+            pOrder.map((k) =>
+                '<tr><td>👤 ' + escHtml(playerLabel(k)) + '</td><td>' + formatMoney(perPlayer[k].amount) + '</td></tr>'
+            ).join('') +
+            '</tbody><tfoot><tr><td>Total</td><td>' + formatMoney(dayAmt) + '</td></tr></tfoot></table>';
         html += '</div>';
     }
 
