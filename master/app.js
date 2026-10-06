@@ -98,6 +98,12 @@ function bindUI() {
     $('overSession').addEventListener('change', () => { state.overSessionId = $('overSession').value; renderOverlimit(); });
     $('overCopyBtn').addEventListener('click', copyOverlimit);
     $('overToAkanBtn').addEventListener('click', sendOverToAkan);
+    // Bookie input uses a datalist (renders inline below the input) — hide the
+    // fixed formula keyboard on focus so the name suggestions aren't covered.
+    $('akanBookieInput').addEventListener('focus', () => {
+        const kp = $('akanKeypad');
+        if (kp && !kp.hidden) { kp.hidden = true; $('akanKbToggle')?.classList.remove('active'); }
+    });
     $('serverUrlSave').addEventListener('click', () => {
         const v = $('serverUrlInput').value.trim();
         if (v && !/^https?:\/\//i.test(v)) { showToast('URL က https:// နဲ့ စရမယ်'); return; }
