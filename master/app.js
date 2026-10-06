@@ -1270,6 +1270,9 @@ async function renderWeekly() {
         return { e, cells, rowTotal };
     });
 
+    // akan (red) rows always at the bottom
+    rows.sort((a, b) => (a.e.isAkan ? 1 : 0) - (b.e.isAkan ? 1 : 0));
+
     const signMoney = (n) => (n < 0 ? '−' : '+') + formatMoney(Math.abs(Math.round(n * 10) / 10));
     const MM_DAY = ['တနင်္လာ', 'အင်္ဂါ', 'ဗုဒ္ဓဟူး', 'ကြာသပတေး', 'သောကြာ'];
     let html = '<table class="wtable"><tr><th>အမည်</th>';
@@ -1296,10 +1299,22 @@ async function renderWeekly() {
     html += '</table>';
     box.innerHTML = html;
     box.querySelectorAll('[data-wcell]').forEach((td) => {
-        td.addEventListener('click', () => {
-            const [ri, di, ampm] = td.getAttribute('data-wcell').split(':');
-            openWeeklyCell(_weeklyRows[Number(ri)], _weeklyDays[Number(di)], ampm);
-        });
+        let lpTimer = null;
+        const startLp = (e) => {
+            lpTimer = setTimeout(() => {
+                lpTimer = null;
+                const [ri, di, ampm] = td.getAttribute('data-wcell').split(':');
+                openWeeklyCell(_weeklyRows[Number(ri)], _weeklyDays[Number(di)], ampm);
+                if (e && e.preventDefault) e.preventDefault();
+            }, 550);
+        };
+        const cancelLp = () => { if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; } };
+        td.addEventListener('touchstart', startLp, { passive: true });
+        td.addEventListener('touchend', cancelLp);
+        td.addEventListener('touchmove', cancelLp);
+        td.addEventListener('mousedown', startLp);
+        td.addEventListener('mouseup', cancelLp);
+        td.addEventListener('mouseleave', cancelLp);
     });
     _weeklyRows = rows;
     _weeklyDays = days;
