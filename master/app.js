@@ -1225,6 +1225,7 @@ async function renderWeekly() {
         days.push({ ds: dsOf(d), name: WK_DAYS[i] });
     }
     $('wkLabel').textContent = `${days[0].ds} – ${days[4].ds}`;
+    state.weeklyMonday = days[0].ds;
     const daySet = new Set(days.map((x) => x.ds));
 
     const weekSessions = state.sessions.filter((s) => s.date && daySet.has(s.date));
@@ -1295,6 +1296,34 @@ async function renderWeekly() {
         return { e, cells, rowTotal };
     });
 
+    // apply manual overrides
+    for (const r of rows) {
+        const e = r.e;
+        for (let di = 0; di < 5; di++) {
+            for (const ampm of ['am', 'pm']) {
+                const ci = di * 2 + (ampm === 'am' ? 0 : 1);
+                const c = r.cells[ci];
+                if (!c) continue;
+                const key = `woverride_${state.weeklyMonday}_${e.pkey}_${days[di].ds}_${ampm}`;
+                const ov = await getSetting(key, null);
+                if (ov) {
+                    const ag = state.agents.find((a) => a.name === e.label);
+                    const comm = ag ? (Number(ag.commission) || 0) : 0;
+                    const payout = ag ? (Number(ag.payout_rate) || 80) : 80;
+                    const bet = Number(ov.bet) || 0;
+                    const win = Number(ov.win) || 0;
+                    const winDeduct = win * payout;
+                    const commAmt = Math.round(bet * comm / 100);
+                    const net = e.isAkan ? bet - commAmt + winDeduct : bet - commAmt - winDeduct;
+                    dayTotals[di][ampm] += (net - c.net);
+                    grandTotal += (net - c.net);
+                    r.rowTotal += (net - c.net);
+                    r.cells[ci] = { bet, win, net, overridden: true };
+                }
+            }
+        }
+    }
+
     // akan (red) rows always at the bottom
     rows.sort((a, b) => (a.e.isAkan ? 1 : 0) - (b.e.isAkan ? 1 : 0));
 
@@ -1321,7 +1350,8 @@ async function renderWeekly() {
             const isAM = ci % 2 === 0;
             const dayIdx = Math.floor(ci / 2);
             const cellAttr = c ? ` data-wcell="${ri}:${dayIdx}:${isAM ? 'am' : 'pm'}" style="cursor:pointer"` : '';
-            html += c ? `<td${cellAttr}>${formatMoney(c.bet)} / ${formatMoney(c.win)}</td>` : '<td class="muted">-</td>';
+            const ovMark = c && c.overridden ? ' ✏️' : '';
+            html += c ? `<td${cellAttr}>${formatMoney(c.bet)} / ${formatMoney(c.win)}${ovMark}</td>` : '<td class="muted">-</td>';
         });
         html += `<td><b>${signMoney(r.rowTotal)}</b></td></tr>`;
     });
@@ -1333,7 +1363,9 @@ async function renderWeekly() {
             lpTimer = setTimeout(() => {
                 lpTimer = null;
                 const [ri, di, ampm] = td.getAttribute('data-wcell').split(':');
-                openWeeklyCell(_weeklyRows[Number(ri)], _weeklyDays[Number(di)], ampm);
+                const rri = Number(ri), ddi = Number(di);
+                const ci = ddi * 2 + (ampm === 'am' ? 0 : 1);
+                openWeeklyCell(_weeklyRows[rri], _weeklyDays[ddi], ampm, _weeklyRows[rri].cells[ci]);
                 if (e && e.preventDefault) e.preventDefault();
             }, 550);
         };
@@ -1352,78 +1384,34 @@ async function renderWeekly() {
 let _weeklyRows = [];
 let _weeklyDays = [];
 
-async function openWeeklyCell(row, day, ampm) {
+async function openWeeklyCell(row, day, ampm, cellData) {
     const e = row.e;
-    const wantTime = ampm === 'am' ? 'မနက်ပိုင်း' : 'ညနေပိုင်း';
-    const sessions = state.sessions.filter((s) => s.date === day.ds && (s.timeType || '') === wantTime);
-    const recs = [];
-    for (const s of sessions) {
-        const rs = await db.query('lottery_records', 'by_session', s.id);
-        for (const r of rs) {
-            const isAkan = r.record_type === 'akan';
-            if (isAkan !== e.isAkan) continue;
-            const pkey = voucherPersonKey(r) || '(အမည် မရှိ)';
-            if (pkey !== e.pkey) continue;
-            recs.push(r);
-        }
-    }
-    if (!recs.length) { showToast('မှတ်တမ်း မရှိပါ'); return; }
+    const key = `woverride_${state.weeklyMonday}_${e.pkey}_${day.ds}_${ampm}`;
+    const ov = await getSetting(key, null);
+    const curBet = ov ? ov.bet : cellData.bet;
+    const curWin = ov ? ov.win : cellData.win;
     let html = `<div style="font-weight:700;margin-bottom:8px">${escHtml(e.label)} (${ampm === 'am' ? 'နံနက်' : 'ညနေ'}) — ${escHtml(day.name)}</div>`;
-    html += `<button class="btn small block" id="wcellWinBtn" style="margin-bottom:8px">🏆 ပေါက်သီး ပြင်/ထည့်</button>`;
-    html += '<div style="max-height:50vh;overflow-y:auto">';
-    recs.forEach((r, i) => {
-        html += `<div style="display:flex;align-items:center;gap:8px;padding:8px;border-bottom:1px solid var(--border)">` +
-            `<span style="flex:1"><b>${escHtml(String(r.number))}</b> — ${formatMoney(r.amount)}</span>` +
-            `<button class="btn small" data-wedit="${i}">✏️</button>` +
-            `<button class="btn small danger" data-wdel="${i}">🗑️</button></div>`;
-    });
-    html += '</div>';
+    html += `<div style="margin-bottom:8px;color:var(--muted)">လက်ရှိ: ${formatMoney(curBet)} / ${formatMoney(curWin)}${ov ? ' (ပြင်ထားပြီး)' : ''}</div>`;
+    html += `<div class="field"><label>ထိုးငွေ ပေါင်း ပြင်ရန်</label><input id="wcorrBet" type="number" inputmode="numeric" value="${curBet}"></div>`;
+    html += `<div class="field"><label>ပေါက် ပြင်ရန်</label><input id="wcorrWin" type="number" inputmode="numeric" value="${curWin}"></div>`;
+    html += `<button class="btn block green" id="wcorrSave">သိမ်းမည်</button>`;
+    if (ov) html += `<button class="btn block" id="wcorrClear" style="margin-top:8px">မူလ အတိုင်း ပြန်ထား</button>`;
     $('wcellBody').innerHTML = html;
     openModal('modal-wcell');
-    const winBtn = $('wcellWinBtn');
-    if (winBtn) {
-        winBtn.addEventListener('click', async () => {
-            // find the session for this cell
-            const sess = state.sessions.find((s) => s.date === day.ds && (s.timeType || '') === (ampm === 'am' ? 'မနက်ပိုင်း' : 'ညနေပိုင်း'));
-            if (!sess) { showToast('Session မတွေ့ပါ'); return; }
-            closeModal('modal-wcell');
-            openWinning(sess.id);
-        });
-    }
-    $('wcellBody').querySelectorAll('[data-wedit]').forEach((b) => {
-        b.addEventListener('click', async () => {
-            const r0 = recs[Number(b.getAttribute('data-wedit'))];
-            const lkW = await isSessionLocked(r0.session);
-            if (lkW.locked) { showToast('🔒 ' + lkW.reason + ' — ပြင် မရပါ'); return; }
-            const r = r0;
-            const nn = prompt('ဂဏန်း ပြင်ရန် (၂ လုံး)', String(r.number));
-            if (nn === null) return;
-            if (!/^\\d{2}$/.test(nn.trim())) { showToast('ဂဏန်း ၂ လုံး ထည့်ပါ'); return; }
-            const nv = prompt('ပမာဏ ပြင်ရန်', String(r.amount));
-            if (nv === null) return;
-            const v = Number(nv);
-            if (!v || v <= 0) { showToast('ပမာဏ မှားနေတယ်'); return; }
-            r.number = nn.trim();
-            r.amount = v;
-            r._updated = Date.now();
-            await updateRecord('lottery_records', r);
-            closeModal('modal-wcell');
-            renderWeekly();
-            showToast('ပြင်ပြီးပြီ');
-        });
+    $('wcorrSave').addEventListener('click', async () => {
+        const b = Number($('wcorrBet').value) || 0;
+        const w = Number($('wcorrWin').value) || 0;
+        await setSetting(key, { bet: b, win: w });
+        closeModal('modal-wcell');
+        renderWeekly();
+        showToast('ပြင်ပြီးပြီ');
     });
-    $('wcellBody').querySelectorAll('[data-wdel]').forEach((b) => {
-        b.addEventListener('click', async () => {
-            const r0 = recs[Number(b.getAttribute('data-wdel'))];
-            const lkW = await isSessionLocked(r0.session);
-            if (lkW.locked) { showToast('🔒 ' + lkW.reason + ' — ဖျက် မရပါ'); return; }
-            const r = r0;
-            if (!confirm(`"${r.number}" ဖျက်မလား?`)) return;
-            await deleteRecord('lottery_records', r);
-            closeModal('modal-wcell');
-            renderWeekly();
-            showToast('ဖျက်ပြီးပြီ');
-        });
+    const clr = $('wcorrClear');
+    if (clr) clr.addEventListener('click', async () => {
+        await setSetting(key, null);
+        closeModal('modal-wcell');
+        renderWeekly();
+        showToast('မူလ အတိုင်း ပြန်ထားပြီ');
     });
 }
 window.openWeeklyCell = openWeeklyCell;
