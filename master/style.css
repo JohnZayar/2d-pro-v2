@@ -663,3 +663,19 @@ table.data tr.over-row td:first-child { font-weight: 800; font-size: 15px; }
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
 }
+
+/* Weekly summary: proper grid table */
+table.wtable { border-collapse: collapse; font-size: 12px; min-width: 100%; }
+table.wtable th, table.wtable td {
+    border: 1px solid var(--border);
+    padding: 8px 6px;
+    text-align: center;
+    white-space: nowrap;
+    min-width: 86px;
+}
+table.wtable th { background: rgba(255,255,255,.04); font-weight: 700; }
+table.wtable td:first-child, table.wtable th:first-child {
+    text-align: left; min-width: 110px; max-width: 150px;
+    position: sticky; left: 0; background: var(--card); z-index: 1;
+}
+table.wtable th:first-child { background: var(--card); }
