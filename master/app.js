@@ -1148,10 +1148,6 @@ async function openDaily(sessionId) {
         </table>
         <div class="card" style="margin-top:10px"><div style="font-weight:700;margin-bottom:6px">📊 အချုပ်</div>
         <table class="data">
-        <tr><td>တက်ငွေ</td><td style="text-align:right">${formatMoney(tBet)}</td></tr>
-        <tr><td>ကော်</td><td style="text-align:right">${tComm ? '−' + formatMoney(tComm) : '0'}</td></tr>
-        <tr><td>အပေါက် ပေး (${formatMoney(tWin)} × 80)</td><td style="text-align:right">${tWinDeductPos ? '−' + formatMoney(tWinDeductPos) : '0'}</td></tr>
-        ${tWinDeductAkan ? `<tr><td>အပေါက် ရ (ဒိုင်ဆီက)</td><td style="text-align:right">+${formatMoney(tWinDeductAkan)}</td></tr>` : ''}
         <tr class="total"><td>ကျန်</td><td style="text-align:right">${(tNet < 0 ? '−' : '+') + formatMoney(Math.abs(tNet))}</td></tr>
         </table></div>`;
     openGeneric('📑 Daily စာရင်းချုပ်', html);
