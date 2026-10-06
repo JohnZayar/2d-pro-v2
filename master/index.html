@@ -280,7 +280,7 @@
       <section id="tab-winning" class="tabpane">
         <div class="card">
           <div class="row"><b>🎯 ပေါက်သီး</b></div>
-          <div class="empty">မကြာမီ ရရှိမည် — အနိုင်ဂဏန်း သတ်မှတ်မှု လုပ်ဆောင်ချက်များ ထည့်သွင်းနေပါသည်။</div>
+          <div id="winHomeList"></div>
         </div>
       </section>
       <section id="tab-settings" class="tabpane">
@@ -374,6 +374,13 @@
       <button class="close-x" data-close>×</button>
       <h2 id="agentModalTitle">Agent အသစ်</h2>
       <div class="field"><label>အမည်</label><input id="agName" type="text"></div>
+      <div class="field"><label>အမျိုးအစား</label>
+        <select id="agType" class="field-input">
+          <option value="agent">Agent</option>
+          <option value="player">ထိုးသား</option>
+          <option value="akan">အကန်ဒိုင်</option>
+        </select>
+      </div>
       <div class="field"><label>ဖုန်း</label><input id="agPhone" type="tel"></div>
       <div class="field"><label>ကော်မရှင် %</label><input id="agComm" type="number" inputmode="decimal" value="0"></div>
       <div class="field"><label>အလျော်နှုန်း</label><input id="agPayout" type="number" inputmode="numeric" value="80"></div>

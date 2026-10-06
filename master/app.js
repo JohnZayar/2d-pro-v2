@@ -456,6 +456,7 @@ function switchTab(name) {
     if (name === 'vouchers') renderVouchers();
     if (name === 'akan') renderOverlimit();
     if (name === 'akandain') renderAkandain();
+    if (name === 'winning') renderWinningHome();
 }
 window.switchTab = switchTab;
 
@@ -478,7 +479,15 @@ window.closeDrawer = closeDrawer;
 window.goDrawer = goDrawer;
 window.doLogout = doLogout;
 
-function openModal(id) { $(id).classList.add('open'); }
+function openModal(id) {
+    // The formula keypads are fixed overlays (z-index 900) that would cover the
+    // modal sheet — hide them whenever any modal opens (e.g. 🏆 ပေါက်သီး).
+    const ekp = $('entryKeypad');
+    if (ekp && !ekp.hidden) { ekp.hidden = true; $('entryKbToggle')?.classList.remove('active'); }
+    const akp = $('akanKeypad');
+    if (akp && !akp.hidden) { akp.hidden = true; $('akanKbToggle')?.classList.remove('active'); }
+    $(id).classList.add('open');
+}
 function closeModal(id) { $(id).classList.remove('open'); }
 
 function openGeneric(title, html) {
@@ -630,6 +639,7 @@ async function openBoard(sessionId) {
     const sel = $('boardTarget');
     let opts = '<option value="__DAIN__">🏠 ဒိုင် (အကန်)</option>';
     for (const a of state.agents) {
+        if ((a.person_type || 'agent') !== 'agent') continue;
         opts += `<option value="${escHtml(a.id)}">${escHtml(a.name)}</option>`;
     }
     sel.innerHTML = opts;
@@ -795,7 +805,7 @@ async function renderEntryPersonOptions() {
     const add = (k) => { k = (k || '').trim(); if (k && !seen.has(k)) { seen.add(k); order.push(k); } };
 
     if (pType === 'agent') {
-        (state.agents || []).forEach((a) => add(a.name));
+        (state.agents || []).forEach((a) => { if (((a.person_type || 'agent')) === 'agent') add(a.name); });
     } else if (pType === 'akan') {
         for (const sess of state.sessions) {
             const recs = await db.query('lottery_records', 'by_session', sess.id);
@@ -804,9 +814,11 @@ async function renderEntryPersonOptions() {
                 add(r.player_name || r.agent_name);
             }
         }
+        (state.agents || []).forEach((a) => { if ((a.person_type || 'agent') === 'akan') add(a.name); });
     } else {
         const recs = state.activeSessionId ? await db.query('lottery_records', 'by_session', state.activeSessionId) : [];
         recs.forEach((r) => { if (r.record_type !== 'akan') add(voucherPersonKey(r)); });
+        (state.agents || []).forEach((a) => { if ((a.person_type || 'agent') === 'player') add(a.name); });
     }
     const ph = pType === 'akan' ? '-- အကန်ဒိုင် ရွေးပါ --'
         : pType === 'agent' ? '-- Agent ရွေးပါ --'
@@ -1011,7 +1023,29 @@ async function saveWinning() {
     closeModal('modal-winning');
     showToast('🏆 ပေါက်သီး ' + num + ' သိမ်းပြီးပြီ');
     renderLedger();
+    if ($('tab-winning') && $('tab-winning').classList.contains('active')) renderWinningHome();
 }
+
+/** Home 🎯 ပေါက်သီး tab: every session with its winning number + ထည့်/ပြင် button. */
+async function renderWinningHome() {
+    const box = $('winHomeList');
+    const sess = (state.sessions || []).slice().sort((a, b) =>
+        String(b.created || '').localeCompare(String(a.created || '')));
+    if (!sess.length) { box.innerHTML = '<div class="empty">ပွဲ မရှိသေးပါ</div>'; return; }
+    const rows = [];
+    for (const s of sess) {
+        const wins = await db.query('winning_numbers', 'by_session', s.id);
+        const num = wins.length ? String(wins[0].number).padStart(2, '0') : null;
+        rows.push('<div class="agent-row"><div><div class="nm">' + escHtml(sessionLabel(s)) + '</div>' +
+            '<div class="ph">' + (num
+                ? '🏆 ပေါက်သီး <b style="color:var(--green)">' + escHtml(num) + '</b>'
+                : 'ပေါက်သီး မထည့်ရသေး') + '</div></div>' +
+            '<div class="acts"><button class="btn small green" onclick="openWinning(\'' + s.id + '\')">' +
+            (num ? 'ပြင်မယ်' : 'ထည့်မယ်') + '</button></div></div>');
+    }
+    box.innerHTML = rows.join('');
+}
+window.openWinning = openWinning;
 
 /* ================= AGENTS ================= */
 
@@ -1026,15 +1060,21 @@ async function loadAgents() {
         String(a.name || '').localeCompare(String(b.name || '')));
 }
 
+/** Person type label: agent (default) / player (ထိုးသား) / akan (အကန်ဒိုင်). */
+function personTypeLabel(a) {
+    const t = (a && a.person_type) || 'agent';
+    return t === 'player' ? 'ထိုးသား' : t === 'akan' ? 'အကန်ဒိုင်' : 'Agent';
+}
+
 function renderAgents() {
     const box = $('agentList');
     if (!state.agents.length) {
-        box.innerHTML = '<div class="empty">Agent မရှိသေးပါ</div>';
+        box.innerHTML = '<div class="empty">လူ မရှိသေးပါ</div>';
         return;
     }
     box.innerHTML = state.agents.map((a) => `
         <div class="agent-row">
-            <div><div class="nm">${escHtml(a.name)}</div>
+            <div><div class="nm">${escHtml(a.name)} <span class="ptype">${escHtml(personTypeLabel(a))}</span></div>
             <div class="ph">${escHtml(a.phone || '')} · ကော် ${a.commission || 0}% · အလျော် ${a.payout_rate || 80}</div></div>
             <div class="acts">
                 <button class="btn small gray" data-edit="${a.id}">✏️</button>
@@ -1050,8 +1090,9 @@ function renderAgents() {
 function openAgentModal(id) {
     state.editingAgentId = id;
     const a = id ? state.agents.find((x) => x.id === id) : null;
-    $('agentModalTitle').textContent = a ? 'Agent ပြင်မယ်' : 'Agent အသစ်';
+    $('agentModalTitle').textContent = a ? 'လူ ပြင်မယ်' : 'လူအသစ်';
     $('agName').value = a ? a.name : '';
+    $('agType').value = a ? (a.person_type || 'agent') : 'agent';
     $('agPhone').value = a ? (a.phone || '') : '';
     $('agComm').value = a ? (a.commission || 0) : 0;
     $('agPayout').value = a ? (a.payout_rate || 80) : 80;
@@ -1063,6 +1104,7 @@ async function saveAgent() {
     if (!name) { showToast('အမည် ထည့်ပါ'); return; }
     const data = {
         name,
+        person_type: $('agType').value || 'agent',
         phone: $('agPhone').value.trim(),
         commission: Number($('agComm').value) || 0,
         payout_rate: Number($('agPayout').value) || 80,
@@ -1697,7 +1739,8 @@ async function renderAkandain() {
     const s = state.sessions.find((x) => x.id === state.activeSessionId);
     $('akanSessionLabel').textContent = s ? sessionLabel(s) : 'Session မရှိပါ';
 
-    // Bookie suggestions: distinct bookie names from prior OUTGOING (akan) bets, all sessions.
+    // Bookie suggestions: distinct bookie names from prior OUTGOING (akan) bets, all sessions,
+    // plus registered အကန်ဒိုင် persons.
     const seen = new Set();
     const order = [];
     for (const sess of state.sessions) {
@@ -1707,6 +1750,11 @@ async function renderAkandain() {
             const k = (r.player_name || r.agent_name || '').trim();
             if (k && !seen.has(k)) { seen.add(k); order.push(k); }
         }
+    }
+    for (const a of state.agents || []) {
+        if ((a.person_type || 'agent') !== 'akan') continue;
+        const k = (a.name || '').trim();
+        if (k && !seen.has(k)) { seen.add(k); order.push(k); }
     }
     $('akanBookieList').innerHTML = order.map((k) => '<option value="' + escHtml(k) + '">').join('');
 

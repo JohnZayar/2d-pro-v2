@@ -250,7 +250,7 @@ main { flex: 1; padding: 14px 12px 40px; }
 
 /* ---------- Modals ---------- */
 .modal {
-    display: none; position: fixed; inset: 0; z-index: 100;
+    display: none; position: fixed; inset: 0; z-index: 1500;
     background: rgba(0,0,0,.65); align-items: flex-end; justify-content: center;
 }
 .modal.open { display: flex; }
@@ -289,6 +289,9 @@ main { flex: 1; padding: 14px 12px 40px; }
 .agent-row .nm { font-weight: 600; }
 .agent-row .ph { color: var(--muted); font-size: 12px; }
 .agent-row .acts { margin-left: auto; display: flex; gap: 6px; }
+.agent-row .ptype { font-size: 11px; font-weight: 600; color: var(--accent, #38bdf8);
+    border: 1px solid var(--border); border-radius: 20px; padding: 1px 8px; margin-left: 6px;
+    vertical-align: middle; white-space: nowrap; }
 
 /* ---------- Settings ---------- */
 .set-row { display: flex; align-items: center; justify-content: space-between; padding: 12px 2px; border-bottom: 1px solid var(--border); gap: 10px; }
