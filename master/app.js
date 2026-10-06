@@ -661,6 +661,9 @@ async function openBoard(sessionId) {
 }
 
 async function saveBoard() {
+    const sessionId0 = state.boardSessionId;
+    const lk0 = await isSessionLocked(sessionId0);
+    if (lk0.locked) { showToast('🔒 ' + lk0.reason + ' — ထည့် မရပါ'); return; }
     const text = $('boardText').value;
     const { items, invalidLines } = parseBoardReport(text);
     // Guard: only real 2-digit numbers
@@ -792,8 +795,7 @@ async function renderEntryPersonOptions() {
     const seen = new Set();
     const add = (k) => { k = (k || '').trim(); if (k && !seen.has(k)) { seen.add(k); order.push(k); } };
 
-    const recs = state.activeSessionId ? await db.query('lottery_records', 'by_session', state.activeSessionId) : [];
-    recs.forEach((r) => { if (r.record_type !== 'akan') add(voucherPersonKey(r)); });
+    // ONLY registered people — unregistered names are BLOCKED entirely
     // ထိုးသား + Agent only — အကန်ဒိုင် never mixes in here
     (state.agents || []).forEach((a) => { if ((a.person_type || 'agent') !== 'akan') add(a.name); });
     const ph = '-- ထိုးသား ရွေးပါ --';
@@ -827,9 +829,30 @@ window.entryDeleteRow = function entryDeleteRow(i) {
     renderEntryTable();
 };
 
+/** Session lock: betting closes at 11:55 (AM) / 15:05 (PM) on session date;
+    and locks entirely once winning numbers are entered. */
+async function isSessionLocked(sessionId) {
+    const s = state.sessions.find((x) => x.id === sessionId);
+    if (!s) return { locked: false };
+    // winning numbers entered → locked
+    const wins = await db.query('winning_numbers', 'by_session', sessionId);
+    if (wins && wins.length) return { locked: true, reason: 'ပေါက်ဂဏန်း ထည့်ပြီးပြီ' };
+    // cutoff time
+    if (s.date) {
+        const isAM = (s.timeType || '') === 'မနက်ပိုင်း';
+        const [hh, mm] = isAM ? [11, 55] : [15, 5];
+        const cutoff = new Date(s.date + `T${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}:00`);
+        if (new Date() > cutoff) return { locked: true, reason: 'ထိုးခွင့် ပိတ်ပြီ' };
+    }
+    return { locked: false };
+}
+
 /** ထည့်မည် — expand the number-box formula and add to the PENDING table. */
 window.submitEntryRow = async function submitEntryRow() {
+    const lk = await isSessionLocked(state.activeSessionId);
+    if (lk.locked) { showToast('🔒 ' + lk.reason + ' — ပြင်/ထည့် မရပါ'); return; }
     const playerName = $('entryPlayerSelect').value || null;
+    if (!playerName) { showToast('❌ အမည် စာရင်း သွင်းထားမှ ရမယ် — အရင် လူ စာရင်း သွင်းပါ'); return; }
     const rType = 'pos'; // ထိုးကွက် is incoming-only; outgoing goes through 🔄 အကန်ဒိုင်
     const noText = $('boxNo').value.trim();
     const amtText = $('boxAmt').value.trim().replace(/[^\d]/g, '');
@@ -868,6 +891,8 @@ window.saveEntryBatch = async function saveEntryBatch() {
     if (entrySaveInFlight) return;
     if (!entryPending.length) { showToast('စာရင်း မရှိသေးပါ'); return; }
     if (!state.activeSessionId) { showToast('⚠️ Session မရှိသေးပါ'); return; }
+    const lk = await isSessionLocked(state.activeSessionId);
+    if (lk.locked) { showToast('🔒 ' + lk.reason + ' — သိမ်း မရပါ'); return; }
 
     entrySaveInFlight = true;
     try {
@@ -1356,7 +1381,10 @@ async function openWeeklyCell(row, day, ampm) {
     openModal('modal-wcell');
     $('wcellBody').querySelectorAll('[data-wedit]').forEach((b) => {
         b.addEventListener('click', async () => {
-            const r = recs[Number(b.getAttribute('data-wedit'))];
+            const r0 = recs[Number(b.getAttribute('data-wedit'))];
+            const lkW = await isSessionLocked(r0.session);
+            if (lkW.locked) { showToast('🔒 ' + lkW.reason + ' — ပြင် မရပါ'); return; }
+            const r = r0;
             const nv = prompt('ပမာဏ ပြင်ရန်', String(r.amount));
             if (nv === null) return;
             const v = Number(nv);
@@ -1371,7 +1399,10 @@ async function openWeeklyCell(row, day, ampm) {
     });
     $('wcellBody').querySelectorAll('[data-wdel]').forEach((b) => {
         b.addEventListener('click', async () => {
-            const r = recs[Number(b.getAttribute('data-wdel'))];
+            const r0 = recs[Number(b.getAttribute('data-wdel'))];
+            const lkW = await isSessionLocked(r0.session);
+            if (lkW.locked) { showToast('🔒 ' + lkW.reason + ' — ဖျက် မရပါ'); return; }
+            const r = r0;
             if (!confirm(`"${r.number}" ဖျက်မလား?`)) return;
             await deleteRecord('lottery_records', r);
             closeModal('modal-wcell');
@@ -2011,6 +2042,8 @@ window.akanDeleteRow = function akanDeleteRow(i) {
 
 /** ထည့်မည် — expand the number-box formula and add to the OUTGOING pending table. */
 window.submitAkanRow = async function submitAkanRow() {
+    const lkA = await isSessionLocked(state.activeSessionId);
+    if (lkA.locked) { showToast('🔒 ' + lkA.reason + ' — ပြင်/ထည့် မရပါ'); return; }
     const bookie = ($('akanBookieSelect').value || '').trim() || null;
     const noText = $('akanBoxNo').value.trim();
     const amtText = $('akanBoxAmt').value.trim().replace(/[^\d]/g, '');
@@ -2049,6 +2082,8 @@ window.saveAkanBatch = async function saveAkanBatch() {
     if (akanSaveInFlight) return;
     if (!akanPending.length) { showToast('စာရင်း မရှိသေးပါ'); return; }
     if (!state.activeSessionId) { showToast('⚠️ Session မရှိသေးပါ'); return; }
+    const lkA2 = await isSessionLocked(state.activeSessionId);
+    if (lkA2.locked) { showToast('🔒 ' + lkA2.reason + ' — သိမ်း မရပါ'); return; }
 
     akanSaveInFlight = true;
     try {
