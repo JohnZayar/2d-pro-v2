@@ -24,6 +24,7 @@ const state = {
     boardSessionId: null,
     editingAgentId: null,
     voucherSessionId: null,
+    weeklyOffset: 0,
     overSessionId: null,
     lastVoucherText: '',
     lastOverText: '',
@@ -94,6 +95,8 @@ function bindUI() {
     $('voucherCopyBtn').addEventListener('click', copyVoucher);
     $('voucherPrintBtn').addEventListener('click', printVoucher);
     $('voucherShareBtn').addEventListener('click', shareVoucher);
+    $('wkPrev').addEventListener('click', () => { state.weeklyOffset = (state.weeklyOffset || 0) - 1; renderWeekly(); });
+    $('wkNext').addEventListener('click', () => { state.weeklyOffset = (state.weeklyOffset || 0) + 1; renderWeekly(); });
     $('overSession').addEventListener('change', () => { state.overSessionId = $('overSession').value; renderOverlimit(); });
     $('overCopyBtn').addEventListener('click', copyOverlimit);
     $('overToAkanBtn').addEventListener('click', sendOverToAkan);
@@ -456,6 +459,7 @@ function switchTab(name) {
     if (name === 'akan') renderOverlimit();
     if (name === 'akandain') renderAkandain();
     if (name === 'winning') renderWinningHome();
+    if (name === 'weekly') renderWeekly();
 }
 window.switchTab = switchTab;
 
@@ -1151,6 +1155,131 @@ async function openDaily(sessionId) {
         <tr class="total"><td>ကျန်</td><td style="text-align:right">${(tNet < 0 ? '−' : '+') + formatMoney(Math.abs(tNet))}</td></tr>
         </table></div>`;
     openGeneric('📑 Daily စာရင်းချုပ်', html);
+}
+
+/* ================= WEEKLY SUMMARY (v1 cross-tab) ================= */
+
+function parseSessionDate(ds) {
+    const m = /^(\d{1,2})\.(\d{1,2})\.(\d{4})$/.exec(ds || '');
+    if (!m) return null;
+    return new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
+}
+
+function mondayOf(d) {
+    const diff = (d.getDay() + 6) % 7; // days since Monday
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate() - diff);
+}
+
+function dsOf(d) {
+    return `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.${d.getFullYear()}`;
+}
+
+const WK_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
+
+function shortTimeType(tt) {
+    if (tt === 'မနက်ပိုင်း') return 'မနက်';
+    if (tt === 'ညနေပိုင်း') return 'ညနေ';
+    return tt || '';
+}
+
+async function renderWeekly() {
+    const box = $('weeklyContent');
+    const offset = state.weeklyOffset || 0;
+    const mon = mondayOf(new Date());
+    mon.setDate(mon.getDate() + offset * 7);
+    const days = [];
+    for (let i = 0; i < 5; i++) {
+        const d = new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + i);
+        days.push({ ds: dsOf(d), name: WK_DAYS[i] });
+    }
+    $('wkLabel').textContent = `${days[0].ds} – ${days[4].ds}`;
+    const daySet = new Set(days.map((x) => x.ds));
+
+    const weekSessions = state.sessions.filter((s) => s.date && daySet.has(s.date));
+
+    // agg key: (akan? 'akan:':'pos:') + pkey + '|' + timeType
+    const agg = {};
+    const rowOrder = [];
+    for (const s of weekSessions) {
+        const dayIdx = days.findIndex((d) => d.ds === s.date);
+        if (dayIdx < 0) continue;
+        const timeType = s.timeType || '';
+        const recs = await db.query('lottery_records', 'by_session', s.id);
+        const wins = await db.query('winning_numbers', 'by_session', s.id);
+        const winNum = wins.length ? String(wins[0].number).padStart(2, '0') : null;
+        for (const r of recs) {
+            const isAkan = r.record_type === 'akan';
+            const pkey = voucherPersonKey(r) || '(အမည် မရှိ)';
+            const rk = (isAkan ? 'akan:' : 'pos:') + pkey + '|' + timeType;
+            if (!agg[rk]) {
+                agg[rk] = {
+                    isAkan, label: voucherPersonLabel(pkey), timeType,
+                    perDay: [0, 1, 2, 3, 4].map(() => ({ bet: 0, win: 0, winDeduct: 0, has: false })),
+                };
+                rowOrder.push(rk);
+            }
+            const d = agg[rk].perDay[dayIdx];
+            const amt = Number(r.amount) || 0;
+            if (amt !== 0) d.has = true;
+            d.bet += isAkan ? -amt : amt;
+            if (winNum && String(r.number).padStart(2, '0') === winNum) {
+                const ag0 = state.agents.find((a) => a.name === agg[rk].label);
+                const payout = ag0 ? (Number(ag0.payout_rate) || 80) : 80;
+                d.win += amt;
+                d.winDeduct += amt * payout;
+                d.has = true;
+            }
+        }
+    }
+
+    if (!rowOrder.length) {
+        box.innerHTML = '<div class="empty">ဒီအပတ် မှတ်တမ်း မရှိသေးပါ</div>';
+        return;
+    }
+
+    // Compute per-cell nets and totals
+    const dayTotals = [0, 0, 0, 0, 0];
+    let grandTotal = 0;
+    const rows = rowOrder.map((rk) => {
+        const e = agg[rk];
+        const ag = state.agents.find((a) => a.name === e.label);
+        const comm = ag ? (Number(ag.commission) || 0) : 0;
+        const cells = [];
+        let rowTotal = 0;
+        for (let i = 0; i < 5; i++) {
+            const d = e.perDay[i];
+            if (!d.has) { cells.push(null); continue; }
+            const commAmt = Math.round(d.bet * comm / 100);
+            const net = e.isAkan ? d.bet - commAmt + d.winDeduct : d.bet - commAmt - d.winDeduct;
+            cells.push({ bet: d.bet, win: d.win, net });
+            rowTotal += net;
+            dayTotals[i] += net;
+        }
+        grandTotal += rowTotal;
+        return { e, cells, rowTotal };
+    });
+
+    const signMoney = (n) => (n < 0 ? '−' : '+') + formatMoney(Math.abs(Math.round(n * 10) / 10));
+    let html = '<table class="data"><tr><th>NAME</th>';
+    days.forEach((d, i) => {
+        html += `<th>${d.name}<br><span style="font-size:11px">${signMoney(dayTotals[i])}</span></th>`;
+    });
+    html += `<th>Total<br><span style="font-size:11px">${signMoney(grandTotal)}</span></th></tr>`;
+
+    rows.forEach((r) => {
+        const nameHtml = (r.e.isAkan ? '⬆️ ' : '') + escHtml(r.e.label) +
+            ` <span style="font-size:11px;color:var(--muted)">(${escHtml(shortTimeType(r.e.timeType))})</span>`;
+        const nameCell = r.e.isAkan
+            ? `<td><span style="color:var(--red);font-weight:700">${nameHtml}</span></td>`
+            : `<td><b>${nameHtml}</b></td>`;
+        html += `<tr>${nameCell}`;
+        r.cells.forEach((c) => {
+            html += c ? `<td>${formatMoney(c.bet)} / ${formatMoney(c.win)}</td>` : '<td class="muted">-</td>';
+        });
+        html += `<td><b>${signMoney(r.rowTotal)}</b></td></tr>`;
+    });
+    html += '</table>';
+    box.innerHTML = html;
 }
 
 /* ================= COPY TOTAL ================= */

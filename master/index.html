@@ -269,8 +269,15 @@
       </section>
       <section id="tab-weekly" class="tabpane">
         <div class="card">
-          <div class="row"><b>📊 တပတ်စာစာရင်းချုပ်</b></div>
-          <div class="empty">မကြာမီ ရရှိမည် — အပတ်စဉ် စာရင်းအင်း လုပ်ဆောင်ချက်များ ထည့်သွင်းနေပါသည်။</div>
+          <div class="row" style="justify-content:space-between;align-items:center">
+            <b>📊 တပတ်စာစာရင်းချုပ်</b>
+            <div>
+              <button class="btn small" id="wkPrev">‹</button>
+              <span id="wkLabel" style="margin:0 8px;font-weight:700"></span>
+              <button class="btn small" id="wkNext">›</button>
+            </div>
+          </div>
+          <div id="weeklyContent" style="overflow-x:auto;margin-top:8px"></div>
         </div>
       </section>
       <section id="tab-winning" class="tabpane">
@@ -488,6 +495,6 @@
 
 
 </div>
-<script type="module" src="app.js?v=12"></script>
+<script type="module" src="app.js?v=13"></script>
 </body>
 </html>
