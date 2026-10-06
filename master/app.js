@@ -89,7 +89,6 @@ function bindUI() {
     $('agSave').addEventListener('click', saveAgent);
 
     $('setLimit').addEventListener('change', () => setSetting('limit', Number($('setLimit').value) || 50000).then(renderLedger));
-    $('setRate').addEventListener('change', () => setSetting('box_rate', Number($('setRate').value) || 2000).then(renderLedger));
     $('syncNowBtn').addEventListener('click', () => fullSync(true));
     $('logoutBtn').addEventListener('click', doLogout);
 
@@ -433,7 +432,6 @@ async function setSetting(key, value) {
 
 async function loadSettingsIntoUI() {
     $('setLimit').value = await getSetting('limit', 50000);
-    $('setRate').value = await getSetting('box_rate', 2000);
     const urlInput = $('serverUrlInput');
     if (urlInput) {
         const cur = pb.getBaseUrl();
@@ -464,6 +462,15 @@ function switchTab(name) {
     if (name === 'akandain') renderAkandain();
 }
 window.switchTab = switchTab;
+
+window.toggleLedgerSummary = function toggleLedgerSummary() {
+    const el = $('ledgerSummary');
+    const arrow = $('ledgerSummaryArrow');
+    if (!el) return;
+    const show = el.hidden;
+    el.hidden = !show;
+    if (arrow) arrow.textContent = show ? '▲' : '▼';
+};
 
 function openModal(id) { $(id).classList.add('open'); }
 function closeModal(id) { $(id).classList.remove('open'); }
@@ -923,7 +930,7 @@ async function renderLedger() {
         return;
     }
     const limit = Number(await getSetting('limit', 50000));
-    const rate = Number(await getSetting('box_rate', 2000)) || 2000;
+    const rate = 2000; // fixed box rate (အကွက် = total / 2000)
     const recs = await db.query('lottery_records', 'by_session', s.id);
     const wins = await db.query('winning_numbers', 'by_session', s.id);
     const winNums = new Set(wins.map((w) => String(w.number).padStart(2, '0')));

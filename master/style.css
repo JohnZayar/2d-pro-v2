@@ -145,6 +145,12 @@ main { flex: 1; padding: 14px 12px 40px; }
 .btn-grid .btn { flex: 1 1 30%; min-width: 90px; }
 
 /* ---------- Ledger grid ---------- */
+.summary-toggle {
+    display: block; width: 100%; margin-bottom: 10px; padding: 10px;
+    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+    color: var(--text); font-size: 14px; font-weight: 600; cursor: pointer;
+}
+.summary-toggle:active { opacity: 0.75; }
 .ledger-summary { display: flex; gap: 10px; margin-bottom: 12px; }
 .sumbox {
     flex: 1; background: var(--card); border: 1px solid var(--border);

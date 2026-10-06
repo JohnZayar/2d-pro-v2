@@ -135,7 +135,8 @@
       </section>
       <section id="tab-ledger" class="tabpane">
         <div id="ledgerHead"></div>
-        <div class="ledger-summary">
+        <button class="summary-toggle" id="ledgerSummaryToggle" type="button" onclick="toggleLedgerSummary()">စုစုပေါင်း / အကွက် <span id="ledgerSummaryArrow">▼</span></button>
+        <div class="ledger-summary" id="ledgerSummary" hidden>
           <div class="sumbox"><div class="lbl">စုစုပေါင်း</div><div class="val" id="ledgerTotal">0</div></div>
           <div class="sumbox"><div class="lbl">အကွက်</div><div class="val" id="ledgerBoxes">0</div></div>
         </div>
@@ -264,7 +265,6 @@
       <section id="tab-settings" class="tabpane">
         <div class="card">
           <div class="set-row"><span>🚫 Limit (အကျွံ)</span><input id="setLimit" type="number" inputmode="numeric"></div>
-          <div class="set-row"><span>📦 Box rate (အကွက်)</span><input id="setRate" type="number" inputmode="numeric"></div>
           <div class="set-row"><span>🔗 Agent Link Code</span></div>
           <div class="code-box" id="linkCode">—</div>
           <div class="small muted mt">Agent app မှာ ဒီ code ထည့်ပြီး ချိတ်ပါ</div>
