@@ -662,8 +662,6 @@ async function renderLedger() {
         grid.innerHTML = '';
         $('ledgerTotal').textContent = '0';
         $('ledgerBoxes').textContent = '0';
-        $('recordList').innerHTML = '';
-        $('recCount').textContent = '';
         return;
     }
     const limit = Number(await getSetting('limit', 50000));
@@ -696,25 +694,6 @@ async function renderLedger() {
     grid.innerHTML = cells;
     $('ledgerTotal').textContent = formatMoney(total);
     $('ledgerBoxes').textContent = formatMoney(Math.round(total / rate));
-
-    // record list (newest first)
-    $('recCount').textContent = recs.length + ' မှတ်တမ်း';
-    const sorted = recs.slice().sort((a, b) => (b._updated || 0) - (a._updated || 0)).slice(0, 100);
-    $('recordList').innerHTML = sorted.map((r) => `
-        <div class="rec-row">
-            <span class="num">${escHtml(String(r.number).padStart(2, '0'))}</span>
-            <span class="who">${r.record_type === 'akan' ? '🏠 အကန်' : escHtml(r.agent_name || '')}</span>
-            <span class="amt">${formatMoney(r.amount)}</span>
-            <button class="icon-btn" data-delrec="${r.id}">🗑️</button>
-        </div>`).join('') || '<div class="muted small">မှတ်တမ်း မရှိသေးပါ</div>';
-    $('recordList').querySelectorAll('[data-delrec]').forEach((b) => {
-        b.addEventListener('click', async () => {
-            if (!confirm('ဒီမှတ်တမ်း ဖျက်မှာလား?')) return;
-            const r = await db.get('lottery_records', b.dataset.delrec);
-            if (r) await deleteRecord('lottery_records', r);
-            renderLedger();
-        });
-    });
 }
 
 /* ================= WINNING NUMBERS ================= */
@@ -939,22 +918,20 @@ async function openBigSmall(sessionId) {
         const amt = Number(r.amount) || 0;
         agg[n] = (agg[n] || 0) + (r.record_type === 'akan' ? -amt : amt);
     }
-    let smallTotal = 0, bigTotal = 0, smallCount = 0, bigCount = 0;
-    for (let i = 0; i < 100; i++) {
-        const n = String(i).padStart(2, '0');
-        const a = agg[n] || 0;
-        if (i < 50) { smallTotal += a; if (a) smallCount++; }
-        else { bigTotal += a; if (a) bigCount++; }
-    }
-    const net = smallTotal + bigTotal;
+    // sort big to small (descending by amount)
+    const rows = Object.keys(agg)
+        .filter((n) => agg[n] !== 0)
+        .map((n) => ({ n, a: agg[n] }))
+        .sort((x, y) => y.a - x.a);
     const html = `
-        <div class="muted small" style="margin-bottom:8px">${escHtml(s ? sessionLabel(s) : '')}</div>
-        <table class="data">
-            <tr><th>အမျိုးအစား</th><th>ဂဏန်းအရေအတွက်</th><th>စုစုပေါင်း</th></tr>
-            <tr><td>🔻 ငယ် (00–49)</td><td>${smallCount}</td><td>${formatMoney(smallTotal)}</td></tr>
-            <tr><td>🔺 ကြီး (50–99)</td><td>${bigCount}</td><td>${formatMoney(bigTotal)}</td></tr>
-            <tr class="total"><td>စုစုပေါင်း</td><td>${smallCount + bigCount}</td><td>${formatMoney(net)}</td></tr>
-        </table>`;
+        <div class="muted small" style="margin-bottom:8px">${escHtml(s ? sessionLabel(s) : '')} — အကြီးမှ အသေး</div>
+        ${rows.length ? `<div class="bigsmall-grid">` + rows.map((r, i) => `
+            <div class="bscell${r.a < 0 ? ' neg' : ''}">
+                <span class="bsrank">${i + 1}</span>
+                <span class="bsn">${r.n}</span>
+                <span class="bsa">${formatMoney(r.a)}</span>
+            </div>`).join('') + `</div>`
+        : '<div class="muted small">မှတ်တမ်း မရှိသေးပါ</div>'}`;
     openGeneric('⚖️ ကြီးငယ်', html);
 }
 

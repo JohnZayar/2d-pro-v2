@@ -168,6 +168,22 @@ main { flex: 1; padding: 14px 12px 40px; }
 .lcell.win { background: rgba(52,211,153,.15); border-color: var(--green); }
 .lcell.win .n { color: var(--green); }
 
+/* ကြီးငယ် sorted grid (big to small) */
+.bigsmall-grid {
+    display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px;
+}
+.bscell {
+    background: var(--bg2); border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 4px; text-align: center; font-size: 12px; line-height: 1.4;
+    position: relative;
+}
+.bscell .bsrank {
+    position: absolute; top: 2px; left: 6px; font-size: 9px; color: var(--muted);
+}
+.bscell .bsn { font-weight: 700; color: var(--text); display: block; font-size: 14px; }
+.bscell .bsa { color: var(--accent); display: block; font-size: 11px; font-weight: 700; }
+.bscell.neg .bsa { color: var(--red); }
+
 .rec-row {
     display: flex; align-items: center; gap: 8px;
     padding: 9px 10px; border-bottom: 1px solid var(--border); font-size: 14px;
