@@ -513,9 +513,9 @@ async function renderSessions() {
                 <button class="btn small gray" data-act="vouchers" data-id="${s.id}">🧾 ဘောက်ချာများ</button>
                 <button class="btn small gray" data-act="overlimit" data-id="${s.id}">🔴 အကျွံ</button>
                 <button class="btn small gray" data-act="akandain" data-id="${s.id}">🔄 အကန်ဒိုင်</button>
-                <button class="btn small gray" data-act="soon1" data-id="${s.id}">➕ —</button>
-                <button class="btn small gray" data-act="soon2" data-id="${s.id}">➕ —</button>
-                <button class="btn small gray" data-act="soon3" data-id="${s.id}">➕ —</button>
+                <button class="btn small gray" data-act="bigsmall" data-id="${s.id}">⚖️ ကြီးငယ်</button>
+                <button class="btn small gray" data-act="blocked" data-id="${s.id}">🚫 ဒိုင်ပိတ်</button>
+                <button class="btn small gray" data-act="alltotal" data-id="${s.id}">💰 ALL Total</button>
                 <button class="btn small red" data-act="del" data-id="${s.id}">🗑️</button>
             </div>
         </div>`;
@@ -536,7 +536,9 @@ async function sessionAction(act, id) {
     else if (act === 'vouchers') { setActiveSession(id); switchTab('vouchers'); }
     else if (act === 'overlimit') { setActiveSession(id); switchTab('akan'); }
     else if (act === 'akandain') { setActiveSession(id); switchTab('akandain'); }
-    else if (act === 'soon1' || act === 'soon2' || act === 'soon3') { setActiveSession(id); showToast('မကြာမီ ရရှိမည်'); }
+    else if (act === 'bigsmall') { setActiveSession(id); openBigSmall(id); }
+    else if (act === 'blocked') { setActiveSession(id); openBlocked(id); }
+    else if (act === 'alltotal') { setActiveSession(id); openAllTotal(id); }
     else if (act === 'del') deleteSession(id);
 }
 
@@ -923,6 +925,149 @@ async function openRemaining() {
         prevRemaining = rem;
     }
     openGeneric('🔢 ကျန်ဂဏန်း (၁၀ ပတ်)', html);
+}
+
+/* ================= ⚖️ ကြီးငယ် (BIG / SMALL) ================= */
+
+async function openBigSmall(sessionId) {
+    const s = state.sessions.find((x) => x.id === sessionId);
+    const recs = await db.query('lottery_records', 'by_session', sessionId);
+    // aggregate pos - akan per number (same as ledger)
+    const agg = {};
+    for (const r of recs) {
+        const n = String(r.number).padStart(2, '0');
+        const amt = Number(r.amount) || 0;
+        agg[n] = (agg[n] || 0) + (r.record_type === 'akan' ? -amt : amt);
+    }
+    let smallTotal = 0, bigTotal = 0, smallCount = 0, bigCount = 0;
+    for (let i = 0; i < 100; i++) {
+        const n = String(i).padStart(2, '0');
+        const a = agg[n] || 0;
+        if (i < 50) { smallTotal += a; if (a) smallCount++; }
+        else { bigTotal += a; if (a) bigCount++; }
+    }
+    const net = smallTotal + bigTotal;
+    const html = `
+        <div class="muted small" style="margin-bottom:8px">${escHtml(s ? sessionLabel(s) : '')}</div>
+        <table class="data">
+            <tr><th>အမျိုးအစား</th><th>ဂဏန်းအရေအတွက်</th><th>စုစုပေါင်း</th></tr>
+            <tr><td>🔻 ငယ် (00–49)</td><td>${smallCount}</td><td>${formatMoney(smallTotal)}</td></tr>
+            <tr><td>🔺 ကြီး (50–99)</td><td>${bigCount}</td><td>${formatMoney(bigTotal)}</td></tr>
+            <tr class="total"><td>စုစုပေါင်း</td><td>${smallCount + bigCount}</td><td>${formatMoney(net)}</td></tr>
+        </table>`;
+    openGeneric('⚖️ ကြီးငယ်', html);
+}
+
+/* ================= 🚫 ဒိုင်ပိတ်ဂဏန်း (BLOCKED NUMBERS) ================= */
+
+function blockedKey(sessionId) { return 'v2_blocked_' + sessionId; }
+
+function getBlocked(sessionId) {
+    try {
+        const raw = localStorage.getItem(blockedKey(sessionId));
+        const arr = raw ? JSON.parse(raw) : [];
+        return Array.isArray(arr) ? arr.filter((n) => /^\d{2}$/.test(n)) : [];
+    } catch (e) { return []; }
+}
+
+function setBlocked(sessionId, arr) {
+    const clean = Array.from(new Set(arr.map((n) => String(n).padStart(2, '0'))))
+        .filter((n) => /^\d{2}$/.test(n)).sort();
+    localStorage.setItem(blockedKey(sessionId), JSON.stringify(clean));
+    return clean;
+}
+
+function openBlocked(sessionId) {
+    const s = state.sessions.find((x) => x.id === sessionId);
+    const list = getBlocked(sessionId);
+    const chips = list.length
+        ? list.map((n) => `<span class="dchip" data-blocked="${n}">${n} <b data-unblock="${n}" style="cursor:pointer;color:var(--red)">×</b></span>`).join('')
+        : '<div class="muted small">ပိတ်ထားတဲ့ ဂဏန်း မရှိသေးပါ</div>';
+    const html = `
+        <div class="muted small" style="margin-bottom:8px">${escHtml(s ? sessionLabel(s) : '')} · ဒိုင်က မရောင်းဘူးဆိုပြီး ပိတ်ထားတဲ့ ဂဏန်းများ</div>
+        <div class="row" style="margin-bottom:10px">
+            <input id="blockedInput" class="field" type="text" inputmode="numeric" maxlength="2"
+                placeholder="ဂဏန်း ၂ လုံး" style="flex:1;min-width:0">
+            <button class="btn small" id="blockedAdd">+ ထည့်မယ်</button>
+        </div>
+        <div class="digit-chips" id="blockedChips">${chips}</div>
+        <div class="row" style="margin-top:10px">
+            <button class="btn small gray" id="blockedCopy">📋 ကူးရန်</button>
+        </div>`;
+    openGeneric('🚫 ဒိုင်ပိတ်ဂဏန်း', html);
+
+    const refresh = () => {
+        const cur = getBlocked(sessionId);
+        $('blockedChips').innerHTML = cur.length
+            ? cur.map((n) => `<span class="dchip">${n} <b data-unblock="${n}" style="cursor:pointer;color:var(--red)">×</b></span>`).join('')
+            : '<div class="muted small">ပိတ်ထားတဲ့ ဂဏန်း မရှိသေးပါ</div>';
+        bindUnblock();
+    };
+    const bindUnblock = () => {
+        $('blockedChips').querySelectorAll('[data-unblock]').forEach((b) => {
+            b.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const cur = getBlocked(sessionId).filter((n) => n !== b.dataset.unblock);
+                setBlocked(sessionId, cur);
+                refresh();
+                showToast('🗑️ ဖြုတ်ပြီးပြီ');
+            });
+        });
+    };
+    const addNum = () => {
+        const v = $('blockedInput').value.replace(/\D/g, '').slice(-2).padStart(2, '0');
+        if (!/^\d{2}$/.test(v)) { showToast('ဂဏန်း ၂ လုံး ထည့်ပါ'); return; }
+        const cur = getBlocked(sessionId);
+        if (cur.includes(v)) { showToast('ထည့်ပြီးသား ဖြစ်နေပါတယ်'); return; }
+        setBlocked(sessionId, cur.concat([v]));
+        $('blockedInput').value = '';
+        refresh();
+        showToast(`🚫 ${v} ပိတ်ပြီးပြီ`);
+    };
+    $('blockedAdd').addEventListener('click', addNum);
+    $('blockedInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') addNum(); });
+    $('blockedCopy').addEventListener('click', async () => {
+        const cur = getBlocked(sessionId);
+        if (!cur.length) { showToast('ကူးစရာ မရှိပါ'); return; }
+        try {
+            await navigator.clipboard.writeText(cur.join(' '));
+            showToast(`📋 ${cur.length} ကွက် ကူးပြီးပြီ`);
+        } catch (e) { showToast(cur.join(' ')); }
+    });
+    bindUnblock();
+}
+
+/* ================= 💰 ALL Total ================= */
+
+async function openAllTotal(sessionId) {
+    const s = state.sessions.find((x) => x.id === sessionId);
+    const recs = await db.query('lottery_records', 'by_session', sessionId);
+    let pos = 0, akan = 0, posCount = 0, akanCount = 0;
+    for (const r of recs) {
+        const amt = Number(r.amount) || 0;
+        if (r.record_type === 'akan') { akan += amt; akanCount++; }
+        else { pos += amt; posCount++; }
+    }
+    const net = pos - akan;
+    const html = `
+        <div class="muted small" style="margin-bottom:8px">${escHtml(s ? sessionLabel(s) : '')}</div>
+        <table class="data">
+            <tr><th>အမျိုးအစား</th><th>မှတ်တမ်း</th><th>ပမာဏ</th></tr>
+            <tr><td>📝 ထိုးငွေ</td><td>${posCount}</td><td>${formatMoney(pos)}</td></tr>
+            <tr><td>🏠 အကန်</td><td>${akanCount}</td><td>${formatMoney(akan)}</td></tr>
+            <tr class="total"><td>💰 ALL Total (net)</td><td>${posCount + akanCount}</td><td>${formatMoney(net)}</td></tr>
+        </table>
+        <div class="row" style="margin-top:10px">
+            <button class="btn small gray" id="allTotalCopy">📋 ကူးရန်</button>
+        </div>`;
+    openGeneric('💰 ALL Total', html);
+    $('allTotalCopy').addEventListener('click', async () => {
+        const text = `ထိုးငွေ: ${formatMoney(pos)}\nအကန်: ${formatMoney(akan)}\nALL Total: ${formatMoney(net)}`;
+        try {
+            await navigator.clipboard.writeText(text);
+            showToast('📋 ကူးပြီးပြီ');
+        } catch (e) { showToast('ကူးမရပါ'); }
+    });
 }
 
 /* ================= 🧾 ဘောက်ချာများ (VOUCHERS) ================= */
