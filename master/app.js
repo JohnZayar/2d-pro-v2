@@ -510,6 +510,9 @@ async function renderSessions() {
                 <button class="btn small gray" data-act="daily" data-id="${s.id}">📑 Daily</button>
                 <button class="btn small gray" data-act="copy" data-id="${s.id}">📋 Copy</button>
                 <button class="btn small gray" data-act="remain" data-id="${s.id}">🔢 ကျန်ဂဏန်း</button>
+                <button class="btn small gray" data-act="vouchers" data-id="${s.id}">🧾 ဘောက်ချာများ</button>
+                <button class="btn small gray" data-act="overlimit" data-id="${s.id}">🔴 အကျွံ</button>
+                <button class="btn small gray" data-act="akandain" data-id="${s.id}">🔄 အကန်ဒိုင်</button>
                 <button class="btn small red" data-act="del" data-id="${s.id}">🗑️</button>
             </div>
         </div>`;
@@ -527,6 +530,9 @@ async function sessionAction(act, id) {
     else if (act === 'daily') openDaily(id);
     else if (act === 'copy') copyTotal(id);
     else if (act === 'remain') openRemaining();
+    else if (act === 'vouchers') { setActiveSession(id); switchTab('vouchers'); }
+    else if (act === 'overlimit') { setActiveSession(id); switchTab('akan'); }
+    else if (act === 'akandain') { setActiveSession(id); switchTab('akandain'); }
     else if (act === 'del') deleteSession(id);
 }
 
