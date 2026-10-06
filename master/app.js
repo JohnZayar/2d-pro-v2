@@ -1140,12 +1140,6 @@ async function openDaily(sessionId) {
     }
     // Total deducts commission and the background (win × 80), not the displayed raw win.
     const tNet = tBet - tComm - tWinDeduct;
-        tBet += v.bet; tWin += v.win;
-        const nameHtml = v.isAkan
-            ? `<span style="color:var(--red);font-weight:700">⬆️ ${escHtml(label)}</span>`
-            : escHtml(label);
-        rows += `<tr><td>${nameHtml}</td><td>${formatMoney(v.bet)}</td><td>${formatMoney(v.win)}</td><td>${formatMoney(net)}</td></tr>`;
-    }
     const html = `
         <div class="muted small" style="margin-bottom:8px">${escHtml(s ? sessionLabel(s) : '')}
         ${winNum ? ` · 🏆 ပေါက်သီး <b style="color:var(--green)">${winNum}</b>` : ' · ပေါက်သီး မထည့်ရသေး'}</div>
