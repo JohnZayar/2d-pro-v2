@@ -1392,19 +1392,20 @@ async function renderVouchers() {
         return;
     }
     let recs = await sessionRecordsOrdered(sid);
-    recs = recs.filter((r) => r.record_type !== 'akan');
 
     const order = [];
     const seen = {};
+    const akanKeys = {};
     recs.forEach((r) => {
         const k = voucherPersonKey(r);
         if (!seen[k]) { seen[k] = 1; order.push(k); }
+        if (r.record_type === 'akan') akanKeys[k] = true;
     });
 
     const pSel = $('voucherPerson');
     const prev = pSel.value;
     pSel.innerHTML = '<option value="__all">အားလုံး</option>' + order.map((k) =>
-        `<option value="${escHtml(k)}">${escHtml(voucherPersonLabel(k))}</option>`).join('');
+        `<option value="${escHtml(k)}">${akanKeys[k] ? '⬆️ ' : ''}${escHtml(voucherPersonLabel(k))}</option>`).join('');
     pSel.value = (prev && (prev === '__all' || order.includes(prev))) ? prev : '__all';
 
     renderVoucherContent();
@@ -1417,7 +1418,6 @@ async function renderVoucherContent() {
     if (!sid) { box.innerHTML = ''; state.lastVoucherText = ''; return; }
 
     let recs = await sessionRecordsOrdered(sid);
-    recs = recs.filter((r) => r.record_type !== 'akan');
     if (sel !== '__all') recs = recs.filter((r) => voucherPersonKey(r) === sel);
     if (!recs.length) {
         box.innerHTML = '<div class="empty">စာရင်း မရှိသေးပါ</div>';
@@ -1447,13 +1447,16 @@ async function renderVoucherContent() {
             label: 'NO ' + (i + 1),
             items: byBatch[b],
         }));
-        return { key: k, label: voucherPersonLabel(k), batches };
+        const isAkan = pRecs.length > 0 && pRecs.every((r) => r.record_type === 'akan');
+        return { key: k, label: voucherPersonLabel(k), batches, isAkan };
     });
 
     // On-screen HTML: neat table per batch with per-batch total
     let html = '';
     players.forEach((p) => {
-        html += '<div class="v-player-block"><div class="v-player-name">' + escHtml(p.label) + '</div>';
+        html += '<div class="v-player-block"><div class="v-player-name">' +
+            (p.isAkan ? '⬆️ ' : '') + escHtml(p.label) +
+            (p.isAkan ? ' <span class="ptype">အထွက်</span>' : '') + '</div>';
         p.batches.forEach((b) => {
             const bTotal = b.items.reduce((s, r) => s + (Number(r.amount) || 0), 0);
             html += '<div class="v-batch"><div class="v-batch-no">' + escHtml(b.label) + '</div>' +
@@ -1472,7 +1475,7 @@ async function renderVoucherContent() {
     const lines = [];
     players.forEach((p, pi) => {
         if (pi > 0) lines.push('');
-        lines.push(p.label);
+        lines.push((p.isAkan ? '⬆️ ' : '') + p.label);
         p.batches.forEach((b, bi) => {
             if (bi > 0) lines.push('');
             lines.push(b.label);
