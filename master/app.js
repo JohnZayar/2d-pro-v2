@@ -93,6 +93,7 @@ function bindUI() {
     $('voucherPerson').addEventListener('change', renderVoucherContent);
     $('voucherCopyBtn').addEventListener('click', copyVoucher);
     $('voucherPrintBtn').addEventListener('click', printVoucher);
+    $('homeDailyDate').addEventListener('change', (e) => { _homeDailyDate = e.target.value; renderHomeDaily(); });
     $('voucherShareBtn').addEventListener('click', shareVoucher);
     $('wkPrev').addEventListener('click', () => { state.weeklyOffset = (state.weeklyOffset || 0) - 1; renderWeekly(); });
     $('wkNext').addEventListener('click', () => { state.weeklyOffset = (state.weeklyOffset || 0) + 1; renderWeekly(); });
@@ -458,6 +459,7 @@ function switchTab(name) {
     if (name === 'akandain') renderAkandain();
     if (name === 'winning') renderWinningHome();
     if (name === 'weekly') renderWeekly();
+    if (name === 'daily') renderHomeDaily();
 }
 window.switchTab = switchTab;
 
@@ -1229,6 +1231,87 @@ async function openDaily(sessionId) {
         <tr class="total"><td>ကျန်</td><td style="text-align:right">${(tNet < 0 ? '−' : '+') + formatMoney(Math.abs(tNet))}</td></tr>
         </table></div>`;
     openGeneric('📑 Daily စာရင်းချုပ်', html);
+}
+
+/* ================= HOME DAILY — whole day (morning + evening) ================= */
+
+let _homeDailyDate = null;
+
+async function dailySessionAgg(sessionId) {
+    const recs = await db.query('lottery_records', 'by_session', sessionId);
+    const wins = await db.query('winning_numbers', 'by_session', sessionId);
+    const winNum = wins.length ? String(wins[0].number).padStart(2, '0') : null;
+    const per = {};
+    const pLabel = {};
+    for (const r of recs) {
+        const isAkan = r.record_type === 'akan';
+        const pkey = voucherPersonKey(r) || '(အမည် မရှိ)';
+        const key = (isAkan ? 'akan:' : 'pos:') + pkey;
+        if (!per[key]) { per[key] = { bet: 0, win: 0, winDeduct: 0, isAkan }; pLabel[key] = voucherPersonLabel(pkey); }
+        const amt = Number(r.amount) || 0;
+        per[key].bet += isAkan ? -amt : amt;
+        if (winNum && String(r.number).padStart(2, '0') === winNum) {
+            per[key].win += amt;
+            const ag0 = state.agents.find((a) => a.name === pLabel[key]);
+            const payout = ag0 ? (Number(ag0.payout_rate) || 80) : 80;
+            per[key].winDeduct += amt * payout;
+        }
+    }
+    let rows = '', tBet = 0, tWin = 0, tNet = 0;
+    for (const [key, v] of Object.entries(per)) {
+        const label = pLabel[key];
+        const ag = state.agents.find((a) => a.name === label);
+        const comm = ag ? (Number(ag.commission) || 0) : 0;
+        const commAmt = Math.round(v.bet * comm / 100);
+        const net = v.isAkan ? v.bet - commAmt + v.winDeduct : v.bet - commAmt - v.winDeduct;
+        tBet += v.bet; tWin += v.win; tNet += net;
+        const nameHtml = v.isAkan
+            ? `<span style="color:var(--red);font-weight:700">⬆️ ${escHtml(label)}</span>`
+            : escHtml(label);
+        rows += `<tr><td>${nameHtml}</td><td>${formatMoney(v.bet)}</td><td>${formatMoney(v.win)}</td><td>${formatMoney(net)}</td></tr>`;
+    }
+    return { rows, tBet, tWin, tNet, winNum };
+}
+
+async function renderHomeDaily() {
+    const dateInput = $('homeDailyDate');
+    if (!_homeDailyDate) {
+        const today = new Date();
+        _homeDailyDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    }
+    if (dateInput && !dateInput.value) dateInput.value = _homeDailyDate;
+
+    const [y, m, d] = _homeDailyDate.split('-');
+    const ds = `${d}.${m}.${y}`; // match session.date format DD.MM.YYYY
+
+    const daySessions = state.sessions.filter((s) => s.date === ds);
+    const morn = daySessions.find((s) => (s.timeType || '') === 'မနက်ပိုင်း');
+    const eve = daySessions.find((s) => (s.timeType || '') === 'ညနေပိုင်း');
+
+    let html = '';
+    let gBet = 0, gWin = 0, gNet = 0;
+
+    for (const [sess, title] of [[morn, '🌅 မနက်ပိုင်း'], [eve, '🌇 ညနေပိုင်း']]) {
+        if (!sess) {
+            html += `<div class="muted small" style="margin:8px 0"><b>${title}</b> — ပွဲ မရှိပါ</div>`;
+            continue;
+        }
+        const agg = await dailySessionAgg(sess.id);
+        gBet += agg.tBet; gWin += agg.tWin; gNet += agg.tNet;
+        html += `<div style="font-weight:700;margin:10px 0 6px"><b>${title}</b> ${agg.winNum ? `· 🏆 <b style="color:var(--green)">${agg.winNum}</b>` : ''}</div>
+        <table class="data"><tr><th>ထိုးသား</th><th>ထိုးငွေ</th><th>ပေါက်</th><th>ကျန်</th></tr>
+        ${agg.rows || '<tr><td colspan="4" class="muted">မှတ်တမ်း မရှိ</td></tr>'}
+        </table>`;
+    }
+
+    html += `<div class="card" style="margin-top:10px"><div style="font-weight:700;margin-bottom:6px">📊 တစ်နေ့ကုန် အချုပ်</div>
+        <table class="data">
+        <tr><td>ထိုးငွေ စုစုပေါင်း</td><td style="text-align:right">${formatMoney(gBet)}</td></tr>
+        <tr><td>ပေါက် စုစုပေါင်း</td><td style="text-align:right">${formatMoney(gWin)}</td></tr>
+        <tr class="total"><td>ကျန်</td><td style="text-align:right">${(gNet < 0 ? '−' : '+') + formatMoney(Math.abs(gNet))}</td></tr>
+        </table></div>`;
+
+    $('homeDailyBody').innerHTML = html;
 }
 
 /* ================= WEEKLY SUMMARY (v1 cross-tab) ================= */
