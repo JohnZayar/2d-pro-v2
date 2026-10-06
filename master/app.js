@@ -911,28 +911,44 @@ async function openRemaining() {
 async function openBigSmall(sessionId) {
     const s = state.sessions.find((x) => x.id === sessionId);
     const recs = await db.query('lottery_records', 'by_session', sessionId);
-    // aggregate pos - akan per number (same as ledger)
-    const agg = {};
-    for (const r of recs) {
-        const n = String(r.number).padStart(2, '0');
-        const amt = Number(r.amount) || 0;
-        agg[n] = (agg[n] || 0) + (r.record_type === 'akan' ? -amt : amt);
-    }
-    // sort big to small (descending by amount)
-    const rows = Object.keys(agg)
-        .filter((n) => agg[n] !== 0)
-        .map((n) => ({ n, a: agg[n] }))
-        .sort((x, y) => y.a - x.a);
-    const html = `
-        <div class="muted small" style="margin-bottom:8px">${escHtml(s ? sessionLabel(s) : '')} — အကြီးမှ အသေး</div>
-        ${rows.length ? `<div class="bigsmall-grid">` + rows.map((r, i) => `
-            <div class="bscell${r.a < 0 ? ' neg' : ''}">
-                <span class="bsrank">${i + 1}</span>
-                <span class="bsn">${r.n}</span>
-                <span class="bsa">${formatMoney(r.a)}</span>
-            </div>`).join('') + `</div>`
-        : '<div class="muted small">မှတ်တမ်း မရှိသေးပါ</div>'}`;
-    openGeneric('⚖️ ကြီးငယ်', html);
+    // per-person (exclude akan), first-appearance order — same as vouchers
+    const mine = recs.filter((r) => r.record_type !== 'akan');
+    const order = [];
+    const seen = {};
+    mine.forEach((r) => {
+        const k = voucherPersonKey(r);
+        if (!seen[k]) { seen[k] = 1; order.push(k); }
+    });
+    const label = escHtml(s ? sessionLabel(s) : '');
+    openGeneric('⚖️ ကြီးငယ်', `
+        <div class="muted small" style="margin-bottom:8px">${label}</div>
+        <div class="field"><label>လူရွေးရန်</label>
+            <select id="bigsmallPerson">
+                ${order.map((k, i) => `<option value="${escHtml(k)}"${i === 0 ? ' selected' : ''}>${escHtml(voucherPersonLabel(k))}</option>`).join('')}
+            </select>
+        </div>
+        <div id="bigsmallList"></div>`);
+    const renderBigSmall = () => {
+        const sel = $('bigsmallPerson').value;
+        const prs = mine.filter((r) => voucherPersonKey(r) === sel);
+        // aggregate per number, sort big -> small
+        const agg = {};
+        for (const r of prs) {
+            const n = String(r.number).padStart(2, '0');
+            const amt = Number(r.amount) || 0;
+            agg[n] = (agg[n] || 0) + amt;
+        }
+        const rows = Object.keys(agg)
+            .filter((n) => agg[n] !== 0)
+            .map((n) => ({ n, a: agg[n] }))
+            .sort((x, y) => y.a - x.a);
+        $('bigsmallList').innerHTML = rows.length
+            ? rows.map((r) =>
+                `<div class="voucher-row"><span class="v-no">${r.n}</span><span class="v-amt">${formatMoney(r.a)}</span></div>`).join('')
+            : '<div class="muted small">စာရင်း မရှိသေးပါ</div>';
+    };
+    $('bigsmallPerson').addEventListener('change', renderBigSmall);
+    renderBigSmall();
 }
 
 /* ================= 🚫 ဒိုင်ပိတ်ဂဏန်း (BLOCKED NUMBERS) ================= */
