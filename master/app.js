@@ -940,7 +940,6 @@ async function renderLedger() {
         return;
     }
     const limit = Number(await getSetting('limit', 50000));
-    const rate = 2000; // fixed box rate (အကွက် = total / 2000)
     const recs = await db.query('lottery_records', 'by_session', s.id);
     const wins = await db.query('winning_numbers', 'by_session', s.id);
     const winNums = new Set(wins.map((w) => String(w.number).padStart(2, '0')));
@@ -968,7 +967,7 @@ async function renderLedger() {
     $('ledgerBoardBtn').addEventListener('click', () => openEntry(s.id));
     grid.innerHTML = cells;
     $('ledgerTotal').textContent = formatMoney(total);
-    $('ledgerBoxes').textContent = formatMoney(Math.round(total / rate));
+    $('ledgerBoxes').textContent = limit ? (total / limit).toFixed(1) : '0';
 }
 
 /* ================= WINNING NUMBERS ================= */
