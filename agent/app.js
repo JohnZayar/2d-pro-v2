@@ -321,11 +321,15 @@ window.openPlayerModal = function openPlayerModal(editId) {
     document.getElementById('playerModalTitle').textContent = editId ? '✏️ လူ ပြင်မည်' : '👥 လူအသစ်';
     document.getElementById('playerNameInput').value = '';
     document.getElementById('playerPhoneInput').value = '';
+    document.getElementById('playerCommInput').value = '';
+    document.getElementById('playerMultInput').value = '';
     if (editId) {
         db.get('players', editId).then((p) => {
             if (p) {
                 document.getElementById('playerNameInput').value = p.name || '';
                 document.getElementById('playerPhoneInput').value = p.phone || '';
+                document.getElementById('playerCommInput').value = p.commission != null ? p.commission : '';
+                document.getElementById('playerMultInput').value = p.multiplier != null ? p.multiplier : '';
             }
         });
     }
@@ -341,12 +345,16 @@ window.closePlayerModal = function closePlayerModal() {
 window.savePlayer = async function savePlayer() {
     const name = document.getElementById('playerNameInput').value.trim();
     const phone = document.getElementById('playerPhoneInput').value.trim();
+    const commRaw = document.getElementById('playerCommInput').value.trim();
+    const multRaw = document.getElementById('playerMultInput').value.trim();
+    const commission = commRaw === '' ? 0 : parseFloat(commRaw) || 0;
+    const multiplier = multRaw === '' ? 80 : parseFloat(multRaw) || 80;
     if (!name) { showToast('နာမည် ထည့်ပါ'); return; }
     try {
         if (editingPlayerId) {
             const existing = (await db.get('players', editingPlayerId)) || {};
             await sync.mutate('update', 'players', Object.assign({}, existing, {
-                id: editingPlayerId, name, phone
+                id: editingPlayerId, name, phone, commission, multiplier
             }));
             showToast('✅ ပြင်ပြီးပြီ');
         } else {
@@ -354,7 +362,7 @@ window.savePlayer = async function savePlayer() {
                 id: uid(),
                 tenant: tenantId,
                 agent_name: agentName,
-                name, phone,
+                name, phone, commission, multiplier,
                 created: Date.now()
             });
             showToast('✅ လူ ထည့်ပြီးပြီ');
@@ -1230,15 +1238,25 @@ window.renderDaily = async function renderDaily() {
     const key = dateInput.value;
 
     const recs = (await getAgentRecords()).filter((r) => dateKey(r.created) === key);
-    content.innerHTML = renderPlayerGroups(recs, 'ဒီနေ့ စာရင်း မရှိပါ');
+    content.innerHTML = await renderPlayerGroups(recs, 'ဒီနေ့ စာရင်း မရှိပါ');
 };
 
 /**
  * Records grouped by player → per-player number groups (entry order) + totals.
  * Shared by daily & weekly views.
+ * Applies per-player commission: net = amount × (1 - commission/100).
  */
-function renderPlayerGroups(recs, emptyMsg) {
+async function renderPlayerGroups(recs, emptyMsg) {
     if (!recs.length) return '<div class="empty-state">' + escHtml(emptyMsg || 'စာရင်း မရှိပါ') + '</div>';
+
+    // Build commission map: player name → commission %
+    const players = await getPlayers().catch(() => []);
+    const commMap = {};
+    players.forEach((p) => { commMap[p.name || ''] = Number(p.commission) || 0; });
+    const netAmt = (r) => {
+        const comm = commMap[r.player_name || ''] || 0;
+        return (Number(r.amount) || 0) * (1 - comm / 100);
+    };
 
     const byPlayer = {};
     const order = [];
@@ -1251,9 +1269,9 @@ function renderPlayerGroups(recs, emptyMsg) {
     let grandAmt = 0;
     let html = '';
 
-    order.forEach((k) => {
+    for (const k of order) {
         const pRecs = byPlayer[k];
-        const pAmt = pRecs.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+        const pAmt = pRecs.reduce((s, r) => s + netAmt(r), 0);
         grandAmt += pAmt;
         // group by batch_no, entry order of first appearance
         const byBatch = {};
@@ -1267,18 +1285,18 @@ function renderPlayerGroups(recs, emptyMsg) {
         html += '<div class="player-group">' +
             '<div class="player-group-name">' + escHtml(playerLabel(k)) + '</div>';
         batchOrder.forEach((b) => {
-            const bAmt = byBatch[b].reduce((s, r) => s + (Number(r.amount) || 0), 0);
+            const bAmt = byBatch[b].reduce((s, r) => s + netAmt(r), 0);
             html += '<div class="v-batch">' +
                 '<div class="v-batch-no">' + escHtml(batchLabel(b)) + '</div>' +
                 '<table class="v-table"><thead><tr><th>ဂဏန်း</th><th>ပမာဏ</th></tr></thead><tbody>' +
                 byBatch[b].map((r) =>
-                    '<tr><td>' + escHtml(r.number) + '</td><td>' + formatMoney(r.amount) + '</td></tr>'
+                    '<tr><td>' + escHtml(r.number) + '</td><td>' + formatMoney(netAmt(r)) + '</td></tr>'
                 ).join('') +
                 '</tbody><tfoot><tr><td>Total</td><td>' + formatMoney(bAmt) + '</td></tr></tfoot></table>' +
                 '</div>';
         });
         html += '</div>';
-    });
+    }
 
     html += '<div class="voucher-total"><span>စုစုပေါင်း</span><b>' + formatMoney(grandAmt) +
         '</b></div>';
@@ -1307,6 +1325,14 @@ window.renderWeekly = async function renderWeekly() {
     label.textContent = formatDateStr(monday) + ' – ' + formatDateStr(sunday);
 
     const recs = await getAgentRecords();
+    // Commission map for net amounts
+    const players = await getPlayers().catch(() => []);
+    const commMap = {};
+    players.forEach((p) => { commMap[p.name || ''] = Number(p.commission) || 0; });
+    const netAmt = (r) => {
+        const comm = commMap[r.player_name || ''] || 0;
+        return (Number(r.amount) || 0) * (1 - comm / 100);
+    };
     const byDay = {};
     recs.forEach((r) => {
         const k = dateKey(r.created);
@@ -1324,7 +1350,7 @@ window.renderWeekly = async function renderWeekly() {
         const dayRecs = byDay[key] || [];
         if (!dayRecs.length) continue; // Skip empty days — don't render them at all
         shownDays++;
-        const dayAmt = dayRecs.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+        const dayAmt = dayRecs.reduce((s, r) => s + netAmt(r), 0);
         weekAmt += dayAmt;
         weekCount += dayRecs.length;
 
@@ -1337,7 +1363,7 @@ window.renderWeekly = async function renderWeekly() {
         dayRecs.forEach((r) => {
             const k = r.player_name || '';
             if (!perPlayer[k]) { perPlayer[k] = { amount: 0, count: 0 }; pOrder.push(k); }
-            perPlayer[k].amount += Number(r.amount) || 0;
+            perPlayer[k].amount += netAmt(r);
             perPlayer[k].count += 1;
         });
         html += '<table class="v-table"><thead><tr><th>ထိုးသား</th><th>ပမာဏ</th></tr></thead><tbody>' +
