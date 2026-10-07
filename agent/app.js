@@ -1444,21 +1444,32 @@ window.renderWeekly = async function renderWeekly() {
     label.textContent = formatDateStr(monday) + ' – ' + formatDateStr(sunday);
 
     const recs = await getAgentRecords();
-    // Commission map for net amounts
+    // Player info for commission/multiplier
     const players = await getPlayers().catch(() => []);
-    const commMap = {};
-    players.forEach((p) => { commMap[p.name || ''] = Number(p.commission) || 0; });
-    const netAmt = (r) => {
-        const comm = commMap[r.player_name || ''] || 0;
-        return (Number(r.amount) || 0) * (1 - comm / 100);
-    };
+    const playerInfo = {};
+    players.forEach((p) => {
+        playerInfo[p.name || ''] = {
+            commission: Number(p.commission) || 0,
+            multiplier: Number(p.multiplier) || 80
+        };
+    });
+    const getInfo = (name) => playerInfo[name || ''] || { commission: 0, multiplier: 80 };
+    // Winning numbers per session
+    const sessIds = [...new Set(recs.map((r) => r.session_id).filter(Boolean))];
+    const winBySess = {};
+    for (const sid of sessIds) {
+        try {
+            const wins = await db.query('winning_numbers', 'by_session', sid);
+            winBySess[sid] = new Set(wins.map((w) => String(w.number).padStart(2, '0')));
+        } catch (e) { winBySess[sid] = new Set(); }
+    }
     const byDay = {};
     recs.forEach((r) => {
         const k = dateKey(r.created);
         (byDay[k] = byDay[k] || []).push(r);
     });
 
-    let weekAmt = 0, weekCount = 0;
+    let weekBet = 0, weekWin = 0, weekTotal = 0;
     let html = '';
     let shownDays = 0;
 
@@ -1467,11 +1478,8 @@ window.renderWeekly = async function renderWeekly() {
         d.setDate(d.getDate() + i);
         const key = toISODate(d);
         const dayRecs = byDay[key] || [];
-        if (!dayRecs.length) continue; // Skip empty days — don't render them at all
+        if (!dayRecs.length) continue;
         shownDays++;
-        const dayAmt = dayRecs.reduce((s, r) => s + netAmt(r), 0);
-        weekAmt += dayAmt;
-        weekCount += dayRecs.length;
 
         const dayName = BURMESE_DAYS[d.getDay()];
         html += '<div class="day-section">' +
@@ -1481,22 +1489,35 @@ window.renderWeekly = async function renderWeekly() {
         const pOrder = [];
         dayRecs.forEach((r) => {
             const k = r.player_name || '';
-            if (!perPlayer[k]) { perPlayer[k] = { amount: 0, count: 0 }; pOrder.push(k); }
-            perPlayer[k].amount += netAmt(r);
-            perPlayer[k].count += 1;
+            if (!perPlayer[k]) { perPlayer[k] = { bet: 0, win: 0 }; pOrder.push(k); }
+            const info = getInfo(k);
+            perPlayer[k].bet += (Number(r.amount) || 0) * (1 - info.commission / 100);
+            const winNums = winBySess[r.session_id] || new Set();
+            if (winNums.has(String(r.number).padStart(2, '0'))) {
+                perPlayer[k].win += Number(r.amount) || 0;
+            }
         });
-        html += '<table class="v-table"><thead><tr><th>ထိုးသား</th><th>ပမာဏ</th></tr></thead><tbody>' +
-            pOrder.map((k) =>
-                '<tr><td>👤 ' + escHtml(playerLabel(k)) + '</td><td>' + formatMoney(perPlayer[k].amount) + '</td></tr>'
-            ).join('') +
-            '</tbody><tfoot><tr><td>Total</td><td>' + formatMoney(dayAmt) + '</td></tr></tfoot></table>';
+        html += '<table class="v-table"><thead><tr><th>အမည်</th><th>တက်ငွေ</th><th>အပေါက်</th><th>Total</th></tr></thead><tbody>';
+        let dayBet = 0, dayWin = 0, dayTotal = 0;
+        pOrder.forEach((k) => {
+            const info = getInfo(k);
+            const bet = perPlayer[k].bet;
+            const win = perPlayer[k].win;
+            const total = bet - (win * info.multiplier);
+            dayBet += bet; dayWin += win; dayTotal += total;
+            html += '<tr><td>' + escHtml(playerLabel(k)) + '</td><td>' + formatMoney(bet) + '</td><td>' + formatMoney(win) +
+                '</td><td style="color:' + (total >= 0 ? '#22c55e' : '#ef4444') + '">' + formatMoney(total) + '</td></tr>';
+        });
+        html += '</tbody><tfoot><tr><td>Total</td><td>' + formatMoney(dayBet) + '</td><td>' + formatMoney(dayWin) +
+            '</td><td>' + formatMoney(dayTotal) + '</td></tr></tfoot></table>';
         html += '</div>';
+        weekBet += dayBet; weekWin += dayWin; weekTotal += dayTotal;
     }
 
     if (!shownDays) {
         html = '<div class="empty-state">စာရင်း မရှိပါ</div>';
     } else {
-        html += '<div class="voucher-total"><span>📊 တပတ် စုစုပေါင်း</span><b>' + formatMoney(weekAmt) +
+        html += '<div class="voucher-total"><span>📊 တပတ် စုစုပေါင်း</span><b>' + formatMoney(weekTotal) +
             '</b></div>';
     }
     content.innerHTML = html;
