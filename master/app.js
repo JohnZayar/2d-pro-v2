@@ -144,6 +144,11 @@ async function doLogout() {
 
 /* ============ BUYER ACCOUNT CREATION (Option 2) ============ */
 async function createBuyerAccount() {
+    // Seller-only: buyers cannot create sub-buyers
+    if (!state.user || state.user.email !== 'johnzyt7@gmail.com') {
+        showToast('ခွင့်မရှိပါ');
+        return;
+    }
     const emailEl = $('buyerEmail');
     const shopEl = $('buyerShop');
     const resultEl = $('buyerResult');
@@ -506,6 +511,12 @@ async function loadSettingsIntoUI() {
         const def = pb.getDefaultBaseUrl();
         urlInput.value = cur === def ? '' : cur;
         urlInput.placeholder = def;
+    }
+    // Buyer creation: only Pho (seller) can see it — buyers cannot create sub-buyers
+    const buyerCard = $('buyerCard');
+    if (buyerCard) {
+        const isSeller = state.user && state.user.email === 'johnzyt7@gmail.com';
+        buyerCard.style.display = isSeller ? '' : 'none';
     }
 }
 
