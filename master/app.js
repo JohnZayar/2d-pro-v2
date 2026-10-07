@@ -1998,6 +1998,10 @@ async function renderVoucherContent() {
         return;
     }
 
+    // Winning numbers for yellow highlight
+    const wins = await db.query('winning_numbers', 'by_session', sid);
+    const winNums = new Set(wins.map((w) => String(w.number).padStart(2, '0')));
+
     // Group: player (first-appearance order) → batch (first-appearance order) → entry order
     const playerOrder = [];
     const byPlayer = {};
@@ -2034,10 +2038,13 @@ async function renderVoucherContent() {
             const bTotal = b.items.reduce((s, r) => s + (Number(r.amount) || 0), 0);
             html += '<div class="v-batch"><div class="v-batch-no">' + escHtml(b.label) + '</div>' +
                 '<table class="v-table"><thead><tr><th>ဂဏန်း</th><th>ပမာဏ</th></tr></thead><tbody>' +
-                b.items.map((r) =>
-                    '<tr><td>' + escHtml(String(r.number).padStart(2, '0')) + '</td>' +
-                    '<td>' + formatMoney(r.amount) + '</td></tr>'
-                ).join('') +
+                b.items.map((r) => {
+                    const numStr = String(r.number).padStart(2, '0');
+                    const isWin = winNums.has(numStr);
+                    return '<tr' + (isWin ? ' class="win-row"' : '') + '><td' + (isWin ? ' class="win-cell"' : '') + '>' +
+                        escHtml(numStr) + '</td>' +
+                        '<td' + (isWin ? ' class="win-cell"' : '') + '>' + formatMoney(r.amount) + '</td></tr>';
+                }).join('') +
                 '</tbody><tfoot><tr><td>Total</td><td>' + formatMoney(bTotal) + '</td></tr></tfoot></table></div>';
         });
         html += '</div>';
