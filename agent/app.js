@@ -752,6 +752,13 @@ window.renderRecordsView = async function renderRecordsView() {
         return;
     }
 
+    // Winning numbers for yellow highlight
+    let winNums = new Set();
+    try {
+        const wins = await db.query('winning_numbers', 'by_session', sessId);
+        winNums = new Set(wins.map((w) => String(w.number).padStart(2, '0')));
+    } catch (e) { /* ignore */ }
+
     // Group: player (entry order of first appearance) → batch_no asc → numbers keep order
     const playerOrder = [];
     const byPlayer = {};
@@ -807,9 +814,12 @@ window.renderRecordsView = async function renderRecordsView() {
             html += '<div class="v-batch">' +
                 '<div class="v-batch-no" onclick="openBatchDetail(\'' + escHtml(p.key) + '\',' + b.no + ')" title="အသေးစိတ် ကြည့်ရန် (ပြင်/ဖျက်)">' + escHtml(b.label) + '</div>' +
                 '<table class="v-table"><thead><tr><th>ဂဏန်း</th><th>ပမာဏ</th></tr></thead><tbody>' +
-                b.items.map((r) =>
-                    '<tr><td>' + escHtml(r.number) + '</td><td>' + formatMoney(r.amount) + '</td></tr>'
-                ).join('') +
+                b.items.map((r) => {
+                    const numStr = String(r.number).padStart(2, '0');
+                    const isWin = winNums.has(numStr);
+                    return '<tr' + (isWin ? ' class="win-row"' : '') + '><td' + (isWin ? ' class="win-cell"' : '') + '>' +
+                        escHtml(r.number) + '</td><td' + (isWin ? ' class="win-cell"' : '') + '>' + formatMoney(r.amount) + '</td></tr>';
+                }).join('') +
                 '</tbody><tfoot><tr><td>Total</td><td>' + formatMoney(b.totalAmt) + '</td></tr></tfoot></table>' +
                 '</div>';
         });
