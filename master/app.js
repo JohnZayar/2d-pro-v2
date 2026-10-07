@@ -88,6 +88,7 @@ function bindUI() {
     $('syncNowBtn').addEventListener('click', () => fullSync(true));
     $('logoutBtn').addEventListener('click', doLogout);
     $('buyerCreateBtn').addEventListener('click', createBuyerAccount);
+    $('pwChangeBtn').addEventListener('click', changePassword);
 
     // vouchers / overlimit / akandain
     $('voucherSession').addEventListener('change', () => { state.voucherSessionId = $('voucherSession').value; renderVouchers(); });
@@ -221,6 +222,34 @@ async function createBuyerAccount() {
     } finally {
         btn.disabled = false;
         btn.textContent = 'ထုတ်မယ်';
+    }
+}
+
+/* ============ PASSWORD CHANGE ============ */
+async function changePassword() {
+    const oldEl = $('pwOld'), newEl = $('pwNew'), new2El = $('pwNew2');
+    const btn = $('pwChangeBtn');
+    const oldPw = oldEl.value, newPw = newEl.value, newPw2 = new2El.value;
+    if (!oldPw || !newPw || !newPw2) { showToast('အကုန်ဖြည့်ပါ'); return; }
+    if (newPw.length < 8) { showToast('အသစ် ၈ လုံးအထက် ဖြစ်ရမယ်'); return; }
+    if (newPw !== newPw2) { showToast('အသစ် ၂ ခု မတူဘူး'); return; }
+    if (!state.user || !state.user.id) { showToast('ဝင်မထားဘူး'); return; }
+    btn.disabled = true;
+    btn.textContent = 'ချိန်းနေတယ်…';
+    try {
+        await pb.update('users', state.user.id, {
+            oldPassword: oldPw,
+            password: newPw,
+            passwordConfirm: newPw2
+        });
+        oldEl.value = ''; newEl.value = ''; new2El.value = '';
+        showToast('✅ Password ချိန်းပြီးပြီ');
+    } catch (e) {
+        console.warn('password change failed', e);
+        showToast('မရဘူး: ' + (e.message || 'error'));
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'ချိန်းမယ်';
     }
 }
 
