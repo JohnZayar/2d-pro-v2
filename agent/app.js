@@ -1233,11 +1233,27 @@ async function getAgentRecords() {
 
 window.renderDaily = async function renderDaily() {
     const dateInput = $('dailyDate');
+    const playerSel = $('dailyPlayer');
     const content = $('dailyContent');
     if (!dateInput.value) dateInput.value = toISODate(new Date());
     const key = dateInput.value;
 
-    const recs = (await getAgentRecords()).filter((r) => dateKey(r.created) === key);
+    // Populate person dropdown
+    const players = await getPlayers().catch(() => []);
+    const prevVal = playerSel.value;
+    let pHtml = '<option value="__all">-- အားလုံး --</option>';
+    pHtml += '<option value="">🧍 ကိုယ်တိုင်</option>';
+    pHtml += players.map((p) => '<option value="' + escHtml(p.name) + '">' + escHtml(p.name) + '</option>').join('');
+    playerSel.innerHTML = pHtml;
+    if (prevVal && Array.from(playerSel.options).some((o) => o.value === prevVal)) {
+        playerSel.value = prevVal;
+    }
+
+    let recs = (await getAgentRecords()).filter((r) => dateKey(r.created) === key);
+    const selPlayer = playerSel.value;
+    if (selPlayer !== '__all') {
+        recs = recs.filter((r) => (r.player_name || '') === selPlayer);
+    }
     content.innerHTML = await renderPlayerGroups(recs, 'ဒီနေ့ စာရင်း မရှိပါ');
 };
 
@@ -1249,14 +1265,31 @@ window.renderDaily = async function renderDaily() {
 async function renderPlayerGroups(recs, emptyMsg) {
     if (!recs.length) return '<div class="empty-state">' + escHtml(emptyMsg || 'စာရင်း မရှိပါ') + '</div>';
 
-    // Build commission map: player name → commission %
+    // Build player info map: name → {commission, multiplier}
     const players = await getPlayers().catch(() => []);
-    const commMap = {};
-    players.forEach((p) => { commMap[p.name || ''] = Number(p.commission) || 0; });
+    const playerInfo = {};
+    players.forEach((p) => {
+        playerInfo[p.name || ''] = {
+            commission: Number(p.commission) || 0,
+            multiplier: Number(p.multiplier) || 80
+        };
+    });
+    const getInfo = (name) => playerInfo[name || ''] || { commission: 0, multiplier: 80 };
     const netAmt = (r) => {
-        const comm = commMap[r.player_name || ''] || 0;
-        return (Number(r.amount) || 0) * (1 - comm / 100);
+        const info = getInfo(r.player_name);
+        return (Number(r.amount) || 0) * (1 - info.commission / 100);
     };
+
+    // Get winning numbers for sessions in these records
+    const sessIds = [...new Set(recs.map((r) => r.session_id).filter(Boolean))];
+    const winNums = new Set();
+    for (const sid of sessIds) {
+        try {
+            const wins = await db.query('winning_numbers', 'by_session', sid);
+            wins.forEach((w) => winNums.add(String(w.number).padStart(2, '0')));
+        } catch (e) { /* ignore */ }
+    }
+    const isWin = (r) => winNums.has(String(r.number).padStart(2, '0'));
 
     const byPlayer = {};
     const order = [];
@@ -1271,8 +1304,12 @@ async function renderPlayerGroups(recs, emptyMsg) {
 
     for (const k of order) {
         const pRecs = byPlayer[k];
-        const pAmt = pRecs.reduce((s, r) => s + netAmt(r), 0);
-        grandAmt += pAmt;
+        const info = getInfo(k);
+        const pBet = pRecs.reduce((s, r) => s + netAmt(r), 0);
+        const pWinRaw = pRecs.filter(isWin).reduce((s, r) => s + (Number(r.amount) || 0), 0);
+        const pPayout = pWinRaw * info.multiplier;
+        const pTotal = pBet - pPayout;
+        grandAmt += pTotal;
         // group by batch_no, entry order of first appearance
         const byBatch = {};
         const batchOrder = [];
@@ -1295,6 +1332,12 @@ async function renderPlayerGroups(recs, emptyMsg) {
                 '</tbody><tfoot><tr><td>Total</td><td>' + formatMoney(bAmt) + '</td></tr></tfoot></table>' +
                 '</div>';
         });
+        // Summary: ထိုးငွေပေါင်း | အပေါက် | Total
+        html += '<div class="player-summary" style="display:flex;gap:8px;margin:8px 0;font-size:14px">' +
+            '<span>ထိုးငွေ: <b>' + formatMoney(pBet) + '</b></span>' +
+            '<span>အပေါက်: <b>' + formatMoney(pWinRaw) + '</b></span>' +
+            '<span>Total: <b style="color:' + (pTotal >= 0 ? '#22c55e' : '#ef4444') + '">' + formatMoney(pTotal) + '</b></span>' +
+            '</div>';
         html += '</div>';
     }
 
