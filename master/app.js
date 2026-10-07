@@ -125,6 +125,16 @@ async function doLogin() {
     $('loginBtn').disabled = true;
     try {
         state.user = await pb.login(email, pass);
+        // If different user from last session, clear local DB to prevent data leakage
+        const lastUserId = localStorage.getItem('v2_last_user_id');
+        if (lastUserId && lastUserId !== state.user.id) {
+            try { indexedDB.deleteDatabase('2dProV2'); } catch (e) { /* ignore */ }
+            // Wait a moment for deletion, then reload to reinitialize clean DB
+            localStorage.setItem('v2_last_user_id', state.user.id);
+            location.reload();
+            return;
+        }
+        localStorage.setItem('v2_last_user_id', state.user.id);
         await enterApp();
     } catch (e) {
         $('loginError').textContent = e.code === 'NETWORK_ERROR'
@@ -139,6 +149,10 @@ async function doLogout() {
     if (!confirm('ထွက်မှာလား?')) return;
     await pb.logout();
     localStorage.removeItem('v2_active_session');
+    // Clear local DB — prevents next user from seeing previous user's cached data
+    try {
+        indexedDB.deleteDatabase('2dProV2');
+    } catch (e) { /* ignore */ }
     location.reload();
 }
 
