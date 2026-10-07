@@ -180,14 +180,13 @@ async function createBuyerAccount() {
         // 1. Create tenant
         const tenant = await pb.create('tenants', { name: shopName });
         // 2. Create user linked to tenant
+        // Note: verified/emailVisibility omitted — PocketBase restricts these on API create by non-admins
         await pb.create('users', {
             email: email,
             password: tmp,
             passwordConfirm: tmp,
             name: shopName,
-            tenant: tenant.id,
-            verified: true,
-            emailVisibility: false
+            tenant: tenant.id
         });
         resultEl.style.display = '';
         resultEl.innerHTML =
