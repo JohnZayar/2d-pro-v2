@@ -1189,7 +1189,14 @@ const BURMESE_DAYS = ['တနင်္ဂနွေ', 'တနင်္လာ', '�
 function pad2(n) { return String(n).padStart(2, '0'); }
 
 function dateKey(ts) {
-    const d = new Date(Number(ts) || 0);
+    let d;
+    if (typeof ts === 'string' && isNaN(Number(ts))) {
+        // ISO string from server (e.g., "2026-10-07T08:39:11.876Z")
+        d = new Date(ts);
+    } else {
+        d = new Date(Number(ts) || 0);
+    }
+    if (isNaN(d.getTime())) d = new Date(0);
     return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
 }
 
