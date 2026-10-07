@@ -308,6 +308,14 @@
           <div class="small muted mt">URL ပြောင်းပြီးရင် app ကို ပြန်ဖွင့်ပါ (reload)</div>
         </div>
         <div class="card">
+          <div class="set-row"><span>🏪 Buyer အသစ်</span></div>
+          <div class="set-row"><input id="buyerEmail" type="email" inputmode="email" placeholder="buyer@email.com" style="flex:1;min-width:0"></div>
+          <div class="set-row"><input id="buyerShop" type="text" placeholder="ဆိုင်နာမည် (ဥပမာ: Aung's Shop)" style="flex:1;min-width:0"></div>
+          <div class="set-row"><button id="buyerCreateBtn" class="btn small">ထုတ်မယ်</button></div>
+          <div id="buyerResult" class="small mt" style="display:none"></div>
+          <div class="small muted mt">Buyer ကို email + temp password ပို့ပေးပါ</div>
+        </div>
+        <div class="card">
           <button id="logoutBtn" class="btn red block">ထွက်မည်</button>
         </div>
       </section>
@@ -504,6 +512,6 @@
 
 
 </div>
-<script type="module" src="app.js?v=33"></script>
+<script type="module" src="app.js?v=34"></script>
 </body>
 </html>
