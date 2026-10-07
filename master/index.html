@@ -302,9 +302,15 @@
           </div>
           <div class="small muted mt">URL ပြောင်းပြီးရင် app ကို ပြန်ဖွင့်ပါ (reload)</div>
         </div>
+        <div class="card">
+          <div class="set-row"><span>🔑 Password ချိန်းမယ်</span></div>
+          <div class="set-row"><input id="pwOld" type="password" placeholder="လက်ရှိ password" autocomplete="current-password" style="flex:1;min-width:0"></div>
+          <div class="set-row"><input id="pwNew" type="password" placeholder="အသစ် (၈ လုံးအထက်)" autocomplete="new-password" style="flex:1;min-width:0"></div>
+          <div class="set-row"><input id="pwNew2" type="password" placeholder="အသစ် ထပ်ရိုက်" autocomplete="new-password" style="flex:1;min-width:0"></div>
+          <div class="set-row"><button id="pwChangeBtn" class="btn small">ချိန်းမယ်</button></div>
+        </div>
         <div class="card" id="buyerCard">
-          <div class="set-row"><span>🏪 Buyer အသစ်</span></div>
-          <div class="set-row"><input id="buyerEmail" type="email" inputmode="email" placeholder="buyer@email.com" style="flex:1;min-width:0"></div>
+          <div class="set-row"><span>🏪 Buyer အသစ်</span></div>          <div class="set-row"><input id="buyerEmail" type="email" inputmode="email" placeholder="buyer@email.com" style="flex:1;min-width:0"></div>
           <div class="set-row"><input id="buyerShop" type="text" placeholder="ဆိုင်နာမည် (ဥပမာ: Aung's Shop)" style="flex:1;min-width:0"></div>
           <div class="set-row"><button id="buyerCreateBtn" class="btn small">ထုတ်မယ်</button></div>
           <div id="buyerResult" class="small mt" style="display:none"></div>
@@ -507,6 +513,6 @@
 
 
 </div>
-<script type="module" src="app.js?v=38"></script>
+<script type="module" src="app.js?v=39"></script>
 </body>
 </html>
