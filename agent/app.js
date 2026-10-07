@@ -1254,8 +1254,84 @@ window.renderDaily = async function renderDaily() {
     if (selPlayer !== '__all') {
         recs = recs.filter((r) => (r.player_name || '') === selPlayer);
     }
-    content.innerHTML = await renderPlayerGroups(recs, 'ဒီနေ့ စာရင်း မရှိပါ');
+    content.innerHTML = await renderDailyTable(recs, key);
 };
+
+/**
+ * Daily summary table: grouped by session (AM/PM), rows = Name | တက်ငွေ | အပေါက်
+ */
+async function renderDailyTable(recs, dateKeyStr) {
+    if (!recs.length) return '<div class="empty-state">ဒီနေ့ စာရင်း မရှိပါ</div>';
+
+    // Player info for commission/multiplier
+    const players = await getPlayers().catch(() => []);
+    const playerInfo = {};
+    players.forEach((p) => {
+        playerInfo[p.name || ''] = {
+            commission: Number(p.commission) || 0,
+            multiplier: Number(p.multiplier) || 80
+        };
+    });
+    const getInfo = (name) => playerInfo[name || ''] || { commission: 0, multiplier: 80 };
+
+    // Sessions for names
+    const sessions = await getAgentSessions().catch(() => []);
+    const sessName = (id) => (sessions.find((s) => s.id === id) || {}).name || '';
+
+    // Winning numbers per session
+    const sessIds = [...new Set(recs.map((r) => r.session_id).filter(Boolean))];
+    const winBySess = {};
+    for (const sid of sessIds) {
+        try {
+            const wins = await db.query('winning_numbers', 'by_session', sid);
+            winBySess[sid] = new Set(wins.map((w) => String(w.number).padStart(2, '0')));
+        } catch (e) { winBySess[sid] = new Set(); }
+    }
+
+    // Group by session
+    const bySess = {};
+    const sessOrder = [];
+    recs.forEach((r) => {
+        const sid = r.session_id || '__nosess';
+        if (!bySess[sid]) { bySess[sid] = []; sessOrder.push(sid); }
+        bySess[sid].push(r);
+    });
+
+    let html = '';
+    for (const sid of sessOrder) {
+        const sRecs = bySess[sid];
+        const sName = sessName(sid);
+        const winNums = winBySess[sid] || new Set();
+
+        // Group by player within session
+        const byPlayer = {};
+        const pOrder = [];
+        sRecs.forEach((r) => {
+            const k = r.player_name || '';
+            if (!byPlayer[k]) { byPlayer[k] = []; pOrder.push(k); }
+            byPlayer[k].push(r);
+        });
+
+        html += '<div class="day-section"><div class="day-head"><span>📅 ' + escHtml(sName || dateKeyStr) + '</span></div>';
+        html += '<table class="v-table"><thead><tr><th>အမည်</th><th>တက်ငွေ</th><th>အပေါက်</th></tr></thead><tbody>';
+
+        let sessBet = 0, sessWin = 0;
+        for (const k of pOrder) {
+            const pRecs = byPlayer[k];
+            const info = getInfo(k);
+            const bet = pRecs.reduce((s, r) => s + (Number(r.amount) || 0) * (1 - info.commission / 100), 0);
+            const win = pRecs
+                .filter((r) => winNums.has(String(r.number).padStart(2, '0')))
+                .reduce((s, r) => s + (Number(r.amount) || 0), 0);
+            sessBet += bet;
+            sessWin += win;
+            html += '<tr><td>' + escHtml(playerLabel(k)) + '</td><td>' + formatMoney(bet) + '</td><td>' + formatMoney(win) + '</td></tr>';
+        }
+        html += '</tbody><tfoot><tr><td>Total</td><td>' + formatMoney(sessBet) + '</td><td>' + formatMoney(sessWin) + '</td></tr></tfoot></table>';
+        html += '</div>';
+    }
+    return html;
+}
 
 /**
  * Records grouped by player → per-player number groups (entry order) + totals.
