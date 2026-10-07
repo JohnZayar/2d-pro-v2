@@ -87,6 +87,7 @@ function bindUI() {
 
     $('syncNowBtn').addEventListener('click', () => fullSync(true));
     $('logoutBtn').addEventListener('click', doLogout);
+    $('buyerCreateBtn').addEventListener('click', createBuyerAccount);
 
     // vouchers / overlimit / akandain
     $('voucherSession').addEventListener('change', () => { state.voucherSessionId = $('voucherSession').value; renderVouchers(); });
@@ -139,6 +140,70 @@ async function doLogout() {
     await pb.logout();
     localStorage.removeItem('v2_active_session');
     location.reload();
+}
+
+/* ============ BUYER ACCOUNT CREATION (Option 2) ============ */
+async function createBuyerAccount() {
+    const emailEl = $('buyerEmail');
+    const shopEl = $('buyerShop');
+    const resultEl = $('buyerResult');
+    const btn = $('buyerCreateBtn');
+    const email = (emailEl.value || '').trim().toLowerCase();
+    const shopName = (shopEl.value || '').trim();
+    if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+        showToast('Email မှန်အောင်ရိုက်ပါ');
+        return;
+    }
+    if (!shopName) {
+        showToast('ဆိုင်နာမည် ရိုက်ပါ');
+        return;
+    }
+    if (!pb.isLoggedIn() || !sync.isOnline()) {
+        showToast('အင်တာနက် လိုတယ်');
+        return;
+    }
+    btn.disabled = true;
+    btn.textContent = 'လုပ်နေတယ်…';
+    resultEl.style.display = 'none';
+    try {
+        // Generate temp password: 8 chars, letters + digits
+        const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+        let tmp = '';
+        const rnd = new Uint8Array(8);
+        crypto.getRandomValues(rnd);
+        for (let i = 0; i < 8; i++) tmp += chars[rnd[i] % chars.length];
+        // 1. Create tenant
+        const tenant = await pb.create('tenants', { name: shopName });
+        // 2. Create user linked to tenant
+        await pb.create('users', {
+            email: email,
+            password: tmp,
+            passwordConfirm: tmp,
+            name: shopName,
+            tenant: tenant.id,
+            verified: true,
+            emailVisibility: false
+        });
+        resultEl.style.display = '';
+        resultEl.innerHTML =
+            '<div style="background:#052e16;border:1px solid #16a34a;border-radius:8px;padding:10px;margin-top:8px">' +
+            '<div style="color:#4ade80;font-weight:bold">✅ Buyer account ရပြီ</div>' +
+            '<div class="mt">Email: <b>' + escHtml(email) + '</b></div>' +
+            '<div>Temp password: <b style="font-size:16px;letter-spacing:1px">' + escHtml(tmp) + '</b></div>' +
+            '<div class="small muted mt">Buyer ကို ပို့ပေးပါ — သူ Settings မှာ password ချိန်းရမယ်</div>' +
+            '</div>';
+        emailEl.value = '';
+        shopEl.value = '';
+        showToast('✅ Buyer ထုတ်ပြီးပြီ');
+    } catch (e) {
+        console.warn('buyer create failed', e);
+        let msg = 'မရဘူး: ' + (e.message || 'error');
+        if (/already|exists|unique/i.test(e.message || '')) msg = 'ဒီ email ရှိနေပြီးသား';
+        showToast(msg);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'ထုတ်မယ်';
+    }
 }
 
 async function enterApp() {
