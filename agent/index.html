@@ -206,6 +206,9 @@
                 <span></span>
             </div>
             <input type="date" id="dailyDate" class="field-input" onchange="renderDaily()">
+            <select id="dailyPlayer" class="field-input" onchange="renderDaily()" style="margin-top:8px">
+                <option value="__all">-- အားလုံး --</option>
+            </select>
             <div id="dailyContent" class="daily-content"></div>
         </section>
 
@@ -345,7 +348,7 @@
     </div>
 </div>
 
-<script type="module" src="app.js?v=4"></script>
+<script type="module" src="app.js?v=6"></script>
 
 <!-- Floating scroll-to-top button -->
 <button id="scrollTopBtn" class="scroll-top" onclick="scrollToTop()" hidden aria-label="အပေါ်တက်">⬆️</button>
