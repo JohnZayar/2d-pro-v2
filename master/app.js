@@ -979,8 +979,15 @@ async function isSessionLocked(sessionId) {
     if (s.date) {
         const isAM = (s.timeType || '') === 'မနက်ပိုင်း';
         const [hh, mm] = isAM ? [11, 55] : [15, 55];
-        const cutoff = new Date(s.date + `T${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}:00`);
-        if (new Date() > cutoff) return { locked: true, reason: 'ထိုးခွင့် ပိတ်ပြီ' };
+        // s.date is DD.MM.YYYY — parse properly (new Date("08.10.2026T11:55:00") is Invalid)
+        const parts = String(s.date).split('.');
+        let cutoff;
+        if (parts.length === 3) {
+            cutoff = new Date(Number(parts[2]), Number(parts[1]) - 1, Number(parts[0]), hh, mm, 0);
+        } else {
+            cutoff = new Date(s.date + `T${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}:00`);
+        }
+        if (!isNaN(cutoff.getTime()) && new Date() > cutoff) return { locked: true, reason: 'ထိုးခွင့် ပိတ်ပြီ' };
     }
     return { locked: false };
 }
