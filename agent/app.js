@@ -1286,7 +1286,7 @@ async function renderDailyTable(recs, dateKeyStr) {
     const sessName = (id) => (sessions.find((s) => s.id === id) || {}).name || '';
 
     // Winning numbers per session
-    const sessIds = [...new Set(recs.map((r) => r.session_id).filter(Boolean))];
+    const sessIds = [...new Set(recs.map((r) => r.session).filter(Boolean))];
     const winBySess = {};
     for (const sid of sessIds) {
         try {
@@ -1299,7 +1299,7 @@ async function renderDailyTable(recs, dateKeyStr) {
     const bySess = {};
     const sessOrder = [];
     recs.forEach((r) => {
-        const sid = r.session_id || '__nosess';
+        const sid = r.session || '__nosess';
         if (!bySess[sid]) { bySess[sid] = []; sessOrder.push(sid); }
         bySess[sid].push(r);
     });
@@ -1364,7 +1364,7 @@ async function renderPlayerGroups(recs, emptyMsg) {
     };
 
     // Get winning numbers for sessions in these records
-    const sessIds = [...new Set(recs.map((r) => r.session_id).filter(Boolean))];
+    const sessIds = [...new Set(recs.map((r) => r.session).filter(Boolean))];
     const winNums = new Set();
     for (const sid of sessIds) {
         try {
@@ -1462,7 +1462,7 @@ window.renderWeekly = async function renderWeekly() {
     });
     const getInfo = (name) => playerInfo[name || ''] || { commission: 0, multiplier: 80 };
     // Winning numbers per session
-    const sessIds = [...new Set(recs.map((r) => r.session_id).filter(Boolean))];
+    const sessIds = [...new Set(recs.map((r) => r.session).filter(Boolean))];
     const winBySess = {};
     for (const sid of sessIds) {
         try {
@@ -1499,7 +1499,7 @@ window.renderWeekly = async function renderWeekly() {
             if (!perPlayer[k]) { perPlayer[k] = { bet: 0, win: 0 }; pOrder.push(k); }
             const info = getInfo(k);
             perPlayer[k].bet += (Number(r.amount) || 0) * (1 - info.commission / 100);
-            const winNums = winBySess[r.session_id] || new Set();
+            const winNums = winBySess[r.session] || new Set();
             if (winNums.has(String(r.number).padStart(2, '0'))) {
                 perPlayer[k].win += Number(r.amount) || 0;
             }
