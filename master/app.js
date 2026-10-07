@@ -102,6 +102,12 @@ function bindUI() {
     $('overSession').addEventListener('change', () => { state.overSessionId = $('overSession').value; renderOverlimit(); });
     $('overCopyBtn').addEventListener('click', copyOverlimit);
     $('overToAkanBtn').addEventListener('click', sendOverToAkan);
+    $('akanBookieSelect').addEventListener('change', () => {
+        // When bookie selection changes, update all pending items to use the selected bookie
+        const bookie = ($('akanBookieSelect').value || '').trim() || null;
+        akanPending.forEach((e) => { e.player_name = bookie; });
+        renderAkanTable();
+    });
     $('serverUrlSave').addEventListener('click', () => {
         const v = $('serverUrlInput').value.trim();
         if (v && !/^https?:\/\//i.test(v)) { showToast('URL က https:// နဲ့ စရမယ်'); return; }
