@@ -45,6 +45,8 @@ async function isAgentSessionLocked(sessionId) {
     try {
         const s = await db.get('sessions', sessionId);
         if (!s) return { locked: false };
+        // manually closed by bookie → locked
+        if (s.closed) return { locked: true, reason: 'အချိန်ပြည့်လို့ပိတ်သွားပါပြီ' };
         const wins = await db.query('winning_numbers', 'by_session', sessionId);
         if (wins && wins.length) return { locked: true, reason: 'ပေါက်ဂဏန်း ထည့်ပြီးပြီ' };
         if (s.date) {
