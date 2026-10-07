@@ -696,6 +696,7 @@ async function renderSessions() {
                 <button class="btn small gray" data-act="bigsmall" data-id="${s.id}">⚖️ ကြီးငယ်</button>
                 <button class="btn small gray" data-act="blocked" data-id="${s.id}">🚫 ဒိုင်ပိတ်</button>
                 <button class="btn small gray" data-act="alltotal" data-id="${s.id}">💰 ALL Total</button>
+                <button class="btn small ${s.closed ? 'gray' : 'red'}" data-act="toggleclose" data-id="${s.id}">${s.closed ? '🔓 ဖွင့်' : '🔴 ပိတ်'}</button>
                 <button class="btn small red" data-act="del" data-id="${s.id}">🗑️</button>
             </div>
         </div>`;
@@ -719,7 +720,24 @@ async function sessionAction(act, id) {
     else if (act === 'bigsmall') { setActiveSession(id); openBigSmall(id); }
     else if (act === 'blocked') { setActiveSession(id); openBlocked(id); }
     else if (act === 'alltotal') { setActiveSession(id); openAllTotal(id); }
+    else if (act === 'toggleclose') toggleSessionClose(id);
     else if (act === 'del') deleteSession(id);
+}
+
+async function toggleSessionClose(id) {
+    const s = state.sessions.find((x) => x.id === id);
+    if (!s) return;
+    const newClosed = !s.closed;
+    const action = newClosed ? 'ပိတ်' : 'ဖွင့်';
+    if (!confirm(`ဒီပွဲကို ${action}မလား?`)) return;
+    try {
+        await sync.mutate('update', 'sessions', Object.assign({}, s, { closed: newClosed }));
+        s.closed = newClosed;
+        showToast(newClosed ? '🔴 ပိတ်ပြီးပြီ' : '🔓 ဖွင့်ပြီးပြီ');
+        renderSessions();
+    } catch (e) {
+        showToast('❌ ' + e.message);
+    }
 }
 
 function setActiveSession(id) {
@@ -972,6 +990,8 @@ window.entryDeleteRow = function entryDeleteRow(i) {
 async function isSessionLocked(sessionId) {
     const s = state.sessions.find((x) => x.id === sessionId);
     if (!s) return { locked: false };
+    // manually closed by bookie → locked
+    if (s.closed) return { locked: true, reason: 'ဒိုင်က ပိတ်လိုက်ပြီ' };
     // winning numbers entered → locked
     const wins = await db.query('winning_numbers', 'by_session', sessionId);
     if (wins && wins.length) return { locked: true, reason: 'ပေါက်ဂဏန်း ထည့်ပြီးပြီ' };
