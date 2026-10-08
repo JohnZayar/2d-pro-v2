@@ -95,6 +95,8 @@ function bindUI() {
     // vouchers / overlimit / akandain
     $('voucherSession').addEventListener('change', () => { state.voucherSessionId = $('voucherSession').value; renderVouchers(); });
     $('voucherPerson').addEventListener('change', renderVoucherContent);
+    const voucherType = $('voucherType');
+    if (voucherType) voucherType.addEventListener('change', renderVoucherContent);
     $('voucherCopyBtn').addEventListener('click', copyVoucher);
     $('voucherPrintBtn').addEventListener('click', printVoucher);
     $('homeDailyDate').addEventListener('change', (e) => { _homeDailyDate = e.target.value; renderHomeDaily(); });
@@ -1182,6 +1184,7 @@ window.openAkanBoard = function openAkanBoard() {
 /* ================= LEDGER ================= */
 
 let _ledgerPerson = '__all'; // '__all' or voucherPersonKey
+let _ledgerType = 'all'; // 'all' | 'bettor' | 'akan'
 
 async function renderLedger() {
     const head = $('ledgerHead');
@@ -1200,9 +1203,14 @@ async function renderLedger() {
     const winNums = new Set(wins.map((w) => String(w.number).padStart(2, '0')));
 
     // person filter list (grouped: agent-synced under agent name)
+    // First apply type filter, then build person list from filtered records
+    let typeFiltered = recs;
+    if (_ledgerType === 'bettor') typeFiltered = recs.filter((r) => r.record_type !== 'akan');
+    else if (_ledgerType === 'akan') typeFiltered = recs.filter((r) => r.record_type === 'akan');
+
     const persons = [];
     const seen = new Set();
-    for (const r of recs) {
+    for (const r of typeFiltered) {
         const k = voucherPersonKey(r) || '(အမည် မရှိ)';
         if (!seen.has(k)) { seen.add(k); persons.push(k); }
     }
@@ -1210,8 +1218,8 @@ async function renderLedger() {
 
     // filter by selected person
     const filtered = _ledgerPerson === '__all'
-        ? recs
-        : recs.filter((r) => (voucherPersonKey(r) || '(အမည် မရှိ)') === _ledgerPerson);
+        ? typeFiltered
+        : typeFiltered.filter((r) => (voucherPersonKey(r) || '(အမည် မရှိ)') === _ledgerPerson);
 
     // aggregate pos - akan
     const agg = {};
@@ -1233,10 +1241,19 @@ async function renderLedger() {
     }
     const personOpts = `<option value="__all">👥 All</option>` +
         persons.map((p) => `<option value="${escHtml(p)}"${p === _ledgerPerson ? ' selected' : ''}>${escHtml(voucherPersonLabel(p))}</option>`).join('');
+    const typeOpts = `<option value="all"${_ledgerType === 'all' ? ' selected' : ''}>All</option>` +
+        `<option value="bettor"${_ledgerType === 'bettor' ? ' selected' : ''}>ထိုးသား</option>` +
+        `<option value="akan"${_ledgerType === 'akan' ? ' selected' : ''}>အကန်</option>`;
     head.innerHTML = `<div class="card"><div class="row"><b>${escHtml(sessionLabel(s))}</b>
+        <select id="ledgerTypeSel" class="input" style="max-width:110px">${typeOpts}</select>
         <select id="ledgerPersonSel" class="input" style="max-width:160px">${personOpts}</select>
         <button class="btn small" id="ledgerBoardBtn">📝 ထိုးကွက်</button></div></div>`;
     $('ledgerBoardBtn').addEventListener('click', () => openEntry(s.id));
+    $('ledgerTypeSel').addEventListener('change', (e) => {
+        _ledgerType = e.target.value;
+        _ledgerPerson = '__all'; // reset person when type changes
+        renderLedger();
+    });
     $('ledgerPersonSel').addEventListener('change', (e) => {
         _ledgerPerson = e.target.value;
         renderLedger();
@@ -1818,26 +1835,49 @@ async function openRemaining() {
 async function openBigSmall(sessionId) {
     const s = state.sessions.find((x) => x.id === sessionId);
     const recs = await db.query('lottery_records', 'by_session', sessionId);
-    // per-person (exclude akan), first-appearance order — same as vouchers
-    const mine = recs.filter((r) => r.record_type !== 'akan');
-    const order = [];
-    const seen = {};
-    mine.forEach((r) => {
-        const k = voucherPersonKey(r);
-        if (!seen[k]) { seen[k] = 1; order.push(k); }
-    });
+    // per-person, first-appearance order — same as vouchers
+    // Type filter: all/bettor/akan (default bettor for backward compat)
+    let _bsType = 'bettor';
+    const getFiltered = () => {
+        if (_bsType === 'bettor') return recs.filter((r) => r.record_type !== 'akan');
+        if (_bsType === 'akan') return recs.filter((r) => r.record_type === 'akan');
+        return recs;
+    };
+    const buildOrder = (filtered) => {
+        const order = [];
+        const seen = {};
+        filtered.forEach((r) => {
+            const k = voucherPersonKey(r);
+            if (!seen[k]) { seen[k] = 1; order.push(k); }
+        });
+        return order;
+    };
+    let order = buildOrder(getFiltered());
     const label = escHtml(s ? sessionLabel(s) : '');
     openGeneric('⚖️ ကြီးငယ်', `
         <div class="muted small" style="margin-bottom:8px">${label}</div>
+        <div class="field"><label>အမျိုးအစား</label>
+            <select id="bigsmallType">
+                <option value="all">All</option>
+                <option value="bettor" selected>ထိုးသား</option>
+                <option value="akan">အကန်</option>
+            </select>
+        </div>
         <div class="field"><label>လူရွေးရန်</label>
             <select id="bigsmallPerson">
-                ${order.map((k, i) => `<option value="${escHtml(k)}"${i === 0 ? ' selected' : ''}>${escHtml(voucherPersonLabel(k))}</option>`).join('')}
             </select>
         </div>
         <div id="bigsmallList"></div>`);
+    const refreshPersonOptions = () => {
+        order = buildOrder(getFiltered());
+        $('bigsmallPerson').innerHTML = order.map((k, i) =>
+            `<option value="${escHtml(k)}"${i === 0 ? ' selected' : ''}>${escHtml(voucherPersonLabel(k))}</option>`).join('');
+    };
+    refreshPersonOptions();
     const renderBigSmall = () => {
         const sel = $('bigsmallPerson').value;
-        const prs = mine.filter((r) => voucherPersonKey(r) === sel);
+        const filtered = getFiltered();
+        const prs = filtered.filter((r) => voucherPersonKey(r) === sel);
         // aggregate per number, sort big -> small
         const agg = {};
         for (const r of prs) {
@@ -1855,6 +1895,11 @@ async function openBigSmall(sessionId) {
             : '<div class="muted small">စာရင်း မရှိသေးပါ</div>';
     };
     $('bigsmallPerson').addEventListener('change', renderBigSmall);
+    $('bigsmallType').addEventListener('change', (e) => {
+        _bsType = e.target.value;
+        refreshPersonOptions();
+        renderBigSmall();
+    });
     renderBigSmall();
 }
 
@@ -2068,10 +2113,14 @@ async function renderVouchers() {
 async function renderVoucherContent() {
     const sid = $('voucherSession').value;
     const sel = $('voucherPerson').value;
+    const typeSel = $('voucherType') ? $('voucherType').value : 'all';
     const box = $('voucherContent');
     if (!sid) { box.innerHTML = ''; state.lastVoucherText = ''; return; }
 
     let recs = await sessionRecordsOrdered(sid);
+    // Type filter: all | bettor | akan
+    if (typeSel === 'bettor') recs = recs.filter((r) => r.record_type !== 'akan');
+    else if (typeSel === 'akan') recs = recs.filter((r) => r.record_type === 'akan');
     if (sel !== '__all') recs = recs.filter((r) => voucherPersonKey(r) === sel);
     if (!recs.length) {
         box.innerHTML = '<div class="empty">စာရင်း မရှိသေးပါ</div>';
