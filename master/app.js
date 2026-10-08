@@ -319,6 +319,9 @@ async function enterApp() {
     try {
         await ensureTenant();
         await fullSync();
+        // Clean up old data (records >2 weeks, winnings >10 weeks)
+        await cleanupOldRecords();
+        await cleanupOldWinnings();
     } catch (e) {
         console.warn('Initial sync failed:', e.message);
     }
@@ -822,10 +825,9 @@ async function deleteSession(id) {
     const s = state.sessions.find((x) => x.id === id);
     if (!s) return;
     if (!confirm(`"${sessionLabel(s)}" ကို ဖျက်မှာလား?\nမှတ်တမ်းအားလုံး ပျက်မယ်!`)) return;
-    const recs = await db.query('lottery_records', 'by_session', id);
-    for (const r of recs) await deleteRecord('lottery_records', r);
+    // NOTE: lottery_records are KEPT for Daily/Weekly history (2 weeks)
+    // They are auto-deleted when older than 2 weeks (see cleanupOldRecords)
     // NOTE: winning_numbers are KEPT for ကျန်ဂဏန်း (10-week history)
-    // They are auto-deleted when older than 10 weeks (see cleanupOldWinnings)
     await deleteRecord('sessions', s);
     if (state.activeSessionId === id) {
         state.activeSessionId = null;
@@ -1134,8 +1136,11 @@ window.saveEntryBatch = async function saveEntryBatch() {
         for (const k of order) {
             const batchNo = 'B' + Date.now().toString(36) + count.toString(36);
             for (const e of byKey[k]) {
+                const sess = state.sessions.find((x) => x.id === state.activeSessionId);
                 await createRecord('lottery_records', {
                     session: state.activeSessionId,
+                    session_date: sess ? sess.date : null,
+                    session_timeType: sess ? sess.timeType : null,
                     number: String(e.number).padStart(2, '0'),
                     amount: Number(e.amount) || 0,
                     agent_name: e.player_name || '',
@@ -1445,6 +1450,11 @@ async function dailySessionAgg(sessionId) {
     const recs = await db.query('lottery_records', 'by_session', sessionId);
     const wins = await db.query('winning_numbers', 'by_session', sessionId);
     const winNum = wins.length ? String(wins[0].number).padStart(2, '0') : null;
+    return dailyAggFromRecords(recs, winNum);
+}
+
+/** Aggregate daily stats from a list of records (for persistent history). */
+function dailyAggFromRecords(recs, winNum) {
     const per = {};
     const pLabel = {};
     for (const r of recs) {
@@ -1488,19 +1498,43 @@ async function renderHomeDaily() {
     const [y, m, d] = _homeDailyDate.split('-');
     const ds = `${d}.${m}.${y}`; // match session.date format DD.MM.YYYY
 
-    const daySessions = state.sessions.filter((s) => s.date === ds);
-    const morn = daySessions.find((s) => (s.timeType || '') === 'မနက်ပိုင်း');
-    const eve = daySessions.find((s) => (s.timeType || '') === 'ညနေပိုင်း');
+    // Get ALL records for this date (works even after session deletion)
+    const allRecs = await db.getAll('lottery_records');
+    const dayRecs = allRecs.filter((r) => {
+        // New records have session_date; old records: look up via session
+        if (r.session_date) return r.session_date === ds;
+        const sess = state.sessions.find((s) => s.id === r.session);
+        return sess && sess.date === ds;
+    });
+
+    // Get winning numbers for this date
+    const allWins = await db.getAll('winning_numbers');
+    const dayWins = {};
+    for (const w of allWins) {
+        const sess = state.sessions.find((s) => s.id === w.session);
+        const wDate = sess ? sess.date : null;
+        // Also check if winning number record has date info
+        if (wDate === ds) {
+            const tt = sess.timeType || '';
+            dayWins[tt] = String(w.number).padStart(2, '0');
+        }
+    }
 
     let html = '';
     let gBet = 0, gWin = 0, gNet = 0;
 
-    for (const [sess, title] of [[morn, '🌅 မနက်ပိုင်း'], [eve, '🌇 ညနေပိုင်း']]) {
-        if (!sess) {
+    for (const [timeType, title] of [['မနက်ပိုင်း', '🌅 မနက်ပိုင်း'], ['ညနေပိုင်း', '🌇 ညနေပိုင်း']]) {
+        const sessRecs = dayRecs.filter((r) => {
+            if (r.session_timeType) return r.session_timeType === timeType;
+            const sess = state.sessions.find((s) => s.id === r.session);
+            return sess && (sess.timeType || '') === timeType;
+        });
+        if (!sessRecs.length) {
             html += `<div class="muted small" style="margin:8px 0"><b>${title}</b> — ပွဲ မရှိပါ</div>`;
             continue;
         }
-        const agg = await dailySessionAgg(sess.id);
+        const winNum = dayWins[timeType] || null;
+        const agg = dailyAggFromRecords(sessRecs, winNum);
         gBet += agg.tBet; gWin += agg.tWin; gNet += agg.tNet;
         html += `<div style="font-weight:700;margin:10px 0 6px"><b>${title}</b> ${agg.winNum ? `· 🏆 <b style="color:var(--green)">${agg.winNum}</b>` : ''}</div>
         <table class="data"><tr><th>ထိုးသား</th><th>ထိုးငွေ</th><th>ပေါက်</th><th>ကျန်</th></tr>
@@ -1771,6 +1805,28 @@ async function copyTotal(sessionId) {
 }
 
 /* ================= ကျန်ဂဏန်း (REMAINING DIGITS) ================= */
+
+// Auto-delete lottery records older than 2 weeks (for Daily/Weekly history)
+async function cleanupOldRecords() {
+    try {
+        const all = await db.getAll('lottery_records');
+        const twoWeeksAgo = new Date();
+        twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
+        for (const r of all) {
+            let rDate = null;
+            if (r.session_date) {
+                // DD.MM.YYYY format
+                const [d, m, y] = r.session_date.split('.').map(Number);
+                rDate = new Date(y, m - 1, d);
+            } else if (r.created) {
+                rDate = new Date(r.created);
+            }
+            if (rDate && rDate < twoWeeksAgo) {
+                await deleteRecord('lottery_records', r);
+            }
+        }
+    } catch (e) { console.warn('cleanupOldRecords failed:', e.message); }
+}
 
 // Auto-delete winning numbers older than 10 weeks
 async function cleanupOldWinnings() {
@@ -2516,8 +2572,11 @@ window.saveAkanBatch = async function saveAkanBatch() {
         for (const k of order) {
             const batchNo = 'B' + Date.now().toString(36) + count.toString(36);
             for (const e of byKey[k]) {
+                const sess2 = state.sessions.find((x) => x.id === state.activeSessionId);
                 await createRecord('lottery_records', {
                     session: state.activeSessionId,
+                    session_date: sess2 ? sess2.date : null,
+                    session_timeType: sess2 ? sess2.timeType : null,
                     number: String(e.number).padStart(2, '0'),
                     amount: Number(e.amount) || 0,
                     agent_name: e.player_name || '',
