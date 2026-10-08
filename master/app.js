@@ -1994,22 +1994,25 @@ async function openAllTotal(sessionId) {
     const winNum = wins.length ? String(wins[0].number).padStart(2, '0') : null;
 
     // per-person: incoming and akan, grouped by voucherPersonKey (agent grouped)
+    // Akan amounts are SUBTRACTED (Pho pays out to hedge bookies)
     const per = {};
     let tBet = 0, tWin = 0;
     for (const r of recs) {
+        const isAkan = r.record_type === 'akan';
         const pkey = voucherPersonKey(r) || '(အမည် မရှိ)';
-        if (!per[pkey]) per[pkey] = { bet: 0, win: 0 };
+        if (!per[pkey]) per[pkey] = { bet: 0, win: 0, isAkan };
         const amt = Number(r.amount) || 0;
-        per[pkey].bet += amt;
-        tBet += amt;
+        const signedAmt = isAkan ? -amt : amt;
+        per[pkey].bet += signedAmt;
+        tBet += signedAmt;
         if (winNum && String(r.number).padStart(2, '0') === winNum) {
-            per[pkey].win += amt;
-            tWin += amt;
+            per[pkey].win += signedAmt;
+            tWin += signedAmt;
         }
     }
     let rows = '';
     for (const [name, v] of Object.entries(per)) {
-        rows += `<tr><td>${escHtml(voucherPersonLabel(name))}</td><td>${formatMoney(v.bet)}</td><td>${formatMoney(v.win)}</td></tr>`;
+        rows += `<tr><td>${v.isAkan ? '⬆️ ' : ''}${escHtml(voucherPersonLabel(name))}</td><td>${formatMoney(v.bet)}</td><td>${formatMoney(v.win)}</td></tr>`;
     }
     const html = `
         <div class="muted small" style="margin-bottom:8px">${escHtml(s ? sessionLabel(s) : '')}
