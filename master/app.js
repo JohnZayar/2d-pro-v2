@@ -88,6 +88,8 @@ function bindUI() {
     $('syncNowBtn').addEventListener('click', () => fullSync(true));
     $('logoutBtn').addEventListener('click', doLogout);
     $('buyerCreateBtn').addEventListener('click', createBuyerAccount);
+    const buyerRefreshBtn = $('buyerRefreshBtn');
+    if (buyerRefreshBtn) buyerRefreshBtn.addEventListener('click', renderBuyerList);
     $('pwChangeBtn').addEventListener('click', changePassword);
 
     // vouchers / overlimit / akandain
@@ -132,6 +134,12 @@ async function doLogin() {
     $('loginBtn').disabled = true;
     try {
         state.user = await pb.login(email, pass);
+        // Block disabled buyers (suspended by admin for non-payment etc.)
+        if (state.user.disabled) {
+            await pb.logout();
+            $('loginError').textContent = 'အကောင့် ပိတ်ထားပါတယ် — admin ကို ဆက်သွယ်ပါ';
+            return;
+        }
         // If different user from last session, clear local DB to prevent data leakage
         const lastUserId = localStorage.getItem('v2_last_user_id');
         if (lastUserId && lastUserId !== state.user.id) {
@@ -228,6 +236,47 @@ async function createBuyerAccount() {
     } finally {
         btn.disabled = false;
         btn.textContent = 'ထုတ်မယ်';
+    }
+}
+
+async function renderBuyerList() {
+    const box = $('buyerList');
+    if (!box) return;
+    box.innerHTML = '<div class="muted">တင်နေတယ်…</div>';
+    try {
+        // Fetch all users (seller-only API rule allows this)
+        const users = await pb.list('users', { perPage: 100 });
+        const buyers = (users.items || users).filter((u) => u.email !== 'johnzyt7@gmail.com');
+        if (!buyers.length) {
+            box.innerHTML = '<div class="muted">Buyer မရှိသေးပါ</div>';
+            return;
+        }
+        let html = '<table class="v-table"><thead><tr><th>Email</th><th>ဆိုင်</th><th>အခြေအနေ</th><th></th></tr></thead><tbody>';
+        for (const b of buyers) {
+            const disabled = !!b.disabled;
+            html += '<tr>' +
+                '<td>' + escHtml(b.email) + '</td>' +
+                '<td>' + escHtml(b.name || '') + '</td>' +
+                '<td>' + (disabled ? '<span style="color:#ef4444">🔴 ပိတ်</span>' : '<span style="color:#4ade80">🟢 ဖွင့်</span>') + '</td>' +
+                '<td><button class="btn small ' + (disabled ? 'gray' : 'red') + '" onclick="toggleBuyerDisabled(\'' + b.id + '\',' + (!disabled) + ')">' + (disabled ? 'ဖွင့်' : 'ပိတ်') + '</button></td>' +
+                '</tr>';
+        }
+        html += '</tbody></table>';
+        box.innerHTML = html;
+    } catch (e) {
+        box.innerHTML = '<div class="muted">မရဘူး: ' + escHtml(e.message || 'error') + '</div>';
+    }
+}
+
+window.toggleBuyerDisabled = async function toggleBuyerDisabled(userId, disable) {
+    const action = disable ? 'ပိတ်' : 'ဖွင့်';
+    if (!confirm('ဒီ buyer ကို ' + action + 'မလား?')) return;
+    try {
+        await pb.update('users', userId, { disabled: disable });
+        showToast(disable ? '🔴 ပိတ်ပြီးပြီ' : '🟢 ဖွင့်ပြီးပြီ');
+        renderBuyerList();
+    } catch (e) {
+        showToast('❌ ' + (e.message || 'error'));
     }
 }
 
@@ -562,9 +611,14 @@ async function loadSettingsIntoUI() {
     }
     // Buyer creation: only Pho (seller) can see it — buyers cannot create sub-buyers
     const buyerCard = $('buyerCard');
+    const buyerListCard = $('buyerListCard');
+    const isSeller = state.user && state.user.email === 'johnzyt7@gmail.com';
     if (buyerCard) {
-        const isSeller = state.user && state.user.email === 'johnzyt7@gmail.com';
         buyerCard.style.display = isSeller ? '' : 'none';
+    }
+    if (buyerListCard) {
+        buyerListCard.style.display = isSeller ? '' : 'none';
+        if (isSeller) renderBuyerList();
     }
 }
 
