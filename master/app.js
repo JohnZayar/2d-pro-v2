@@ -311,31 +311,27 @@ async function changePassword() {
 }
 
 async function enterApp() {
+    // Show loading while we sync — ensures data is present on first login
+    // (fixes the "login twice" issue where empty local DB rendered before sync)
     showPage('page-main');
-    // Load local data FIRST (offline-first) - don't block on network
+    const sessionList = $('sessionList');
+    if (sessionList) sessionList.innerHTML = '<div class="empty">⏳ တင်နေတယ်… ခနစောင့်ပါ</div>';
+    updateSyncPill('busy', '⏳ Sync…');
+    // Sync FIRST (blocking) — then render with real data
+    try {
+        await ensureTenant();
+        await fullSync();
+    } catch (e) {
+        console.warn('Initial sync failed:', e.message);
+    }
+    // Load local data (now populated from sync)
     await loadSessions();
     await loadAgents();
     await loadSettingsIntoUI();
     renderSessions();
     renderAgents();
     if (state.activeSessionId) renderLedger();
-    updateSyncPill('busy', '⏳ Sync…');
-    // Background: ensure tenant and sync (non-blocking)
-    (async () => {
-        try {
-            await ensureTenant();
-            await fullSync();
-            await loadSessions();
-            await loadAgents();
-            await loadSettingsIntoUI();
-            renderSessions();
-            renderAgents();
-            if (state.activeSessionId) renderLedger();
-        } catch (e) {
-            console.warn('Background sync failed:', e.message);
-        }
-        updateSyncPill();
-    })();
+    updateSyncPill();
     // background sync every 45s + on reconnect
     clearInterval(state.syncTimer);
     state.syncTimer = setInterval(() => { if (pb.isLoggedIn()) fullSync(); }, 45000);
