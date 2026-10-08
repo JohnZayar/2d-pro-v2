@@ -824,8 +824,8 @@ async function deleteSession(id) {
     if (!confirm(`"${sessionLabel(s)}" ကို ဖျက်မှာလား?\nမှတ်တမ်းအားလုံး ပျက်မယ်!`)) return;
     const recs = await db.query('lottery_records', 'by_session', id);
     for (const r of recs) await deleteRecord('lottery_records', r);
-    const wins = await db.query('winning_numbers', 'by_session', id);
-    for (const w of wins) await deleteRecord('winning_numbers', w);
+    // NOTE: winning_numbers are KEPT for ကျန်ဂဏန်း (10-week history)
+    // They are auto-deleted when older than 10 weeks (see cleanupOldWinnings)
     await deleteRecord('sessions', s);
     if (state.activeSessionId === id) {
         state.activeSessionId = null;
@@ -1772,41 +1772,78 @@ async function copyTotal(sessionId) {
 
 /* ================= ကျန်ဂဏန်း (REMAINING DIGITS) ================= */
 
+// Auto-delete winning numbers older than 10 weeks
+async function cleanupOldWinnings() {
+    try {
+        const all = await db.getAll('winning_numbers');
+        const tenWeeksAgo = new Date();
+        tenWeeksAgo.setDate(tenWeeksAgo.getDate() - 70);
+        const cutoffStr = tenWeeksAgo.toISOString().split('T')[0];
+        for (const w of all) {
+            const wDate = w.week_monday || (w.created ? new Date(w.created).toISOString().split('T')[0] : null);
+            if (wDate && wDate < cutoffStr) {
+                await deleteRecord('winning_numbers', w);
+            }
+        }
+    } catch (e) { console.warn('cleanupOldWinnings failed:', e.message); }
+}
+
 async function openRemaining() {
+    await cleanupOldWinnings();
+
     const all = await db.query('winning_numbers', 'by_tenant', state.tenantPbId);
     const local = await db.getAll('winning_numbers');
     const map = new Map();
     for (const w of all.concat(local)) if (!map.has(w.id)) map.set(w.id, w);
     const wins = Array.from(map.values());
 
-    // group by week_monday
-    const byWeek = {};
-    for (const w of wins) {
-        const wk = w.week_monday || getWeekMondayStr(new Date());
-        if (!byWeek[wk]) byWeek[wk] = [];
-        byWeek[wk].push(w);
-    }
-    const weeks = Object.keys(byWeek).sort().reverse().slice(0, 10);
-    if (!weeks.length) {
+    if (!wins.length) {
         openGeneric('🔢 ကျန်ဂဏန်း', '<div class="empty">ပေါက်သီး မှတ်တမ်း မရှိသေးပါ</div>');
         return;
     }
-    let html = '';
-    let prevRemaining = null;
-    for (const wk of weeks) {
-        const wlist = byWeek[wk].slice().sort((a, b) => String(a.number).localeCompare(String(b.number)));
-        const nums = wlist.map((w) => String(w.number).padStart(2, '0'));
-        const rem = remainingDigits(nums);
-        html += `<div class="digit-week card"><div class="wtitle">📅 ${escHtml(wk)} အပတ်</div>`;
-        if (prevRemaining && prevRemaining.length) {
-            html += `<div class="dayline">အရင်အပတ်ကျန်: <b>${prevRemaining.join(' ')}</b></div>`;
-        }
-        html += `<div class="dayline">ပေါက်ဂဏန်း: <b>${nums.join(' · ')}</b></div>
-            <div class="small muted" style="margin:6px 0">ကျန်ဂဏန်း (${rem.length})</div>
-            <div class="digit-chips">${rem.map((d) => `<span class="dchip">${d}</span>`).join('')}</div></div>`;
-        prevRemaining = rem;
+
+    // Group by date: get session date for each winning number
+    const byDate = {};
+    for (const w of wins) {
+        const sess = state.sessions.find((s) => s.id === w.session);
+        if (!sess || !sess.date) continue;
+        const dateKey = sess.date;
+        if (!byDate[dateKey]) byDate[dateKey] = { am: null, pm: null };
+        const isAM = (sess.timeType || '') === 'မနက်ပိုင်း';
+        const num = String(w.number).padStart(2, '0');
+        if (isAM) byDate[dateKey].am = num;
+        else byDate[dateKey].pm = num;
     }
-    openGeneric('🔢 ကျန်ဂဏန်း (၁၀ ပတ်)', html);
+
+    const sortedDates = Object.keys(byDate).sort((a, b) => {
+        const [da, ma, ya] = a.split('.').map(Number);
+        const [db, mb, yb] = b.split('.').map(Number);
+        return new Date(yb, mb - 1, db) - new Date(ya, ma - 1, da);
+    });
+
+    if (!sortedDates.length) {
+        openGeneric('🔢 ကျန်ဂဏန်း', '<div class="empty">ပေါက်သီး မှတ်တမ်း မရှိသေးပါ</div>');
+        return;
+    }
+
+    const dayNames = ['တနင်္ဂနွေ', 'တနင်္လာ', 'အင်္ဂါ', 'ဗုဒ္ဓဟူး', 'ကြာသပတေး', 'သောကြာ', 'စနေ'];
+    let html = '';
+    const allNums = [];
+    for (const dateKey of sortedDates.slice(0, 70)) {
+        const d = byDate[dateKey];
+        if (!d.am && !d.pm) continue;
+        const [dd, mm, yy] = dateKey.split('.').map(Number);
+        const dayName = dayNames[new Date(yy, mm - 1, dd).getDay()];
+        if (d.am) allNums.push(d.am);
+        if (d.pm) allNums.push(d.pm);
+        html += `<div class="dayline">${dayName} Am ${d.am || '--'} Pm ${d.pm || '--'}</div>`;
+    }
+
+    const rem = remainingDigits(allNums);
+    html += `<div class="small muted" style="margin:6px 0">ကျန်ဂဏန်း (${rem.length})</div>
+        <div class="digit-chips">${rem.map((d) => `<span class="dchip">${d}</span>`).join('')}</div>`;
+
+    openGeneric('🔢 ကျန်ဂဏန်း (၁၀ ပတ်)', `<div class="digit-week card">${html}</div>`);
 }
 
 /* ================= ⚖️ ကြီးငယ် (BIG / SMALL) ================= */
@@ -1956,11 +1993,10 @@ async function openAllTotal(sessionId) {
     const wins = await db.query('winning_numbers', 'by_session', sessionId);
     const winNum = wins.length ? String(wins[0].number).padStart(2, '0') : null;
 
-    // per-person: incoming only (pos), grouped by voucherPersonKey (agent grouped)
+    // per-person: incoming and akan, grouped by voucherPersonKey (agent grouped)
     const per = {};
     let tBet = 0, tWin = 0;
     for (const r of recs) {
-        if (r.record_type === 'akan') continue;
         const pkey = voucherPersonKey(r) || '(အမည် မရှိ)';
         if (!per[pkey]) per[pkey] = { bet: 0, win: 0 };
         const amt = Number(r.amount) || 0;
