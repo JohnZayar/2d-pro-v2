@@ -259,28 +259,33 @@ async function _setLastPull(collection, iso) {
  * (which deleted `created` on server overwrite). Only records already
  * pushed (have `_pbId`) can be repaired from the server.
  * Cheap no-op when nothing is broken — safe to call on every app start.
- * Runs in the background; callers should refresh the UI if it fixed any.
+ * Returns { fixed, broken }. Callers should refresh the UI if fixed > 0.
+ * NOTE: call AFTER syncNow() completes to avoid racing the pull.
  */
 export async function repairMissingCreated() {
     try {
         const all = await db.getAll('lottery_records');
         const broken = all.filter((r) => (r.created == null || r.created === 0) && r._pbId);
-        if (!broken.length) return 0;
+        if (!broken.length) return { fixed: 0, broken: 0 };
         let fixed = 0;
         for (const r of broken) {
             try {
+                // Re-read: a concurrent sync may already have fixed it
+                const fresh = await db.get('lottery_records', r.id).catch(() => null);
+                if (fresh && fresh.created != null && fresh.created !== 0) continue;
                 const item = await pb.getOne('lottery_records', r._pbId);
                 const t = Date.parse(item && item.created);
                 if (!isNaN(t)) {
-                    r.created = t;
-                    await db.put('lottery_records', r);
+                    const target = fresh || r;
+                    target.created = t;
+                    await db.put('lottery_records', target);
                     fixed++;
                 }
             } catch (e) { /* tunnel flaky — will retry next app start */ }
         }
-        return fixed;
+        return { fixed, broken: broken.length };
     } catch (e) {
-        return 0;
+        return { fixed: 0, broken: 0 };
     }
 }
 
