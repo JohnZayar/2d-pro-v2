@@ -198,6 +198,13 @@ button { font-family: inherit; }
 }
 .board-preview b { color: var(--green); }
 .board-preview .warn { color: var(--yellow); }
+/* Per-line formula check — small, subtle (not flashy) */
+.board-preview .bline { display: flex; gap: 6px; align-items: baseline; font-size: 12px; line-height: 1.6; }
+.board-preview .bline .mk { font-size: 10px; flex: 0 0 auto; }
+.board-preview .bline.ok .mk { color: #4a7c59; }
+.board-preview .bline.bad .mk { color: #a33b3b; }
+.board-preview .bline.bad .tx { color: #a33b3b; }
+.board-preview .bline .tx { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .board-btns { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
 .board-btns button {
     padding: 14px 4px; border-radius: 10px; font-weight: 700; font-size: 15px;
