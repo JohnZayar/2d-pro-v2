@@ -14,7 +14,7 @@
 
 import * as db from '../shared/db.js';
 import * as pb from '../shared/pb.js';
-import * as sync from '../shared/sync.js?v=4';
+import * as sync from '../shared/sync.js?v=5';
 import { parseBoardReport, parseLine } from '../shared/parser.js';
 import { uid, formatMoney, formatDateStr, getWeekMonday, showToast, escHtml, debounce } from '../shared/utils.js';
 
