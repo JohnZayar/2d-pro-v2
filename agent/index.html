@@ -37,6 +37,7 @@
         </div>
         <div class="header-right">
             <span id="syncPill" class="sync-pill" title="နှိပ်ရင် Sync လုပ်မယ်" onclick="syncNowManual()">⚪</span>
+            <button class="icon-btn" onclick="toggleFormulaSheet()" title="ဖော်မြူလာ">📖</button>
             <button class="icon-btn" onclick="openSettings()" title="Settings">⚙️</button>
         </div>
     </header>
@@ -73,11 +74,6 @@
                     <span class="menu-icon">📊</span>
                     <span class="menu-label">တပတ်စာ</span>
                     <span class="menu-sub">အပတ်စဉ် စာရင်း</span>
-                </button>
-                <button class="menu-card" onclick="openScreen('formula')">
-                    <span class="menu-icon">📖</span>
-                    <span class="menu-label">ဖော်မြူလာ</span>
-                    <span class="menu-sub">အညွှန်း ဘုတ်</span>
                 </button>
                 <button class="menu-card" onclick="openSettings()">
                     <span class="menu-icon">⚙️</span>
@@ -232,40 +228,39 @@
             </div>
             <div id="weeklyContent" class="weekly-content"></div>
         </section>
-
-        <!-- ===== SCREEN: FORMULA NOTICE BOARD ===== -->
-        <section id="screen-formula" class="screenpane" hidden>
-            <div class="screen-head">
-                <button class="back-btn" onclick="goHome()">‹ ပင်မ</button>
-                <h2>📖 ဖော်မြူလာ</h2>
-                <span></span>
-            </div>
-            <div class="table-container">
-                <table class="pos-table formula-table">
-                    <thead>
-                        <tr><th>ဖော်မြူလာ</th><th>ဥပမာ</th><th>ထွက်လာမယ့် ဂဏန်း</th><th>အရေအတွက်</th></tr>
-                    </thead>
-                    <tbody>
-                        <tr><td><b>R</b><br><span class="formula-desc">ပြောင်းပြန်</span></td><td class="cell-no">12R</td><td>12, 21</td><td>2 ကွက်</td></tr>
-                        <tr><td><b>ထိပ်</b><br><span class="formula-desc">အရှေ့ဂဏန်း တူ</span></td><td class="cell-no">6ထိပ်</td><td>60 – 69</td><td>10 ကွက်</td></tr>
-                        <tr><td><b>နောက်</b><br><span class="formula-desc">အနောက်ဂဏန်း တူ</span></td><td class="cell-no">6နောက်</td><td>06, 16 … 96</td><td>10 ကွက်</td></tr>
-                        <tr><td><b>ပတ်</b><br><span class="formula-desc">ဂဏန်း ပါရာ အကုန်</span></td><td class="cell-no">5ပတ်</td><td>50–59, 05–95</td><td>19 ကွက်</td></tr>
-                        <tr><td><b>ပူး</b><br><span class="formula-desc">အပူး</span></td><td class="cell-no">ပူး</td><td>00, 11 … 99</td><td>10 ကွက်</td></tr>
-                        <tr><td><b>ပါဝါ</b></td><td class="cell-no">ပါဝါ</td><td>05, 50, 16, 61, 27, 72, 38, 83, 49, 94</td><td>10 ကွက်</td></tr>
-                        <tr><td><b>နက္ခတ်</b></td><td class="cell-no">နက္ခတ်</td><td>07, 18, 24, 53, 69, 70, 81, 42, 35, 96</td><td>10 ကွက်</td></tr>
-                        <tr><td><b>ဘရိတ်</b><br><span class="formula-desc">၂ လုံး ပေါင်း</span></td><td class="cell-no">2ဘရိတ်</td><td>ပေါင်း 2 → 02, 11, 20 …</td><td>10 ကွက်</td></tr>
-                        <tr><td><b>ခွေ</b><br><span class="formula-desc">အလှည့် (အပူး မပါ)</span></td><td class="cell-no">123ခွေ</td><td>12, 21, 13, 31 …</td><td>20 ကွက်</td></tr>
-                        <tr><td><b>ခွေပူးပါ</b><br><span class="formula-desc">အလှည့် + အပူး</span></td><td class="cell-no">123ခွေပူးပါ</td><td>အလှည့် + 11, 22, 33</td><td>25 ကွက်</td></tr>
-                        <tr><td><b>ညီအစ်ကို</b><br><span class="formula-desc">ကပ်လျက် ဂဏန်း</span></td><td class="cell-no">ညီအစ်ကို</td><td>01, 10, 12, 21 … 90, 09</td><td>20 ကွက်</td></tr>
-                        <tr><td><b>စုံစုံ</b><br><span class="formula-desc">စုံ + စုံ</span></td><td class="cell-no">စုံစုံ</td><td>00, 02 … 88</td><td>25 ကွက်</td></tr>
-                        <tr><td><b>မမ</b><br><span class="formula-desc">မ + မ</span></td><td class="cell-no">မမ</td><td>11, 13 … 99</td><td>25 ကွက်</td></tr>
-                        <tr><td><b>စုံမ</b><br><span class="formula-desc">စုံ + မ</span></td><td class="cell-no">စုံမ</td><td>01, 03 … 89</td><td>25 ကွက်</td></tr>
-                        <tr><td><b>မစုံ</b><br><span class="formula-desc">မ + စုံ</span></td><td class="cell-no">မစုံ</td><td>10, 12 … 98</td><td>25 ကွက်</td></tr>
-                    </tbody>
-                </table>
-            </div>
-        </section>
     </main>
+</div>
+
+<!-- ============ FORMULA SHEET (notice board) ============ -->
+<div id="formulaSheet" class="modal" hidden onclick="if(event.target===this)toggleFormulaSheet()">
+    <div class="formula-sheet-card">
+        <div class="board-title">
+            <span>📖 ဖော်မြူလာ အသုံးပြုပုံ လမ်းညွှန်</span>
+            <span class="close-x" onclick="toggleFormulaSheet()">✕</span>
+        </div>
+        <div class="formula-guide-body">
+            <div><b>ဒဲ့ / အသွားအပြန်:</b> <code>12</code> = ဒဲ့, <code>12R</code> / <code>12အာ</code> / <code>12@</code> = 12, 21 (အသွားအပြန်)</div>
+            <div><b>1. ထိပ် (ဥပမာ - 5ထိပ်):</b> 50 မှ 59 ထိ (၁၀ ကွက်). <code>6.4.5ထိပ်</code> = ၃၀ ကွက်</div>
+            <div><b>2. နောက် (ဥပမာ - 5နောက်):</b> 05 မှ 95 ထိ (၁၀ ကွက်)</div>
+            <div><b>3. ပတ် / အပါ / အပတ် / ပါ (ဥပမာ - 5ပတ်):</b> ထိပ်နှင့်နောက် အားလုံး (၁၉ ကွက်) — ၄ မျိုး အတူတူ</div>
+            <div><b>4. အပူး / ပူး:</b> 00, 11, 22, 33, 44, 55, 66, 77, 88, 99 (၁၀ ကွက်)</div>
+            <div><b>5. ပါဝါ:</b> 05, 50, 16, 61, 27, 72, 38, 83, 49, 94 (၁၀ ကွက်)</div>
+            <div><b>6. ဘရိတ် / BK (ဥပမာ - 2ဘရိတ်):</b> ပေါင်းခြင်း ၂ သို့မဟုတ် ၁၂ ဖြစ်သော ဂဏန်းများ. <code>570BK</code> = ၃၀ ကွက်</div>
+            <div><b>7. ခွေ / အခွေ (ဥပမာ - 123ခွေ):</b> ရွေးထားသောဂဏန်းများဖြင့် အပြန်အလှန်, အပူးမပါ (၆ ကွက်)</div>
+            <div><b>8. ခွေပူး / ခွေပူးပါ / အခွေအပူး (ဥပမာ - 123ခွေပူး):</b> အပူးများပါ အပါအဝင် (၉ ကွက်)</div>
+            <div><b>9. နက္ခတ်:</b> 07, 18, 24, 53, 69, 70, 81, 42, 35, 96 (၁၀ ကွက်)</div>
+            <div><b>10. စုံစုံ၊ မမ၊ စုံမ၊ မစုံ:</b> သက်ဆိုင်ရာ စုံ/မ ဂဏန်းစုံများ</div>
+            <div><b>11. ညီအစ်ကို:</b> 01, 12, 23 ကဲ့သို့ ဂဏန်းကပ် ကွက်များ</div>
+            <div><b>12. ဂဏန်းတလုံး (ဥပမာ - 4-5-6):</b> တစ်လုံးချင်း အပါ ဖြစ်မည် (၅၇ ကွက်)</div>
+            <div class="guide-board">
+                <b>📋 Board တွင် ငွေတွဲရိုက်နည်း:</b><br>
+                <code>12=500</code> · <code>12 500</code> · <code>12/500</code> · <code>12,500</code> · <code>12-500</code><br>
+                <code>12=500r200</code> / <code>12=500@200</code> = ဒဲ့ 500, အပြန် 200<br>
+                <code>12,13,14 500r100</code> = သုံးကွက် ဒဲ့ 500, အပြန် 100<br>
+                <code>6ထိပ်7000@3000</code> = ထိပ် 7000, နောက် 3000
+            </div>
+        </div>
+    </div>
 </div>
 
 <!-- ============ DIGITAL BOARD MODAL (paste/type alternative) ============ -->
@@ -373,7 +368,7 @@
         </div>
         <div class="settings-row">
             <span>App Version</span>
-            <b>v19</b>
+            <b>v20</b>
         </div>
         <div class="settings-row">
             <span>🌐 Server URL</span>
@@ -390,7 +385,7 @@
     </div>
 </div>
 
-<script type="module" src="app.js?v=19"></script>
+<script type="module" src="app.js?v=20"></script>
 
 <!-- Floating scroll-to-top button -->
 <button id="scrollTopBtn" class="scroll-top" onclick="scrollToTop()" hidden aria-label="အပေါ်တက်">⬆️</button>
