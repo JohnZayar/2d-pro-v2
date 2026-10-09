@@ -14,7 +14,7 @@
 
 import * as db from '../shared/db.js';
 import * as pb from '../shared/pb.js';
-import * as sync from '../shared/sync.js?v=2';
+import * as sync from '../shared/sync.js?v=3';
 import { parseBoardReport, parseLine } from '../shared/parser.js';
 import { uid, formatMoney, formatDateStr, getWeekMonday, showToast, escHtml, debounce } from '../shared/utils.js';
 
@@ -114,6 +114,10 @@ async function autoSyncRefresh(res) {
             refreshSession();
             refreshActiveScreen();
         }).catch(() => updateSyncPill());
+        // Repair `created` timestamps wiped by old sync pulls, then refresh UI
+        sync.repairMissingCreated().then((n) => {
+            if (n > 0) { refreshSession(); refreshActiveScreen(); }
+        }).catch(() => {});
     } else {
         showLinkScreen();
     }
