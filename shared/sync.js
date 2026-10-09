@@ -201,8 +201,11 @@ async function _pullCollection(collection) {
             await db.put(collection, _fromServerRecord(collection, item));
             count++;
         } else if (serverTime > (local._updated || 0)) {
-            // Server is newer → overwrite local (last-write-wins).
-            await db.put(collection, _fromServerRecord(collection, item, local.id));
+            // Server is newer → overwrite local (last-write-wins),
+            // but never lose the local `created` timestamp (Daily/Weekly need it).
+            const rec = _fromServerRecord(collection, item, local.id);
+            if (rec.created == null && local.created != null) rec.created = local.created;
+            await db.put(collection, rec);
             count++;
         }
         // else: local is newer or equal → keep local; push will send it up.
@@ -223,7 +226,14 @@ function _fromServerRecord(collection, item, localId) {
     });
     // Keep a stable local id across pulls.
     rec.id = localId || item.id;
-    delete rec.created;
+    // Preserve a usable `created` timestamp: PocketBase sends an ISO string;
+    // local views (Daily/Weekly) sort and filter by a ms timestamp. Never drop it.
+    if (typeof rec.created === 'string') {
+        const t = Date.parse(rec.created);
+        rec.created = isNaN(t) ? Date.now() : t;
+    } else if (typeof rec.created !== 'number') {
+        delete rec.created; // caller falls back to local.created
+    }
     delete rec.updated;
     delete rec.collectionId;
     delete rec.collectionName;
