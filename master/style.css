@@ -697,3 +697,12 @@ table.wtable .wneg { color: #ef4444; font-weight: 700; }
 /* Winning number yellow highlight (vouchers, records) */
 .win-cell { background: rgba(250,204,21,.35) !important; font-weight: bold; }
 tr.win-row td { background: rgba(250,204,21,.15); }
+
+/* Board per-line formula check — small, subtle (not flashy) */
+.board-check { margin: 2px 0 6px; font-size: 12px; line-height: 1.6; max-height: 120px; overflow-y: auto; }
+.board-check .bline { display: flex; gap: 6px; align-items: baseline; padding: 0 2px; }
+.board-check .bline .mk { font-size: 10px; flex: 0 0 auto; }
+.board-check .bline.ok .mk { color: #4a7c59; }
+.board-check .bline.bad .mk { color: #a33b3b; }
+.board-check .bline.bad .tx { color: #a33b3b; }
+.board-check .bline .tx { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
