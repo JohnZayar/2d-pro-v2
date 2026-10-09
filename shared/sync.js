@@ -255,6 +255,36 @@ async function _setLastPull(collection, iso) {
 }
 
 /**
+ * Repair: backfill `created` timestamps wiped by the old pull logic
+ * (which deleted `created` on server overwrite). Only records already
+ * pushed (have `_pbId`) can be repaired from the server.
+ * Cheap no-op when nothing is broken — safe to call on every app start.
+ * Runs in the background; callers should refresh the UI if it fixed any.
+ */
+export async function repairMissingCreated() {
+    try {
+        const all = await db.getAll('lottery_records');
+        const broken = all.filter((r) => (r.created == null || r.created === 0) && r._pbId);
+        if (!broken.length) return 0;
+        let fixed = 0;
+        for (const r of broken) {
+            try {
+                const item = await pb.getOne('lottery_records', r._pbId);
+                const t = Date.parse(item && item.created);
+                if (!isNaN(t)) {
+                    r.created = t;
+                    await db.put('lottery_records', r);
+                    fixed++;
+                }
+            } catch (e) { /* tunnel flaky — will retry next app start */ }
+        }
+        return fixed;
+    } catch (e) {
+        return 0;
+    }
+}
+
+/**
  * Full sync: push pending ops, then pull updates.
  * Safe to call on app start, on reconnect, and on a timer.
  */
