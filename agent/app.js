@@ -1065,6 +1065,12 @@ window.saveEditRecord = async function saveEditRecord() {
 
 /* ================= Digital board modal (paste/type alternative) ================= */
 
+/** Formula notice board: tap 📖 to show, tap again (or ✕/outside) to hide. */
+window.toggleFormulaSheet = function toggleFormulaSheet() {
+    const m = document.getElementById('formulaSheet');
+    if (m) m.hidden = !m.hidden;
+};
+
 window.openBoard = function openBoard() {
     if (!currentSessionId) {
         showToast('⚠️ Session မရှိသေးပါ');
