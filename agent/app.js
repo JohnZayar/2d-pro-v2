@@ -1522,8 +1522,8 @@ window.renderWeekly = async function renderWeekly() {
         dayRecs.forEach((r) => {
             const k = r.player_name || '';
             if (!perPlayer[k]) { perPlayer[k] = { bet: 0, win: 0 }; pOrder.push(k); }
-            const info = getInfo(k);
-            perPlayer[k].bet += (Number(r.amount) || 0) * (1 - info.commission / 100);
+            // Columns show RAW entered amounts; commission is applied only inside Total.
+            perPlayer[k].bet += Number(r.amount) || 0;
             const winNums = winBySess[r.session] || new Set();
             if (winNums.has(String(r.number).padStart(2, '0'))) {
                 perPlayer[k].win += Number(r.amount) || 0;
@@ -1535,7 +1535,7 @@ window.renderWeekly = async function renderWeekly() {
             const info = getInfo(k);
             const bet = perPlayer[k].bet;
             const win = perPlayer[k].win;
-            const total = bet - (win * info.multiplier);
+            const total = (win * info.multiplier) - (bet * (1 - info.commission / 100));
             dayBet += bet; dayWin += win; dayTotal += total;
             html += '<tr><td>' + escHtml(playerLabel(k)) + '</td><td>' + formatMoney(bet) + '</td><td>' + formatMoney(win) +
                 '</td><td style="color:' + (total >= 0 ? '#22c55e' : '#ef4444') + '">' + formatMoney(total) + '</td></tr>';
