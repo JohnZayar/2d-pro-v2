@@ -74,6 +74,11 @@
                     <span class="menu-label">တပတ်စာ</span>
                     <span class="menu-sub">အပတ်စဉ် စာရင်း</span>
                 </button>
+                <button class="menu-card" onclick="openScreen('formula')">
+                    <span class="menu-icon">📖</span>
+                    <span class="menu-label">ဖော်မြူလာ</span>
+                    <span class="menu-sub">အညွှန်း ဘုတ်</span>
+                </button>
                 <button class="menu-card" onclick="openSettings()">
                     <span class="menu-icon">⚙️</span>
                     <span class="menu-label">ဆက်တင်</span>
@@ -227,6 +232,39 @@
             </div>
             <div id="weeklyContent" class="weekly-content"></div>
         </section>
+
+        <!-- ===== SCREEN: FORMULA NOTICE BOARD ===== -->
+        <section id="screen-formula" class="screenpane" hidden>
+            <div class="screen-head">
+                <button class="back-btn" onclick="goHome()">‹ ပင်မ</button>
+                <h2>📖 ဖော်မြူလာ</h2>
+                <span></span>
+            </div>
+            <div class="table-container">
+                <table class="pos-table formula-table">
+                    <thead>
+                        <tr><th>ဖော်မြူလာ</th><th>ဥပမာ</th><th>ထွက်လာမယ့် ဂဏန်း</th><th>အရေအတွက်</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><b>R</b><br><span class="formula-desc">ပြောင်းပြန်</span></td><td class="cell-no">12R</td><td>12, 21</td><td>2 ကွက်</td></tr>
+                        <tr><td><b>ထိပ်</b><br><span class="formula-desc">အရှေ့ဂဏန်း တူ</span></td><td class="cell-no">6ထိပ်</td><td>60 – 69</td><td>10 ကွက်</td></tr>
+                        <tr><td><b>နောက်</b><br><span class="formula-desc">အနောက်ဂဏန်း တူ</span></td><td class="cell-no">6နောက်</td><td>06, 16 … 96</td><td>10 ကွက်</td></tr>
+                        <tr><td><b>ပတ်</b><br><span class="formula-desc">ဂဏန်း ပါရာ အကုန်</span></td><td class="cell-no">5ပတ်</td><td>50–59, 05–95</td><td>19 ကွက်</td></tr>
+                        <tr><td><b>ပူး</b><br><span class="formula-desc">အပူး</span></td><td class="cell-no">ပူး</td><td>00, 11 … 99</td><td>10 ကွက်</td></tr>
+                        <tr><td><b>ပါဝါ</b></td><td class="cell-no">ပါဝါ</td><td>05, 50, 16, 61, 27, 72, 38, 83, 49, 94</td><td>10 ကွက်</td></tr>
+                        <tr><td><b>နက္ခတ်</b></td><td class="cell-no">နက္ခတ်</td><td>07, 18, 24, 53, 69, 70, 81, 42, 35, 96</td><td>10 ကွက်</td></tr>
+                        <tr><td><b>ဘရိတ်</b><br><span class="formula-desc">၂ လုံး ပေါင်း</span></td><td class="cell-no">2ဘရိတ်</td><td>ပေါင်း 2 → 02, 11, 20 …</td><td>10 ကွက်</td></tr>
+                        <tr><td><b>ခွေ</b><br><span class="formula-desc">အလှည့် (အပူး မပါ)</span></td><td class="cell-no">123ခွေ</td><td>12, 21, 13, 31 …</td><td>20 ကွက်</td></tr>
+                        <tr><td><b>ခွေပူးပါ</b><br><span class="formula-desc">အလှည့် + အပူး</span></td><td class="cell-no">123ခွေပူးပါ</td><td>အလှည့် + 11, 22, 33</td><td>25 ကွက်</td></tr>
+                        <tr><td><b>ညီအစ်ကို</b><br><span class="formula-desc">ကပ်လျက် ဂဏန်း</span></td><td class="cell-no">ညီအစ်ကို</td><td>01, 10, 12, 21 … 90, 09</td><td>20 ကွက်</td></tr>
+                        <tr><td><b>စုံစုံ</b><br><span class="formula-desc">စုံ + စုံ</span></td><td class="cell-no">စုံစုံ</td><td>00, 02 … 88</td><td>25 ကွက်</td></tr>
+                        <tr><td><b>မမ</b><br><span class="formula-desc">မ + မ</span></td><td class="cell-no">မမ</td><td>11, 13 … 99</td><td>25 ကွက်</td></tr>
+                        <tr><td><b>စုံမ</b><br><span class="formula-desc">စုံ + မ</span></td><td class="cell-no">စုံမ</td><td>01, 03 … 89</td><td>25 ကွက်</td></tr>
+                        <tr><td><b>မစုံ</b><br><span class="formula-desc">မ + စုံ</span></td><td class="cell-no">မစုံ</td><td>10, 12 … 98</td><td>25 ကွက်</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
     </main>
 </div>
 
@@ -335,7 +373,7 @@
         </div>
         <div class="settings-row">
             <span>App Version</span>
-            <b>v18</b>
+            <b>v19</b>
         </div>
         <div class="settings-row">
             <span>🌐 Server URL</span>
@@ -352,7 +390,7 @@
     </div>
 </div>
 
-<script type="module" src="app.js?v=18"></script>
+<script type="module" src="app.js?v=19"></script>
 
 <!-- Floating scroll-to-top button -->
 <button id="scrollTopBtn" class="scroll-top" onclick="scrollToTop()" hidden aria-label="အပေါ်တက်">⬆️</button>
