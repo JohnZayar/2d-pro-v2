@@ -5,7 +5,7 @@
  */
 import * as db from '../shared/db.js';
 import * as pb from '../shared/pb.js';
-import * as sync from '../shared/sync.js?v=2';
+import * as sync from '../shared/sync.js?v=3';
 import { parseBoard, parseBoardReport, parseLine } from '../shared/parser.js';
 import {
     formatMoney, formatDateStr, getWeekMondayStr, remainingDigits,
@@ -320,6 +320,8 @@ async function enterApp() {
     try {
         await ensureTenant();
         await fullSync();
+        // Repair `created` timestamps wiped by old sync pulls (background)
+        sync.repairMissingCreated().catch(() => {});
         // Clean up old data (records >2 weeks, winnings >10 weeks)
         await cleanupOldRecords();
         await cleanupOldWinnings();
