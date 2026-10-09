@@ -14,7 +14,7 @@
 
 import * as db from '../shared/db.js';
 import * as pb from '../shared/pb.js';
-import * as sync from '../shared/sync.js?v=3';
+import * as sync from '../shared/sync.js?v=4';
 import { parseBoardReport, parseLine } from '../shared/parser.js';
 import { uid, formatMoney, formatDateStr, getWeekMonday, showToast, escHtml, debounce } from '../shared/utils.js';
 
@@ -109,15 +109,23 @@ async function autoSyncRefresh(res) {
         await refreshSession();
         // Background sync (non-blocking) — refreshes UI when new data arrives
         sync.startAutoSync(60000, autoSyncRefresh);
-        sync.syncNow().then(() => {
+        sync.syncNow().then(async () => {
             updateSyncPill();
-            refreshSession();
+            await refreshSession();
             refreshActiveScreen();
+            // Repair `created` wiped by old sync pulls — AFTER sync to avoid races.
+            // Visible result so the user can confirm it worked.
+            try {
+                const res = await sync.repairMissingCreated();
+                if (res.fixed > 0) {
+                    showToast('🔧 ရက်စွဲ ' + res.fixed + ' ခု ပြန်ဖြည့်ပြီးပြီ');
+                    await refreshSession();
+                    refreshActiveScreen();
+                } else if (res.broken > 0) {
+                    showToast('⚠️ ရက်စွဲ ဖြည့်မရပါ — Sync နှိပ်ပြီး app ပြန်ဖွင့်ကြည့်ပါ');
+                }
+            } catch (e) {}
         }).catch(() => updateSyncPill());
-        // Repair `created` timestamps wiped by old sync pulls, then refresh UI
-        sync.repairMissingCreated().then((n) => {
-            if (n > 0) { refreshSession(); refreshActiveScreen(); }
-        }).catch(() => {});
     } else {
         showLinkScreen();
     }
