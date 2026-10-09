@@ -15,7 +15,7 @@
 import * as db from '../shared/db.js';
 import * as pb from '../shared/pb.js';
 import * as sync from '../shared/sync.js';
-import { parseBoardReport } from '../shared/parser.js';
+import { parseBoardReport, parseLine } from '../shared/parser.js';
 import { uid, formatMoney, formatDateStr, getWeekMonday, showToast, escHtml, debounce } from '../shared/utils.js';
 
 const LS_TENANT = 'v2_agent_tenant';
@@ -1064,14 +1064,25 @@ window.pasteToBoard = async function pasteToBoard() {
     }
 };
 
+/** Strict per-line check: parse must succeed AND every number must be 2-digit. Never guesses. */
+function boardLineOk(line) {
+    let parsed = [];
+    try { parsed = parseLine(line); } catch (e) { parsed = []; }
+    return parsed.length > 0 && parsed.every((p) => /^\d{2}$/.test(String(p.number)));
+}
+
 const updateBoardPreview = debounce(() => {
     const text = $('boardTextarea').value;
     const box = $('boardPreview');
     if (!text.trim()) { box.hidden = true; return; }
-    const { items, invalidLines } = parseBoardReport(text);
+    let html = '';
+    for (const line of text.split('\n')) {
+        if (!line.trim()) continue;
+        const ok = boardLineOk(line);
+        html += `<div class="bline ${ok ? 'ok' : 'bad'}"><span class="mk">${ok ? '✅' : '❌'}</span><span class="tx">${escHtml(line)}</span></div>`;
+    }
     box.hidden = false;
-    box.innerHTML = '✅ ဝင်မယ်' +
-        (invalidLines.length ? ' &nbsp; <span class="warn">⚠️ ' + invalidLines.length + ' လိုင်း ပြင်ရန်</span>' : '');
+    box.innerHTML = html;
 }, 400);
 
 document.addEventListener('input', (e) => {
@@ -1090,12 +1101,19 @@ window.saveBoard = async function saveBoard() {
 
     saveInFlight = true;
     try {
-        const { items, invalidLines } = parseBoardReport(text);
         const playerName = $('boardPlayer').value || null;
-        // Guard: only accept real 2-digit numbers (parser can echo unknown
-        // formula text into "numbers", e.g. 12ဖုံ → "12ဖုံ").
-        const validItems = items.filter((it) => /^\d{2}$/.test(String(it.number)));
-        if (!validItems.length) {
+        // Strict per-line: only fully-valid lines are entered. Bad lines stay
+        // on the board for fixing — never guess-entered.
+        const okItems = [];
+        const badLines = [];
+        for (const line of text.split('\n')) {
+            if (!line.trim()) continue;
+            if (!boardLineOk(line)) { badLines.push(line); continue; }
+            let parsed = [];
+            try { parsed = parseLine(line); } catch (e) { parsed = []; }
+            for (const p of parsed) okItems.push(p);
+        }
+        if (!okItems.length) {
             showToast('❌ ဝင်မယ့် လိုင်း မရှိပါ');
             saveInFlight = false;
             return;
@@ -1103,7 +1121,7 @@ window.saveBoard = async function saveBoard() {
         // 🚫 ဒိုင်ပိတ်: blocked numbers cannot be bet
         const blockedSetB = new Set(await getAgentBlocked(currentSessionId));
         const blockedHitB = [];
-        const allowedBoard = validItems.filter((it) => {
+        const allowedBoard = okItems.filter((it) => {
             const nn = String(it.number).padStart(2, '0');
             if (blockedSetB.has(nn)) { blockedHitB.push(nn); return false; }
             return true;
@@ -1112,13 +1130,18 @@ window.saveBoard = async function saveBoard() {
         allowedBoard.forEach((it) => {
             pendingEntries.push({ player_name: playerName, number: it.number, amount: it.amount });
         });
-        ta.value = '';
-        closeBoard();
         await renderEntryTable();
-        const skipped = invalidLines.length + (items.length - validItems.length) + blockedHitB.length;
         const blkMsgB = blockedHitB.length ? ' (🚫 ' + [...new Set(blockedHitB)].join(',') + ' ပိတ်)' : '';
-        showToast('✅ ထည့်ပြီးပြီ' +
-            (skipped ? ' (⚠️ ' + skipped + ' လိုင်း ကျန်)' : '') + blkMsgB);
+        if (badLines.length) {
+            // Keep bad lines on the board for fixing; keep modal open.
+            ta.value = badLines.join('\n');
+            updateBoardPreview();
+            showToast('✅ ထည့်ပြီးပြီ · ❌ ' + badLines.length + ' လိုင်း ကျန် — ပြင်ပြီး Save ပြန်နှိပ်' + blkMsgB);
+        } else {
+            ta.value = '';
+            closeBoard();
+            showToast('✅ ထည့်ပြီးပြီ' + blkMsgB);
+        }
     } catch (e) {
         console.error('[agent] saveBoard failed', e);
         showToast('❌ သိမ်းမရပါ: ' + e.message);
