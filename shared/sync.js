@@ -268,14 +268,19 @@ export async function syncNow() {
  * Attach automatic sync triggers: on `online` event and every interval.
  * @param {number} intervalMs default 60s
  */
-export function startAutoSync(intervalMs = 60000) {
+export function startAutoSync(intervalMs = 60000, onSync = null) {
     if (typeof window !== 'undefined' && !_onlineHandlerAttached) {
         window.addEventListener('online', () => { syncNow(); });
         _onlineHandlerAttached = true;
     }
     if (typeof setInterval !== 'undefined') {
-        setInterval(() => {
-            if (isOnline() && pb.isLoggedIn()) syncNow();
+        setInterval(async () => {
+            if (isOnline() && pb.isLoggedIn()) {
+                const res = await syncNow().catch(() => null);
+                if (res && typeof onSync === 'function') {
+                    try { await onSync(res); } catch (e) { /* UI refresh must not break sync */ }
+                }
+            }
         }, intervalMs);
     }
 }
