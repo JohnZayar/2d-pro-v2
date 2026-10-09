@@ -6,7 +6,7 @@
 import * as db from '../shared/db.js';
 import * as pb from '../shared/pb.js';
 import * as sync from '../shared/sync.js';
-import { parseBoard, parseBoardReport } from '../shared/parser.js';
+import { parseBoard, parseBoardReport, parseLine } from '../shared/parser.js';
 import {
     formatMoney, formatDateStr, getWeekMondayStr, remainingDigits,
     uid, showToast, escHtml, extractDigits
@@ -71,9 +71,10 @@ function bindUI() {
     $('boardPaste').addEventListener('click', async () => {
         try {
             const t = await navigator.clipboard.readText();
-            if (t) { $('boardText').value = t; }
+            if (t) { $('boardText').value = t; renderBoardLineCheck(); }
         } catch (e) { showToast('Paste မရပါ — ကိုယ်တိုင်ထည့်ပါ'); }
     });
+    $('boardText').addEventListener('input', () => renderBoardLineCheck());
     $('boardBack').addEventListener('click', () => closeModal('modal-board'));
     $('boardSave').addEventListener('click', saveBoard);
     document.querySelectorAll('[data-close]').forEach((b) => {
@@ -855,8 +856,36 @@ async function openBoard(sessionId) {
     }
     sel.innerHTML = opts;
     $('boardText').value = '';
+    renderBoardLineCheck();
     openModal('modal-board');
     setTimeout(() => $('boardText').focus(), 300);
+}
+
+/** Strict per-line check: parse must succeed AND every number must be 2-digit. Never guesses. */
+function boardLineOk(line) {
+    let parsed = [];
+    try { parsed = parseLine(line); } catch (e) { parsed = []; }
+    return parsed.length > 0 && parsed.every((p) => /^\d{2}$/.test(String(p.number)));
+}
+
+/** Per-line formula check: small ✅/❌ per line, subtle styling. Never guesses. */
+function renderBoardLineCheck() {
+    const ta = $('boardText');
+    const box = $('boardLineCheck');
+    if (!ta || !box) return 0;
+    const text = ta.value;
+    if (!text.trim()) { box.innerHTML = ''; box.style.display = 'none'; return 0; }
+    let html = '';
+    let bad = 0;
+    for (const line of text.split('\n')) {
+        if (!line.trim()) continue;
+        const ok = boardLineOk(line);
+        if (!ok) bad++;
+        html += `<div class="bline ${ok ? 'ok' : 'bad'}"><span class="mk">${ok ? '✅' : '❌'}</span><span class="tx">${escHtml(line)}</span></div>`;
+    }
+    box.innerHTML = html;
+    box.style.display = '';
+    return bad;
 }
 
 async function saveBoard() {
@@ -864,17 +893,30 @@ async function saveBoard() {
     const lk0 = await isSessionLocked(sessionId0);
     if (lk0.locked) { showToast('🔒 ' + lk0.reason + ' — ထည့် မရပါ'); return; }
     const text = $('boardText').value;
-    const { items, invalidLines } = parseBoardReport(text);
-    // Guard: only real 2-digit numbers
-    const validItems = items.filter((it) => /^\d{2}$/.test(String(it.number)));
-    if (!validItems.length) { showToast('ထည့်တာ မမှန်ပါ — စစ်ပါ'); return; }
+    // Strict per-line: only fully-valid lines are entered. Bad lines stay on
+    // the board for fixing — never guess-entered.
+    const okItems = [];
+    const badLines = [];
+    for (const line of text.split('\n')) {
+        if (!line.trim()) continue;
+        if (!boardLineOk(line)) { badLines.push(line); continue; }
+        let parsed = [];
+        try { parsed = parseLine(line); } catch (e) { parsed = []; }
+        for (const p of parsed) okItems.push(p);
+    }
+    if (!okItems.length) { showToast('ထည့်တာ မမှန်ပါ — စစ်ပါ'); return; }
     const sessionId = state.boardSessionId;
-    const skipped = invalidLines.length + (items.length - validItems.length);
+
+    // Keep bad lines on the board for fixing (small ❌ list stays visible).
+    const keepBadOpen = () => {
+        $('boardText').value = badLines.join('\n');
+        renderBoardLineCheck();
+    };
 
     // အကန်ဒိုင် mode → rows land in the OUTGOING pending table, not the entry table.
     if (state.boardMode === 'akan') {
         const bookie = (($('akanBookieSelect') && $('akanBookieSelect').value) || '').trim() || null;
-        validItems.forEach((it) => {
+        okItems.forEach((it) => {
             akanPending.push({
                 player_name: bookie,
                 number: String(it.number).padStart(2, '0'),
@@ -882,8 +924,12 @@ async function saveBoard() {
                 record_type: 'akan',
             });
         });
-        showToast('✅ ' + validItems.length + ' ကွက် ထည့်ပြီးပြီ (အထွက်)' +
-            (skipped ? ' (⚠️ ' + skipped + ' လိုင်း ကျန်)' : ''));
+        if (badLines.length) {
+            keepBadOpen();
+            showToast('✅ ' + okItems.length + ' ကွက် ထည့်ပြီးပြီ (အထွက်) · ❌ ' + badLines.length + ' လိုင်း ကျန် — ပြင်ပြီး Save ပြန်နှိပ်');
+            return;
+        }
+        showToast('✅ ' + okItems.length + ' ကွက် ထည့်ပြီးပြီ (အထွက်)');
         closeModal('modal-board');
         await openAkandain(sessionId);
         return;
@@ -896,7 +942,7 @@ async function saveBoard() {
     // 🚫 ဒိုင်ပိတ်: blocked numbers cannot be bet (incoming only)
     const blockedSet2 = new Set(getBlocked(sessionId));
     const blockedHit2 = [];
-    const allowedBoard = validItems.filter((it) => {
+    const allowedBoard = okItems.filter((it) => {
         const nn = String(it.number).padStart(2, '0');
         if (blockedSet2.has(nn)) { blockedHit2.push(nn); return false; }
         return true;
@@ -910,8 +956,12 @@ async function saveBoard() {
             record_type: 'pos', // entry board is incoming-only
         });
     });
-    showToast('✅ ' + validItems.length + ' ကွက် ထည့်ပြီးပြီ' +
-        (skipped ? ' (⚠️ ' + skipped + ' လိုင်း ကျန်)' : ''));
+    if (badLines.length) {
+        keepBadOpen();
+        showToast('✅ ' + allowedBoard.length + ' ကွက် ထည့်ပြီးပြီ · ❌ ' + badLines.length + ' လိုင်း ကျန် — ပြင်ပြီး Save ပြန်နှိပ်');
+        return;
+    }
+    showToast('✅ ' + allowedBoard.length + ' ကွက် ထည့်ပြီးပြီ');
     closeModal('modal-board');
     await openEntry(sessionId);
 }
