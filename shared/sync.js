@@ -28,6 +28,7 @@ const SYNC_COLLECTIONS = [
     'lottery_records',
     'winning_numbers',
     'agents',
+    'players',
     'app_settings'
 ];
 
