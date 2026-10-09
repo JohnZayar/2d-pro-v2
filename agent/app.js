@@ -14,7 +14,7 @@
 
 import * as db from '../shared/db.js';
 import * as pb from '../shared/pb.js';
-import * as sync from '../shared/sync.js?v=1';
+import * as sync from '../shared/sync.js?v=2';
 import { parseBoardReport, parseLine } from '../shared/parser.js';
 import { uid, formatMoney, formatDateStr, getWeekMonday, showToast, escHtml, debounce } from '../shared/utils.js';
 
@@ -93,11 +93,22 @@ async function init() {
     agentName = localStorage.getItem(LS_AGENT_NAME) || '';
     currentSessionId = localStorage.getItem(LS_SESSION) || '';
 
+/** After each background sync: if anything arrived, refresh the UI so
+ *  winning numbers / sessions appear without navigating away. */
+async function autoSyncRefresh(res) {
+    updateSyncPill();
+    const pulled = (res && res.pull && res.pull.pulled) || 0;
+    if (pulled > 0) {
+        await refreshSession();
+        refreshActiveScreen();
+    }
+}
+
     if (tenantId && agentName) {
         showApp();
         await refreshSession();
-        // Background sync (non-blocking)
-        sync.startAutoSync(60000);
+        // Background sync (non-blocking) — refreshes UI when new data arrives
+        sync.startAutoSync(60000, autoSyncRefresh);
         sync.syncNow().then(() => {
             updateSyncPill();
             refreshSession();
@@ -109,6 +120,12 @@ async function init() {
     updateSyncPill();
     window.addEventListener('online', updateSyncPill);
     window.addEventListener('offline', updateSyncPill);
+    // Phone sleep → foreground: sync immediately so stale data doesn't linger
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible' && pb.isLoggedIn()) {
+            sync.syncNow().then((res) => autoSyncRefresh(res)).catch(() => updateSyncPill());
+        }
+    });
 }
 
 function showLinkScreen() {
@@ -161,7 +178,7 @@ window.connectAgent = async function connectAgent() {
 
         showApp();
         await refreshSession();
-        sync.startAutoSync(60000);
+        sync.startAutoSync(60000, autoSyncRefresh);
         sync.syncNow().catch(() => {});
         showToast('✅ ချိတ်ဆက်ပြီးပြီ');
     } catch (e) {
@@ -202,7 +219,15 @@ async function refreshSession() {
         }
         const banner = document.getElementById('sessionBannerText');
         if (pick) {
-            banner.innerHTML = '📌 <b>' + escHtml(pick.name || 'Session') + '</b>';
+            // Prominent winning-number display: 🏆 67 — so agents see it the moment it syncs in.
+            let winHtml = '';
+            try {
+                const wins = await db.query('winning_numbers', 'by_session', pick.id);
+                if (wins && wins.length) {
+                    winHtml = ' &nbsp;🏆 <b>' + wins.map((w) => escHtml(String(w.number).padStart(2, '0'))).join(' ') + '</b>';
+                }
+            } catch (e) { /* ignore */ }
+            banner.innerHTML = '📌 <b>' + escHtml(pick.name || 'Session') + '</b>' + winHtml;
         } else {
             currentSessionId = null;
             localStorage.removeItem(LS_SESSION);
