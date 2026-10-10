@@ -883,6 +883,15 @@ async function openBoard(sessionId) {
     $('boardText').value = '';
     renderBoardLineCheck();
     openModal('modal-board');
+    // Auto-paste: Viber က ကူးထားတဲ့ စာရင်း ရှိ ရင် တန်း ထည့် (Paste နှိပ် စရာ မ လို)
+    try {
+        const clip = await navigator.clipboard.readText();
+        if (clip && clip.trim()) {
+            $('boardText').value = clip.trim();
+            renderBoardLineCheck();
+            showToast('📋 ကူးထားတဲ့ စာရင်း ထည့်ပြီးပြီ');
+        }
+    } catch (e) { /* clipboard blocked — Paste ခလုတ် သုံး */ }
     setTimeout(() => $('boardText').focus(), 300);
 }
 
