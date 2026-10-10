@@ -787,3 +787,13 @@ select.field-input { appearance: auto; }
 /* Winning number yellow highlight */
 .win-cell { background: rgba(250,204,21,.35) !important; font-weight: bold; }
 tr.win-row td { background: rgba(250,204,21,.15); }
+
+/* ===== Reminder bar (session-close countdown + winning-number alert) ===== */
+.reminder-bar {
+    padding: 10px 14px;
+    font-weight: 700;
+    text-align: center;
+    font-size: 15px;
+}
+.reminder-bar.warn { background: #e8590c; color: #fff; }
+.reminder-bar.win { background: #ffd54a; color: #5d3a00; }
