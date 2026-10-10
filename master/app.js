@@ -350,6 +350,10 @@ async function enterApp() {
     window.addEventListener('online', () => fullSync());
     // Web Share Target: Viber → Share → 2D Master lands the text here.
     handleSharedText();
+    // Reminders: session-close countdown + winning-number nudge, every 30s.
+    clearInterval(state.remindTimer);
+    updateReminders().catch(() => {});
+    state.remindTimer = setInterval(() => { updateReminders().catch(() => {}); }, 30000);
 }
 
 /**
@@ -370,6 +374,61 @@ function handleSharedText() {
         ta.value = text.trim();
         renderBoardLineCheck();
         showToast('📋 Viber စာရင်း ထည့်ပြီးပြီ — စစ်ပြီး သိမ်းပါ');
+    }
+}
+
+/* ================= REMINDERS ================= */
+// Session-close countdown + winning-number nudge. Runs every 30s while the app is open.
+const _remindState = { warned: {} };
+
+async function updateReminders() {
+    const bar = $('reminderBar');
+    if (!bar) return;
+    const now = new Date();
+    const dd = String(now.getDate()).padStart(2, '0');
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const todayStr = `${dd}.${mm}.${now.getFullYear()}`;
+    let html = '', cls = '', tap = null;
+
+    for (const s of state.sessions) {
+        if (!s || s.date !== todayStr || s.closed) continue;
+        const isAM = (s.timeType || '') === 'မနက်ပိုင်း';
+        const [hh, mi] = isAM ? [11, 55] : [15, 55];
+        const cutoff = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hh, mi, 0);
+        let wins = [];
+        try { wins = await db.query('winning_numbers', 'by_session', s.id) || []; } catch (e) {}
+        const hasWin = wins.length > 0;
+        const msLeft = cutoff.getTime() - now.getTime();
+        const label = sessionLabel(s);
+
+        if (!hasWin && msLeft > 0 && msLeft <= 15 * 60 * 1000) {
+            // ⏰ closing soon — countdown
+            const mins = Math.max(1, Math.ceil(msLeft / 60000));
+            html = `⏰ ${mins} မိနစ် အလို — ${escHtml(label)} ပိတ်တော့မယ်`;
+            cls = 'warn';
+            if (!_remindState.warned[s.id]) {
+                _remindState.warned[s.id] = true;
+                try { navigator.vibrate && navigator.vibrate([200, 100, 200]); } catch (e) {}
+            }
+            break;
+        }
+        if (!hasWin && msLeft <= 0) {
+            // 🏆 closed but no winning number yet — nudge to enter it
+            html = `🏆 ပေါက်သီး ထည့်ပါ — ${escHtml(label)}`;
+            cls = 'win';
+            tap = () => switchTab('winning');
+            break;
+        }
+    }
+
+    if (html) {
+        bar.className = 'reminder-bar ' + cls;
+        bar.innerHTML = html;
+        bar.style.display = '';
+        bar.onclick = tap || (() => {});
+    } else {
+        bar.style.display = 'none';
+        bar.onclick = null;
     }
 }
 
