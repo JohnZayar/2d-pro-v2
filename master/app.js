@@ -340,6 +340,29 @@ async function enterApp() {
     clearInterval(state.syncTimer);
     state.syncTimer = setInterval(() => { if (pb.isLoggedIn()) fullSync(); }, 45000);
     window.addEventListener('online', () => fullSync());
+    // Web Share Target: Viber → Share → 2D Master lands the text here.
+    handleSharedText();
+}
+
+/**
+ * If the app was opened via Web Share Target (e.g. Viber message shared),
+ * open the digital board with the shared text pre-filled.
+ */
+function handleSharedText() {
+    let text = '';
+    try { text = new URLSearchParams(location.search).get('text') || ''; } catch (e) {}
+    if (!text.trim()) return;
+    // Clean the URL so a refresh doesn't re-trigger.
+    try { history.replaceState(null, '', location.pathname); } catch (e) {}
+    const sid = state.activeSessionId || (state.sessions[0] && state.sessions[0].id);
+    if (!sid) { showToast('⚠️ Session အရင် ဖွင့်ပါ'); return; }
+    openBoard(sid);
+    const ta = $('boardText');
+    if (ta) {
+        ta.value = text.trim();
+        renderBoardLineCheck();
+        showToast('📋 Viber စာရင်း ထည့်ပြီးပြီ — စစ်ပြီး သိမ်းပါ');
+    }
 }
 
 /* ================= TENANT ================= */
