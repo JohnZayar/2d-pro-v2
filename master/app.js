@@ -46,12 +46,20 @@ async function init() {
     if (pb.isLoggedIn()) {
         try {
             state.user = await pb.refreshAuth();
-            await enterApp();
-            return;
         } catch (e) {
-            console.warn('token refresh failed, need login', e.message);
-            pb.logout();
+            // Invalid token → must log in again. Network/tunnel down →
+            // keep the local session (local-first, offline OK).
+            if (e && (e.code === 401 || e.code === 403)) {
+                console.warn('token invalid, need login');
+                await pb.logout();
+                showPage('page-login');
+                return;
+            }
+            console.warn('refresh failed (offline?), continuing cached:', e.message);
+            state.user = pb.getUser();
         }
+        await enterApp();
+        return;
     }
     showPage('page-login');
 }
