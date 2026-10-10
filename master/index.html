@@ -6,6 +6,13 @@
 <meta name="theme-color" content="#0b0f17">
 <title>2D Master Pro v2</title>
 <link rel="stylesheet" href="style.css?v=6">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<script>
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+}
+</script>
 </head>
 <body>
 <div id="app">
@@ -518,6 +525,6 @@
 
 
 </div>
-<script type="module" src="app.js?v=58"></script>
+<script type="module" src="app.js?v=59"></script>
 </body>
 </html>
