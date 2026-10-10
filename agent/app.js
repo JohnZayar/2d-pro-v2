@@ -25,6 +25,8 @@ const LS_SESSION = 'v2_agent_session';
 let tenantId = null;
 let agentName = null;
 let currentSessionId = null;
+// Reminder state: session-close warnings + seen winning numbers
+const _agentRemind = { warned: {}, knownWins: {} };
 let saveInFlight = false; // double-tap guard
 let pendingEntries = []; // typed but NOT yet saved: [{player_name, number, amount}]
 
@@ -109,6 +111,9 @@ async function autoSyncRefresh(res) {
         await refreshSession();
         // Background sync (non-blocking) — refreshes UI when new data arrives
         sync.startAutoSync(60000, autoSyncRefresh);
+        // ⏰ Session-close countdown, every 30s
+        updateAgentReminders().catch(() => {});
+        setInterval(() => { updateAgentReminders().catch(() => {}); }, 30000);
         sync.syncNow().then(async () => {
             updateSyncPill();
             await refreshSession();
@@ -237,6 +242,13 @@ async function refreshSession() {
                 const wins = await db.query('winning_numbers', 'by_session', pick.id);
                 if (wins && wins.length) {
                     winHtml = ' &nbsp;🏆 <b>' + wins.map((w) => escHtml(String(w.number).padStart(2, '0'))).join(' ') + '</b>';
+                    // 🔔 NEW winning number alert (first sighting only)
+                    if (!_agentRemind.knownWins[pick.id]) {
+                        _agentRemind.knownWins[pick.id] = true;
+                        const nums = wins.map((w) => String(w.number).padStart(2, '0')).join(' ');
+                        showToast('🏆 ပေါက်သီး ထွက်ပြီ: ' + nums);
+                        try { navigator.vibrate && navigator.vibrate([300, 150, 300]); } catch (e) {}
+                    }
                 }
             } catch (e) { /* ignore */ }
             banner.innerHTML = '📌 <b>' + escHtml(pick.name || 'Session') + '</b>' + winHtml;
@@ -248,6 +260,39 @@ async function refreshSession() {
     } catch (e) {
         console.warn('[agent] refreshSession failed', e);
     }
+}
+
+/** ⏰ Session-close countdown banner for the agent's current session. */
+async function updateAgentReminders() {
+    const bar = document.getElementById('reminderBar');
+    if (!bar || !currentSessionId) { if (bar) bar.style.display = 'none'; return; }
+    try {
+        const s = await db.get('sessions', currentSessionId);
+        if (!s || !s.date || s.closed) { bar.style.display = 'none'; return; }
+        const now = new Date();
+        const isAM = (s.timeType || '') === 'မနက်ပိုင်း';
+        const [hh, mi] = isAM ? [11, 55] : [15, 55];
+        const parts = String(s.date).split('.');
+        let cutoff;
+        if (parts.length === 3) {
+            cutoff = new Date(Number(parts[2]), Number(parts[1]) - 1, Number(parts[0]), hh, mi, 0);
+        } else {
+            return;
+        }
+        const msLeft = cutoff.getTime() - now.getTime();
+        if (msLeft > 0 && msLeft <= 15 * 60 * 1000) {
+            const mins = Math.max(1, Math.ceil(msLeft / 60000));
+            bar.className = 'reminder-bar warn';
+            bar.textContent = `⏰ ${mins} မိနစ် အလို — ထိုးခွင့် ပိတ်တော့မယ်`;
+            bar.style.display = '';
+            if (!_agentRemind.warned[s.id]) {
+                _agentRemind.warned[s.id] = true;
+                try { navigator.vibrate && navigator.vibrate([200, 100, 200]); } catch (e) {}
+            }
+        } else {
+            bar.style.display = 'none';
+        }
+    } catch (e) { /* ignore */ }
 }
 
 async function getAgentSessions() {
