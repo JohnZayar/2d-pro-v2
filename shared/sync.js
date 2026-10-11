@@ -91,27 +91,67 @@ export async function pushPending() {
         const queue = (await db.getAll('sync_queue'))
             .sort((a, b) => (a.created || 0) - (b.created || 0));
 
-        for (const entry of queue) {
-            try {
-                await _pushOne(entry);
-                await db.del('sync_queue', entry.id);
-                pushed++;
-            } catch (err) {
-                // Drop unrecoverable client errors (bad data); keep the rest.
-                if (err && err.code >= 400 && err.code < 500 && err.code !== 429) {
-                    console.warn('[sync] dropping poison op', entry, err.message);
-                    await db.del('sync_queue', entry.id);
-                } else {
-                    failed++;
-                    // Stop on first transient failure to preserve order.
-                    break;
-                }
-            }
+        // Bulk 'create' ops (the common case: dozens of numbers saved at once)
+        // go out in parallel — one wave of round-trips instead of N sequential ones.
+        // Updates/deletes stay sequential to preserve per-record order.
+        // (Server has the batch API disabled, so parallel singles is the fastest path.)
+        const creates = queue.filter((e) => e.op === 'create');
+        const others = queue.filter((e) => e.op !== 'create');
+
+        const createOutcomes = await _mapConcurrent(creates, 6, _pushEntrySettled);
+        for (const o of createOutcomes) {
+            if (o === 'pushed') pushed++;
+            else if (o === 'failed') failed++;
+            // 'dropped' (poison data): removed from queue, counts as neither
+        }
+
+        for (const entry of others) {
+            const outcome = await _pushEntrySettled(entry);
+            if (outcome === 'pushed') pushed++;
+            else if (outcome === 'failed') { failed++; break; } // transient: keep order, retry next cycle
+            // 'dropped': removed from queue, continue
         }
     } finally {
         _syncing = false;
     }
     return { pushed, failed, skipped: false };
+}
+
+/**
+ * Push one queue entry; settle its queue row.
+ * Returns 'pushed' | 'dropped' (poison 4xx, removed) | 'failed' (transient, kept for retry).
+ */
+async function _pushEntrySettled(entry) {
+    try {
+        await _pushOne(entry);
+    } catch (err) {
+        // Drop unrecoverable client errors (bad data); keep the rest for retry.
+        if (err && err.code >= 400 && err.code < 500 && err.code !== 429) {
+            console.warn('[sync] dropping poison op', entry.op, entry.collection, err.message);
+            await db.del('sync_queue', entry.id).catch(() => {});
+            return 'dropped';
+        }
+        return 'failed';
+    }
+    await db.del('sync_queue', entry.id).catch(() => {});
+    return 'pushed';
+}
+
+/** Run fn over items with at most `limit` concurrent workers. Returns fn's return values in order. */
+async function _mapConcurrent(items, limit, fn) {
+    const out = new Array(items.length);
+    let next = 0;
+    async function worker() {
+        while (next < items.length) {
+            const i = next++;
+            try { out[i] = await fn(items[i]); }
+            catch (e) { out[i] = 'failed'; }
+        }
+    }
+    const workers = [];
+    for (let w = 0; w < Math.min(limit, items.length); w++) workers.push(worker());
+    await Promise.all(workers);
+    return out;
 }
 
 async function _pushOne(entry) {
