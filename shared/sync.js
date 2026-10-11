@@ -131,6 +131,7 @@ async function _pushEntrySettled(entry) {
             await db.del('sync_queue', entry.id).catch(() => {});
             return 'dropped';
         }
+        _lastPushError = (err && (err.code + ': ' + err.message)) || String(err);
         return 'failed';
     }
     await db.del('sync_queue', entry.id).catch(() => {});
@@ -341,6 +342,10 @@ export async function syncNow() {
     const pullRes = await pullUpdates().catch((e) => ({ pulled: 0, error: e.message }));
     return { push: pushRes, pull: pullRes };
 }
+
+/** Last transient push error (for diagnostics). */
+let _lastPushError = null;
+export function lastPushError() { return _lastPushError; }
 
 /**
  * Attach automatic sync triggers: on `online` event and every interval.
