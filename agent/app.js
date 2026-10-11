@@ -14,7 +14,7 @@
 
 import * as db from '../shared/db.js';
 import * as pb from '../shared/pb.js?v=1';
-import * as sync from '../shared/sync.js?v=9';
+import * as sync from '../shared/sync.js?v=10';
 import { parseBoardReport, parseLine } from '../shared/parser.js';
 import { uid, formatMoney, formatDateStr, getWeekMonday, showToast, escHtml, debounce } from '../shared/utils.js';
 
@@ -1309,6 +1309,21 @@ window.doRepushAll = async function doRepushAll() {
         showToast('❌ ပြန် တင် မရပါ: ' + e.message);
     }
     updateSyncPill();
+};
+
+/** Diagnose: try pushing ONE queued item and show the exact error. */
+window.diagnosePush = async function diagnosePush() {
+    const q = await db.getAll('sync_queue').catch(() => []);
+    if (!q.length) { showToast('Queue ဗလာ'); return; }
+    const entry = q[0];
+    showToast(`🔍 စမ်း: ${entry.op}:${entry.collection}…`);
+    try {
+        // Use the internal push for one entry (imported via sync module)
+        const res = await sync.testPushOne(entry);
+        showToast(`✅ ရတယ်: ${res}`);
+    } catch (e) {
+        showToast(`❌ Error ${e.code || '?'}: ${e.message || e}`);
+    }
 };
 
 function updateSyncPill(force) {
