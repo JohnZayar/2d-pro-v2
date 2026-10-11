@@ -5,7 +5,7 @@
  */
 import * as db from '../shared/db.js';
 import * as pb from '../shared/pb.js';
-import * as sync from '../shared/sync.js?v=5';
+import * as sync from '../shared/sync.js?v=6';
 import { parseBoard, parseBoardReport, parseLine } from '../shared/parser.js';
 import {
     formatMoney, formatDateStr, getWeekMondayStr, remainingDigits,
@@ -647,14 +647,19 @@ async function fullSync(manual) {
     updateSyncPill('busy', '⏳ Sync…');
     try {
         await resolvePendingRelations();
-        await sync.syncNow();
-        if (await resolvePendingRelations()) await sync.syncNow();
-        // refresh in-memory lists after pull
-        await loadSessions();
-        await loadAgents();
-        renderSessions();
-        renderAgents();
-        if (state.activeSessionId) renderLedger();
+        let res = await sync.syncNow();
+        if (await resolvePendingRelations()) res = await sync.syncNow();
+        // Refresh UI only when the pull actually brought changes (like Agent does) —
+        // re-rendering every 45s unconditionally caused visible stutter.
+        const pulled = (res && res.pull && res.pull.pulled) || 0;
+        if (pulled > 0) {
+            // refresh in-memory lists after pull
+            await loadSessions();
+            await loadAgents();
+            renderSessions();
+            renderAgents();
+            if (state.activeSessionId) renderLedger();
+        }
         if (manual) showToast('✅ Sync ပြီးပြီ');
     } catch (e) {
         console.warn('sync failed', e.message);
