@@ -1295,9 +1295,21 @@ window.syncNowManual = async function syncNowManual() {
     updateSyncPill();
 };
 
+/** Reset sync state: clear lastPull timestamps so next pull fetches everything. */
+window.doResetSync = async function doResetSync() {
+    if (!confirm('Sync state ပြန် စ မလား? (နောက် sync မှာ အကုန် ပြန် ဆွဲမယ်)')) return;
+    const all = await db.getAll('app_settings').catch(() => []);
+    for (const r of all) {
+        if (r.key && r.key.startsWith('sync:lastPull:')) {
+            await db.del('app_settings', r.id).catch(() => {});
+        }
+    }
+    showToast('✅ Sync state ရှင်းပြီးပြီ — Sync နှိပ်');
+    updateSyncPill();
+};
+
 /** Re-authenticate: clear cached token and auto-login fresh (fixes stale tokens after DB wipe). */
-window.doReauth = async function doReauth() {
-    if (!confirm('Auth ပြန် လုပ်မလား? (token အသစ် ယူမယ်)')) return;
+window.doReauth = async function doReauth() {    if (!confirm('Auth ပြန် လုပ်မလား? (token အသစ် ယူမယ်)')) return;
     pb.logout();
     showToast('🔄 Login ပြန် ဝင် နေ…');
     try {
