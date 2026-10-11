@@ -5,7 +5,7 @@
  */
 import * as db from '../shared/db.js';
 import * as pb from '../shared/pb.js?v=1';
-import * as sync from '../shared/sync.js?v=8';
+import * as sync from '../shared/sync.js?v=9';
 import { parseBoard, parseBoardReport, parseLine } from '../shared/parser.js';
 import {
     formatMoney, formatDateStr, getWeekMondayStr, remainingDigits,
@@ -95,6 +95,8 @@ function bindUI() {
     $('agSave').addEventListener('click', saveAgent);
 
     $('syncNowBtn').addEventListener('click', () => fullSync(true));
+    const repushBtn = $('repushBtn');
+    if (repushBtn) repushBtn.addEventListener('click', doRepushAll);
     $('logoutBtn').addEventListener('click', doLogout);
     $('buyerCreateBtn').addEventListener('click', createBuyerAccount);
     const buyerRefreshBtn = $('buyerRefreshBtn');
@@ -714,6 +716,23 @@ window.syncNowManual = async function syncNowManual() {
 };
 
 /* ================= SETTINGS ================= */
+
+/** Disaster recovery: push all local records to the (wiped) server. */
+async function doRepushAll() {
+    if (!confirm('ဖုန်း ထဲ က data အကုန် server ကို ပြန် တင်မလား?\n(Server data ပျက်သွားလို့ ပြန် တင်တာ)')) return;
+    showToast('📤 ပြန် တင်နေ ပြီ…');
+    updateSyncPill('busy', '⏳ Upload…');
+    try {
+        const res = await sync.repushAll();
+        const msg = `📤 ${res.queued} တင်, ✅ ${res.pushed} ရောက်` +
+            (res.failed ? `, ❌ ${res.failed} မရ` : '') +
+            (res.errors.length ? '\n' + res.errors.slice(0, 3).join('\n') : '');
+        showToast(msg);
+    } catch (e) {
+        showToast('❌ ပြန် တင် မရပါ: ' + e.message);
+    }
+    updateSyncPill();
+}
 
 async function getSetting(key, fallback) {
     const all = await db.getAll('app_settings');
