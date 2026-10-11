@@ -756,6 +756,8 @@ window.savePendingBatch = async function savePendingBatch() {
         await renderEntryTable();
         updateSyncPill();
         showToast('✅ သိမ်းပြီးပြီ');
+        // Push to server immediately so Master sees the numbers within seconds
+        sync.syncNow().catch(() => {});
     } catch (e) {
         console.error('[agent] savePendingBatch failed', e);
         showToast('❌ သိမ်းမရပါ: ' + e.message);
