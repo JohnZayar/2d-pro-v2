@@ -699,6 +699,13 @@ window.syncNowManual = async function syncNowManual() {
             const desc = q.slice(0, 5).map((e) => `${e.op}:${e.collection}`).join(', ');
             const err = sync.lastPushError ? sync.lastPushError() : null;
             showToast(`🟡 ${q.length} ကျန်: ${desc}${err ? ' | Err: ' + err : ''}`);
+            // Force-clear stuck queue items (user-approved). Uses clear() instead of
+            // per-entry del in case individual deletes are failing silently.
+            if (confirm(`🟡 ${q.length} ကျန်: ${desc}\nပိတ်မိနေတဲ့ queue ကို အကုန် ရှင်းပစ်မလား?`)) {
+                await db.clear('sync_queue');
+                const left = await db.count('sync_queue').catch(() => -1);
+                showToast(left === 0 ? '🗑️ Queue ရှင်းပြီးပြီ ✅' : `⚠️ ${left} ခု ကျန်သေးတယ်`);
+            }
         }
     } catch (e) {
         showToast('❌ Sync မရပါ: ' + e.message);
