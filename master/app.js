@@ -5,7 +5,7 @@
  */
 import * as db from '../shared/db.js';
 import * as pb from '../shared/pb.js';
-import * as sync from '../shared/sync.js?v=6';
+import * as sync from '../shared/sync.js?v=7';
 import { parseBoard, parseBoardReport, parseLine } from '../shared/parser.js';
 import {
     formatMoney, formatDateStr, getWeekMondayStr, remainingDigits,
@@ -344,10 +344,14 @@ async function enterApp() {
     renderAgents();
     if (state.activeSessionId) renderLedger();
     updateSyncPill();
-    // background sync every 45s + on reconnect
+    // background sync every 15s + on reconnect + on foreground (Agent pushes in
+    // seconds now, so Master must pull fast too or the 45s wait dominates)
     clearInterval(state.syncTimer);
-    state.syncTimer = setInterval(() => { if (pb.isLoggedIn()) fullSync(); }, 45000);
+    state.syncTimer = setInterval(() => { if (pb.isLoggedIn()) fullSync(); }, 15000);
     window.addEventListener('online', () => fullSync());
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible' && pb.isLoggedIn()) fullSync();
+    });
     // Web Share Target: Viber → Share → 2D Master lands the text here.
     handleSharedText();
     // Reminders: session-close countdown + winning-number nudge, every 30s.
