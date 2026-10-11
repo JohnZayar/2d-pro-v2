@@ -4,7 +4,7 @@
  * PocketBase syncs in the background.
  */
 import * as db from '../shared/db.js';
-import * as pb from '../shared/pb.js';
+import * as pb from '../shared/pb.js?v=1';
 import * as sync from '../shared/sync.js?v=7';
 import { parseBoard, parseBoardReport, parseLine } from '../shared/parser.js';
 import {
@@ -352,6 +352,13 @@ async function enterApp() {
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible' && pb.isLoggedIn()) fullSync();
     });
+    // Realtime: server pushes changes in ~1-2s (backup: 15s poll above stays).
+    try {
+        pb.realtimeSubscribe(
+            ['lottery_records', 'winning_numbers', 'sessions', 'agents'],
+            () => { if (pb.isLoggedIn()) fullSync(); }
+        );
+    } catch (e) { /* realtime optional — poll covers it */ }
     // Web Share Target: Viber → Share → 2D Master lands the text here.
     handleSharedText();
     // Reminders: session-close countdown + winning-number nudge, every 30s.
