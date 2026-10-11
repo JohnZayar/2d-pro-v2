@@ -1295,9 +1295,22 @@ window.syncNowManual = async function syncNowManual() {
     updateSyncPill();
 };
 
+/** Re-authenticate: clear cached token and auto-login fresh (fixes stale tokens after DB wipe). */
+window.doReauth = async function doReauth() {
+    if (!confirm('Auth ပြန် လုပ်မလား? (token အသစ် ယူမယ်)')) return;
+    pb.logout();
+    showToast('🔄 Login ပြန် ဝင် နေ…');
+    try {
+        await pb.login('agent@2dpro.local', 'Agent2DPro2026Sync!');
+        showToast('✅ Login ရ ပြီ');
+    } catch (e) {
+        showToast('❌ Login မရပါ: ' + e.message);
+    }
+    updateSyncPill();
+};
+
 /** Disaster recovery: push all local records to the (wiped) server. */
-window.doRepushAll = async function doRepushAll() {
-    if (!confirm('ဖုန်း ထဲ က data အကုန် server ကို ပြန် တင်မလား?')) return;
+window.doRepushAll = async function doRepushAll() {    if (!confirm('ဖုန်း ထဲ က data အကုန် server ကို ပြန် တင်မလား?')) return;
     showToast('📤 ပြန် တင်နေ ပြီ…');
     updateSyncPill('working');
     try {
