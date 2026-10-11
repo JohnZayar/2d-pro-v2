@@ -14,7 +14,7 @@
 
 import * as db from '../shared/db.js';
 import * as pb from '../shared/pb.js?v=1';
-import * as sync from '../shared/sync.js?v=7';
+import * as sync from '../shared/sync.js?v=9';
 import { parseBoardReport, parseLine } from '../shared/parser.js';
 import { uid, formatMoney, formatDateStr, getWeekMonday, showToast, escHtml, debounce } from '../shared/utils.js';
 
@@ -1291,6 +1291,22 @@ window.syncNowManual = async function syncNowManual() {
         refreshActiveScreen();
     } catch (e) {
         showToast('❌ Sync မရပါ: ' + e.message);
+    }
+    updateSyncPill();
+};
+
+/** Disaster recovery: push all local records to the (wiped) server. */
+window.doRepushAll = async function doRepushAll() {
+    if (!confirm('ဖုန်း ထဲ က data အကုန် server ကို ပြန် တင်မလား?')) return;
+    showToast('📤 ပြန် တင်နေ ပြီ…');
+    updateSyncPill('working');
+    try {
+        const res = await sync.repushAll();
+        showToast(`📤 ${res.queued} တင်, ✅ ${res.pushed} ရောက်` +
+            (res.failed ? `, ❌ ${res.failed} မရ` : '') +
+            (res.errors.length ? '\n' + res.errors.slice(0, 3).join('\n') : ''));
+    } catch (e) {
+        showToast('❌ ပြန် တင် မရပါ: ' + e.message);
     }
     updateSyncPill();
 };
