@@ -5,7 +5,7 @@
  */
 import * as db from '../shared/db.js';
 import * as pb from '../shared/pb.js?v=1';
-import * as sync from '../shared/sync.js?v=9';
+import * as sync from '../shared/sync.js?v=10';
 import { parseBoard, parseBoardReport, parseLine } from '../shared/parser.js';
 import {
     formatMoney, formatDateStr, getWeekMondayStr, remainingDigits,
@@ -97,6 +97,8 @@ function bindUI() {
     $('syncNowBtn').addEventListener('click', () => fullSync(true));
     const repushBtn = $('repushBtn');
     if (repushBtn) repushBtn.addEventListener('click', doRepushAll);
+    const diagPushBtn = $('diagPushBtn');
+    if (diagPushBtn) diagPushBtn.addEventListener('click', diagnosePush);
     $('logoutBtn').addEventListener('click', doLogout);
     $('buyerCreateBtn').addEventListener('click', createBuyerAccount);
     const buyerRefreshBtn = $('buyerRefreshBtn');
@@ -716,6 +718,20 @@ window.syncNowManual = async function syncNowManual() {
 };
 
 /* ================= SETTINGS ================= */
+
+/** Diagnostic: try pushing ONE queued item and show the exact error. */
+async function diagnosePush() {
+    const q = await db.getAll('sync_queue').catch(() => []);
+    if (!q.length) { showToast('Queue ဗလာ'); return; }
+    const entry = q[0];
+    showToast(`🔍 စမ်း: ${entry.op}:${entry.collection}…`);
+    try {
+        const res = await sync.testPushOne(entry);
+        showToast(`✅ ရတယ်: ${res}`);
+    } catch (e) {
+        showToast(`❌ Error ${e.code || '?'}: ${e.message || e}`);
+    }
+}
 
 /** Disaster recovery: push all local records to the (wiped) server. */
 async function doRepushAll() {
