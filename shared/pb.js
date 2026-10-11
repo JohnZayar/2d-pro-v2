@@ -207,3 +207,112 @@ export async function listAll(collection, opts = {}) {
 }
 
 export { del as remove };
+
+/* ================= REALTIME (SSE) =================
+ * PocketBase v0.23+ unified realtime: server pushes collection changes over
+ * Server-Sent Events, so the app learns about new data in ~1-2s instead of
+ * waiting for the next poll. The interval poll stays as fallback/revert path.
+ *
+ * Flow: GET /api/realtime (EventSource) → server sends PB_CONNECT with a
+ * clientId → POST /api/realtime {clientId, subscriptions} (auth header, normal
+ * fetch) → change events stream in. EventSource auto-reconnects on drops; each
+ * re-PB_CONNECT re-registers the subscriptions.
+ */
+const _rt = {
+    source: null,
+    clientId: null,
+    topics: [],
+    onEvent: null,
+    connecting: false,
+};
+
+function _rtReset() {
+    try { if (_rt.source) _rt.source.close(); } catch (e) { /* ignore */ }
+    _rt.source = null;
+    _rt.clientId = null;
+    _rt.connecting = false;
+}
+
+async function _rtRegister() {
+    if (!_rt.clientId || !_rt.topics.length || !isLoggedIn()) return;
+    try {
+        await _req('POST', '/api/realtime', {
+            clientId: _rt.clientId,
+            subscriptions: _rt.topics.slice(),
+        });
+    } catch (e) {
+        console.warn('[realtime] subscribe failed:', e.message);
+    }
+}
+
+function _rtFireChanged() {
+    if (typeof _rt.onEvent === 'function') {
+        try { _rt.onEvent(); } catch (e) { /* app handler must not break the stream */ }
+    }
+}
+
+function _rtConnect() {
+    if (_rt.source || _rt.connecting || !isLoggedIn()) return;
+    if (typeof EventSource === 'undefined') return;
+    _rt.connecting = true;
+    let es = null;
+    try {
+        es = new EventSource(getBaseUrl() + '/api/realtime');
+    } catch (e) {
+        _rt.connecting = false;
+        return;
+    }
+    _rt.source = es;
+    _rt.connecting = false;
+
+    es.addEventListener('PB_CONNECT', (e) => {
+        try {
+            const data = JSON.parse(e.data || '{}');
+            _rt.clientId = data.clientId || data.client_id || null;
+        } catch (err) { _rt.clientId = null; }
+        _rtRegister();
+    });
+    // Any pushed change event → tell the app to sync. Exact event names vary,
+    // so listen both for default-type messages and per-topic named events.
+    es.onmessage = () => _rtFireChanged();
+    const named = (e) => _rtFireChanged();
+    for (const t of _rt.topics) {
+        try { es.addEventListener(t, named); } catch (err) { /* ignore */ }
+    }
+    es.onerror = () => {
+        // EventSource retries by itself; a fresh PB_CONNECT re-registers topics.
+        // If the stream is fully closed, drop it so a later call can start anew.
+        try {
+            if (es.readyState === EventSource.CLOSED) _rtReset();
+        } catch (e) { _rtReset(); }
+    };
+}
+
+/**
+ * Subscribe to realtime collection changes. `onEvent` fires on every pushed
+ * change (the app should just run its normal sync). Topics merge across calls.
+ * If the stream can't connect, nothing breaks — the interval poll continues.
+ */
+export function realtimeSubscribe(topics, onEvent) {
+    const list = Array.isArray(topics) ? topics : [topics];
+    for (const t of list) {
+        if (t && !_rt.topics.includes(t)) _rt.topics.push(t);
+    }
+    if (typeof onEvent === 'function') _rt.onEvent = onEvent;
+    if (!_rt.source) _rtConnect();
+    else if (_rt.clientId) _rtRegister();
+}
+
+/** True when the realtime stream is up (for diagnostics). */
+export function realtimeConnected() {
+    try {
+        return !!(_rt.source && _rt.source.readyState === EventSource.OPEN && _rt.clientId);
+    } catch (e) { return false; }
+}
+
+/** Stop the realtime stream (logout reloads the page anyway; this is for completeness). */
+export function realtimeUnsubscribe() {
+    _rt.topics = [];
+    _rt.onEvent = null;
+    _rtReset();
+}
