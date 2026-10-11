@@ -689,6 +689,22 @@ async function updateSyncPill(force, text) {
     else { pill.className = 'ok'; pill.textContent = '🟢 Synced'; }
 }
 
+/** Tap the sync pill: manual sync + show what's stuck in the queue (diagnostic). */
+window.syncNowManual = async function syncNowManual() {
+    updateSyncPill('busy', '⏳ Sync…');
+    try {
+        const res = await fullSync(true);
+        const q = await db.getAll('sync_queue').catch(() => []);
+        if (q.length) {
+            const desc = q.slice(0, 5).map((e) => `${e.op}:${e.collection}`).join(', ');
+            showToast(`🟡 ${q.length} ကျန်: ${desc}`);
+        }
+    } catch (e) {
+        showToast('❌ Sync မရပါ: ' + e.message);
+    }
+    updateSyncPill();
+};
+
 /* ================= SETTINGS ================= */
 
 async function getSetting(key, fallback) {
