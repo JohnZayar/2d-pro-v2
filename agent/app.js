@@ -13,7 +13,7 @@
  */
 
 import * as db from '../shared/db.js';
-import * as pb from '../shared/pb.js';
+import * as pb from '../shared/pb.js?v=1';
 import * as sync from '../shared/sync.js?v=7';
 import { parseBoardReport, parseLine } from '../shared/parser.js';
 import { uid, formatMoney, formatDateStr, getWeekMonday, showToast, escHtml, debounce } from '../shared/utils.js';
@@ -111,6 +111,13 @@ async function autoSyncRefresh(res) {
         await refreshSession();
         // Background sync (non-blocking) — refreshes UI when new data arrives
         sync.startAutoSync(60000, autoSyncRefresh);
+        // Realtime: winning numbers / session changes arrive in ~1-2s (60s poll stays as backup)
+        try {
+            pb.realtimeSubscribe(
+                ['winning_numbers', 'sessions', 'lottery_records'],
+                () => { sync.syncNow().then((res) => autoSyncRefresh(res)).catch(() => updateSyncPill()); }
+            );
+        } catch (e) { /* realtime optional — poll covers it */ }
         // ⏰ Session-close countdown, every 30s
         updateAgentReminders().catch(() => {});
         setInterval(() => { updateAgentReminders().catch(() => {}); }, 30000);
