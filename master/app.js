@@ -724,12 +724,13 @@ async function diagnosePush() {
     const q = await db.getAll('sync_queue').catch(() => []);
     if (!q.length) { showToast('Queue ဗလာ'); return; }
     const entry = q[0];
-    showToast(`🔍 စမ်း: ${entry.op}:${entry.collection}…`);
+    const url = pb.getBaseUrl ? pb.getBaseUrl() : 'unknown';
+    showToast(`🔍 URL: ${url}\nစမ်း: ${entry.op}:${entry.collection}…`);
     try {
         const res = await sync.testPushOne(entry);
         showToast(`✅ ရတယ်: ${res}`);
     } catch (e) {
-        showToast(`❌ Error ${e.code || '?'}: ${e.message || e}`);
+        showToast(`❌ Error ${e.code || '?'}: ${e.message || e}\nURL: ${url}`);
     }
 }
 
