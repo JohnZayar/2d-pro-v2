@@ -367,3 +367,47 @@ export function startAutoSync(intervalMs = 60000, onSync = null) {
         }, intervalMs);
     }
 }
+
+/**
+ * Disaster recovery: re-push ALL local records to the server.
+ * Use when the server database was wiped but phones still have the data.
+ * Queues every local record in the given collections as a 'create', then pushes.
+ * The server assigns fresh IDs (empty server = no conflicts).
+ * @param {string[]} collections default: data collections (not tenants/users)
+ * @returns {Promise<{queued:number, pushed:number, failed:number, errors:string[]}>}
+ */
+export async function repushAll(collections) {
+    const cols = collections || ['sessions', 'lottery_records', 'winning_numbers', 'agents', 'players'];
+    let queued = 0;
+    const errors = [];
+    for (const col of cols) {
+        let records = [];
+        try {
+            records = await db.getAll(col);
+        } catch (e) {
+            errors.push(`${col}: read failed (${e.message})`);
+            continue;
+        }
+        for (const rec of records) {
+            try {
+                // queueOp strips server metadata on push; fresh IDs assigned by server.
+                await queueOp({ op: 'create', collection: col, data: rec });
+                queued++;
+            } catch (e) {
+                errors.push(`${col}: queue failed (${e.message})`);
+            }
+        }
+    }
+    // Push everything now (queueOp's opportunistic pushes skip while _syncing).
+    let pushed = 0, failed = 0;
+    try {
+        const res = await pushPending();
+        pushed = res.pushed || 0;
+        failed = res.failed || 0;
+    } catch (e) {
+        errors.push(`push failed: ${e.message}`);
+    }
+    const lastErr = lastPushError();
+    if (lastErr) errors.push(`last push error: ${lastErr}`);
+    return { queued, pushed, failed, errors };
+}
