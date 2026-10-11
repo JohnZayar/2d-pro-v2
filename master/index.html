@@ -36,7 +36,7 @@ if ('serviceWorker' in navigator) {
         <button class="menu-icon" onclick="toggleDrawer()" aria-label="မီနူး">☰</button>
         <span class="title">🎯 2D Master Pro</span>
       </div>
-      <span id="syncPill" class="off">⏳</span>
+      <span id="syncPill" class="off" title="နှိပ်ရင် Sync လုပ်မယ်" onclick="syncNowManual()">⏳</span>
     </header>
     <div class="drawer-backdrop" id="drawerBackdrop" onclick="closeDrawer()"></div>
     <aside class="sidebar" id="sidebar">
@@ -526,6 +526,6 @@ if ('serviceWorker' in navigator) {
 
 
 </div>
-<script type="module" src="app.js?v=65"></script>
+<script type="module" src="app.js?v=66"></script>
 </body>
 </html>
