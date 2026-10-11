@@ -5,7 +5,7 @@
  */
 import * as db from '../shared/db.js';
 import * as pb from '../shared/pb.js?v=1';
-import * as sync from '../shared/sync.js?v=7';
+import * as sync from '../shared/sync.js?v=8';
 import { parseBoard, parseBoardReport, parseLine } from '../shared/parser.js';
 import {
     formatMoney, formatDateStr, getWeekMondayStr, remainingDigits,
@@ -697,7 +697,8 @@ window.syncNowManual = async function syncNowManual() {
         const q = await db.getAll('sync_queue').catch(() => []);
         if (q.length) {
             const desc = q.slice(0, 5).map((e) => `${e.op}:${e.collection}`).join(', ');
-            showToast(`🟡 ${q.length} ကျန်: ${desc}`);
+            const err = sync.lastPushError ? sync.lastPushError() : null;
+            showToast(`🟡 ${q.length} ကျန်: ${desc}${err ? ' | Err: ' + err : ''}`);
         }
     } catch (e) {
         showToast('❌ Sync မရပါ: ' + e.message);
