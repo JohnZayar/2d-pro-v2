@@ -376,8 +376,7 @@ export function startAutoSync(intervalMs = 60000, onSync = null) {
  * @param {string[]} collections default: data collections (not tenants/users)
  * @returns {Promise<{queued:number, pushed:number, failed:number, errors:string[]}>}
  */
-export async function repushAll(collections) {
-    const cols = collections || ['sessions', 'lottery_records', 'winning_numbers', 'agents', 'players'];
+export async function repushAll(collections) {    const cols = collections || ['sessions', 'lottery_records', 'winning_numbers', 'agents', 'players'];
     let queued = 0;
     const errors = [];
     for (const col of cols) {
@@ -410,4 +409,17 @@ export async function repushAll(collections) {
     const lastErr = lastPushError();
     if (lastErr) errors.push(`last push error: ${lastErr}`);
     return { queued, pushed, failed, errors };
+}
+
+/**
+ * Diagnostic: try pushing a single queue entry and return the raw result.
+ * Does NOT remove the entry from the queue. Throws on error with code/message.
+ */
+export async function testPushOne(entry) {
+    // Reuse the internal _pushOne via a direct pb call to surface the exact error.
+    const { op, collection, data } = entry;
+    if (op !== 'create') throw { code: 0, message: 'only create supported for test' };
+    const payload = _toServerPayload(data);
+    const created = await pb.create(collection, payload);
+    return `created ${collection}/${created.id}`;
 }
