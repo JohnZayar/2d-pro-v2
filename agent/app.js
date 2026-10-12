@@ -1295,6 +1295,20 @@ window.syncNowManual = async function syncNowManual() {
     updateSyncPill();
 };
 
+/** Clear local sessions and re-pull from server. */
+window.doClearSessions = async function doClearSessions() {
+    if (!confirm('Local sessions ဖျက်�ြီး server က ပြန် ဆွဲမလား?')) return;
+    const all = await db.getAll('sessions').catch(() => []);
+    for (const r of all) {
+        await db.del('sessions', r.id).catch(() => {});
+    }
+    // Clear lastPull so next sync does full pull.
+    const lp = await db.get('app_settings', 'sync:lastPull:sessions').catch(() => null);
+    if (lp) await db.del('app_settings', lp.id).catch(() => {});
+    showToast('✅ Sessions ရှင်းပြီးပြီ — Sync နှိပ်');
+    updateSyncPill();
+};
+
 /** Test pull: list sessions without filter to see if server is reachable. */
 window.doTestPull = async function doTestPull() {
     showToast('🔍 Pull စမ်းနေ…');
