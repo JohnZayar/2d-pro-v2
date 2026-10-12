@@ -1297,12 +1297,16 @@ window.syncNowManual = async function syncNowManual() {
 
 /** Test pull: list sessions without filter to see if server is reachable. */
 window.doTestPull = async function doTestPull() {
-    showToast('🔍 Pull စမ်းနေ�…');
+    showToast('🔍 Pull စမ်းနေ…');
     try {
         const items = await pb.listAll('sessions', {});
-        showToast(`✅ Sessions: ${items.length} ခု တွေ့တယ်`);
+        const local = await db.getAll('sessions').catch(() => []);
+        showToast(`✅ Server: ${items.length}, Local: ${local.length}, Tenant: ${tenantId.substring(0,8)}`);
         if (items.length > 0) {
-            console.log('First session:', JSON.stringify(items[0]).substring(0, 200));
+            console.log('First session tenant:', items[0].tenant);
+        }
+        if (local.length > 0) {
+            console.log('Local first tenant:', local[0].tenant);
         }
     } catch (e) {
         showToast(`❌ Pull မရပါ: ${e.code || e.message}`);
