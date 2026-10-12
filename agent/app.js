@@ -1286,7 +1286,8 @@ window.syncNowManual = async function syncNowManual() {
         const res = await sync.syncNow();
         const pushed = (res.push && res.push.pushed) || 0;
         const pulled = (res.pull && res.pull.pulled) || 0;
-        showToast('🔄 Sync ပြီးပြီ (↑' + pushed + ' ↓' + pulled + ')');
+        const pullErr = (res.pull && res.pull.error) ? ' ❌' + res.pull.error : '';
+        showToast('🔄 Sync ပြီးပြီ (↑' + pushed + ' ↓' + pulled + ')' + pullErr);
         await refreshSession();
         refreshActiveScreen();
     } catch (e) {
