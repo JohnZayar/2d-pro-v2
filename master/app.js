@@ -97,6 +97,8 @@ function bindUI() {
     $('syncNowBtn').addEventListener('click', () => fullSync(true));
     const repushBtn = $('repushBtn');
     if (repushBtn) repushBtn.addEventListener('click', doRepushAll);
+    const repushSessionsBtn = $('repushSessionsBtn');
+    if (repushSessionsBtn) repushSessionsBtn.addEventListener('click', doRepushSessions);
     const diagPushBtn = $('diagPushBtn');
     if (diagPushBtn) diagPushBtn.addEventListener('click', diagnosePush);
     $('logoutBtn').addEventListener('click', doLogout);
@@ -747,6 +749,23 @@ async function doRepushAll() {
         showToast(msg);
     } catch (e) {
         showToast('❌ ပြန် တင် မရပါ: ' + e.message);
+    }
+    updateSyncPill();
+}
+
+/** Repush only sessions (safe, no duplication risk for records). */
+async function doRepushSessions() {
+    if (!confirm('Sessions တွေ ကို server ကို ပြန် တင်မလား?')) return;
+    showToast('📤 Sessions တင်နေ ပြီ…');
+    updateSyncPill('busy', '⏳ Upload…');
+    try {
+        const res = await sync.repushAll(['sessions']);
+        const msg = `📤 ${res.queued} တင်, ✅ ${res.pushed} ရောက်` +
+            (res.failed ? `, ❌ ${res.failed} မရ` : '') +
+            (res.errors.length ? '\n' + res.errors.slice(0, 3).join('\n') : '');
+        showToast(msg);
+    } catch (e) {
+        showToast('❌ တင် မရပါ: ' + e.message);
     }
     updateSyncPill();
 }
