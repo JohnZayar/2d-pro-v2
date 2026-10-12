@@ -37,6 +37,17 @@ const $ = (id) => document.getElementById(id);
 
 document.addEventListener('DOMContentLoaded', init);
 
+/** Robust winning-number lookup: matches by local session ID or server _pbId, no index dependency. */
+async function _getWins(sessionId) {
+    try {
+        const all = await db.getAll('winning_numbers');
+        let pbId = null;
+        try { const s = await db.get('sessions', sessionId); if (s) pbId = s._pbId; } catch (e) {}
+        // Also check if sessionId itself is a _pbId (session pulled from server)
+        return all.filter((w) => w.session === sessionId || (pbId && w.session === pbId) || w.session === (pbId || ''));
+    } catch (e) { return []; }
+}
+
 async function init() {
     bindUI();
     pb.loadBaseUrl(); // custom server URL override (if Pho set one)
@@ -407,7 +418,7 @@ async function updateReminders() {
         const [hh, mi] = isAM ? [11, 55] : [15, 55];
         const cutoff = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hh, mi, 0);
         let wins = [];
-        try { wins = await db.query('winning_numbers', 'by_session', s.id) || []; } catch (e) {}
+        try { wins = await _getWins(s.id) || []; } catch (e) {}
         const hasWin = wins.length > 0;
         const msLeft = cutoff.getTime() - now.getTime();
         const label = sessionLabel(s);
@@ -1285,7 +1296,7 @@ async function isSessionLocked(sessionId) {
     // manually closed by bookie → locked
     if (s.closed) return { locked: true, reason: 'ဒိုင်က ပိတ်လိုက်ပြီ' };
     // winning numbers entered → locked
-    const wins = await db.query('winning_numbers', 'by_session', sessionId);
+    const wins = await _getWins(sessionId);
     if (wins && wins.length) return { locked: true, reason: 'ပေါက်ဂဏန်း ထည့်ပြီးပြီ' };
     // cutoff time
     if (s.date) {
@@ -1437,7 +1448,7 @@ async function renderLedger() {
     }
     const limit = sessionLimit(s);
     const recs = await db.query('lottery_records', 'by_session', s.id);
-    const wins = await db.query('winning_numbers', 'by_session', s.id);
+    const wins = await _getWins(s.id);
     const winNums = new Set(wins.map((w) => String(w.number).padStart(2, '0')));
 
     // person filter list (grouped: agent-synced under agent name)
@@ -1503,7 +1514,7 @@ async function saveWinning() {
     if (num.length !== 2) { showToast('ဂဏန်း ၂ လုံး ထည့်ပါ'); return; }
     const sessionId = _winSessionId;
     const weekMonday = getWeekMondayStr(new Date());
-    const existing = await db.query('winning_numbers', 'by_session', sessionId);
+    const existing = await _getWins(sessionId);
     if (existing.length) {
         existing[0].number = num;
         existing[0].week_monday = weekMonday;
@@ -1525,7 +1536,7 @@ async function renderWinningHome() {
     if (!sess.length) { box.innerHTML = '<div class="empty">ပွဲ မရှိသေးပါ</div>'; return; }
     const rows = [];
     for (const s of sess) {
-        const wins = await db.query('winning_numbers', 'by_session', s.id);
+        const wins = await _getWins(s.id);
         const num = wins.length ? String(wins[0].number).padStart(2, '0') : null;
         rows.push('<div class="agent-row"><div><div class="nm">' + escHtml(sessionLabel(s)) + '</div>' +
             '<div class="ph">' + (num
@@ -1628,7 +1639,7 @@ async function deleteAgent(id) {
 async function openDaily(sessionId) {
     const s = state.sessions.find((x) => x.id === sessionId);
     const recs = await db.query('lottery_records', 'by_session', sessionId);
-    const wins = await db.query('winning_numbers', 'by_session', sessionId);
+    const wins = await _getWins(sessionId);
     const winNum = wins.length ? String(wins[0].number).padStart(2, '0') : null;
 
     // per-person aggregation: incoming and outgoing (akan) shown as separate rows
@@ -1688,7 +1699,7 @@ let _homeDailyDate = null;
 
 async function dailySessionAgg(sessionId) {
     const recs = await db.query('lottery_records', 'by_session', sessionId);
-    const wins = await db.query('winning_numbers', 'by_session', sessionId);
+    const wins = await _getWins(sessionId);
     const winNum = wins.length ? String(wins[0].number).padStart(2, '0') : null;
     return dailyAggFromRecords(recs, winNum);
 }
@@ -1843,7 +1854,7 @@ async function renderWeekly() {
         if (dayIdx < 0) continue;
         const isAM = (s.timeType || '') === 'မနက်ပိုင်း';
         const recs = await db.query('lottery_records', 'by_session', s.id);
-        const wins = await db.query('winning_numbers', 'by_session', s.id);
+        const wins = await _getWins(s.id);
         const winNum = wins.length ? String(wins[0].number).padStart(2, '0') : null;
         for (const r of recs) {
             const isAkan = r.record_type === 'akan';
@@ -2286,7 +2297,7 @@ function openBlocked(sessionId) {
 async function openAllTotal(sessionId) {
     const s = state.sessions.find((x) => x.id === sessionId);
     const recs = await db.query('lottery_records', 'by_session', sessionId);
-    const wins = await db.query('winning_numbers', 'by_session', sessionId);
+    const wins = await _getWins(sessionId);
     const winNum = wins.length ? String(wins[0].number).padStart(2, '0') : null;
 
     // per-person: incoming and akan, grouped by voucherPersonKey (agent grouped)
@@ -2410,7 +2421,7 @@ async function renderVoucherContent() {
     }
 
     // Winning numbers for yellow highlight
-    const wins = await db.query('winning_numbers', 'by_session', sid);
+    const wins = await _getWins(sid);
     const winNums = new Set(wins.map((w) => String(w.number).padStart(2, '0')));
 
     // Group: player (first-appearance order) → batch (first-appearance order) → entry order
