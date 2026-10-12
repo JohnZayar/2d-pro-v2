@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Diag2</title></head>
+<body style="font-family:sans-serif;padding:20px">
+<h2>App Code Test</h2>
+<button id="btn" style="padding:15px 30px;font-size:18px">Test App Code</button>
+<div id="out" style="margin-top:20px;white-space:pre-wrap"></div>
+<script type="module">
+import * as pb from '../shared/pb.js?v=2';
+
+document.getElementById('btn').onclick = async () => {
+  const out = document.getElementById('out');
+  out.textContent = 'Testing with app code...\n\n';
+  try {
+    out.textContent += 'Base URL: ' + pb.getBaseUrl() + '\n';
+    pb.loadBaseUrl();
+    out.textContent += 'After loadBaseUrl: ' + pb.getBaseUrl() + '\n';
+    
+    pb.loadAuth();
+    out.textContent += 'isLoggedIn: ' + pb.isLoggedIn() + '\n';
+    
+    if (!pb.isLoggedIn()) {
+      out.textContent += 'Logging in...\n';
+      await pb.login('agent@2dpro.local', 'Agent2DPro2026Sync!');
+      out.textContent += 'Login OK\n';
+    }
+    
+    out.textContent += '\nCalling pb.listAll(sessions)...\n';
+    const items = await pb.listAll('sessions', { filter: '', sort: 'updated' });
+    out.textContent += '✅ Got ' + items.length + ' sessions\n';
+    items.slice(0, 3).forEach(s => {
+      out.textContent += '  - ' + s.name + '\n';
+    });
+  } catch (e) {
+    out.textContent += '❌ Error: ' + e.message + '\n';
+    out.textContent += 'Code: ' + (e.code || 'none') + '\n';
+  }
+};
+</script>
+</body></html>
