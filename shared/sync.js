@@ -212,12 +212,14 @@ export async function pullUpdates() {
 
     _syncing = true;
     let pulled = 0;
+    const errors = [];
     try {
         // Pull all collections in parallel — sequential pulls through the tunnel
         // made every sync cycle 6x slower than needed. Collections are independent.
         const counts = await Promise.all(SYNC_COLLECTIONS.map((collection) =>
             _pullCollection(collection).catch((err) => {
                 console.warn('[sync] pull failed for', collection, err.message);
+                errors.push(collection + ': ' + err.message);
                 return 0;
             })
         ));
@@ -225,7 +227,7 @@ export async function pullUpdates() {
     } finally {
         _syncing = false;
     }
-    return { pulled, skipped: false };
+    return { pulled, skipped: false, error: errors.length ? errors.join('; ') : null };
 }
 
 async function _pullCollection(collection) {
