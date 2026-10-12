@@ -16,6 +16,11 @@ document.getElementById('btn').onclick = async () => {
   out.textContent += 'v2_agent_session: ' + (localStorage.getItem('v2_agent_session') || '(empty)') + '\n';
   out.textContent += 'pb_server_url: ' + (localStorage.getItem('pb_server_url') || '(empty, using default)') + '\n';
   out.textContent += 'pb_auth exists: ' + (!!localStorage.getItem('pb_auth')) + '\n';
+  try {
+    const auth = JSON.parse(localStorage.getItem('pb_auth') || '{}');
+    out.textContent += 'auth email: ' + ((auth.model && auth.model.email) || '(none)') + '\n';
+    out.textContent += 'auth tenant: ' + ((auth.model && auth.model.tenant) || '(none)') + '\n';
+  } catch (e) { out.textContent += 'auth parse error\n'; }
   
   // IndexedDB sessions count
   out.textContent += '\n=== IndexedDB ===\n';
