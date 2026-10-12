@@ -169,9 +169,19 @@ async function _pushOne(entry) {
     const { op, collection, localId, data } = entry;
     const local = await db.get(collection, localId);
 
+    // Resolve local session ID → server session ID for relations.
+    // (Server expects PB IDs, not local UIDs.)
+    let payloadData = data || local;
+    if (payloadData && payloadData.session && (collection === 'winning_numbers' || collection === 'lottery_records')) {
+        const sess = await db.get('sessions', payloadData.session);
+        if (sess && sess._pbId) {
+            payloadData = Object.assign({}, payloadData, { session: sess._pbId });
+        }
+    }
+
     if (op === 'create') {
         // Don't send local-only bookkeeping fields to the server.
-        const payload = _toServerPayload(data || local);
+        const payload = _toServerPayload(payloadData);
         const created = await pb.create(collection, payload);
         // Remember the server id on the local record.
         const updatedLocal = Object.assign({}, (local || data || {}), {
@@ -185,7 +195,7 @@ async function _pushOne(entry) {
             // Never pushed before — treat as create.
             return _pushOne({ op: 'create', collection, localId, data });
         }
-        const payload = _toServerPayload(data || local);
+        const payload = _toServerPayload(payloadData);
         await pb.update(collection, pbId, payload);
     } else if (op === 'delete') {
         const pbId = (local && local._pbId) || (data && data._pbId);
@@ -258,13 +268,25 @@ async function _pullCollection(collection) {
         const local = await _findLocalByPbId(collection, item.id);
         const serverTime = Date.parse(item.updated) || 0;
         if (!local) {
-            await db.put(collection, _fromServerRecord(collection, item));
+            let rec = _fromServerRecord(collection, item);
+            // Resolve server session ID → local session ID (for winning_numbers, lottery_records).
+            // Server stores the PB session ID; local queries use the local session ID.
+            if ((collection === 'winning_numbers' || collection === 'lottery_records') && rec.session) {
+                const ls = await _findLocalByPbId('sessions', rec.session);
+                if (ls) rec.session = ls.id;
+            }
+            await db.put(collection, rec);
             count++;
         } else if (serverTime > (local._updated || 0)) {
             // Server is newer → overwrite local (last-write-wins),
             // but never lose the local `created` timestamp (Daily/Weekly need it).
             const rec = _fromServerRecord(collection, item, local.id);
             if (rec.created == null && local.created != null) rec.created = local.created;
+            // Resolve server session ID → local session ID (for winning_numbers, lottery_records).
+            if ((collection === 'winning_numbers' || collection === 'lottery_records') && rec.session) {
+                const ls = await _findLocalByPbId('sessions', rec.session);
+                if (ls) rec.session = ls.id;
+            }
             await db.put(collection, rec);
             count++;
         }
