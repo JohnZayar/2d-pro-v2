@@ -5,7 +5,7 @@
  */
 import * as db from '../shared/db.js';
 import * as pb from '../shared/pb.js?v=1';
-import * as sync from '../shared/sync.js?v=10';
+import * as sync from '../shared/sync.js?v=11';
 import { parseBoard, parseBoardReport, parseLine } from '../shared/parser.js';
 import {
     formatMoney, formatDateStr, getWeekMondayStr, remainingDigits,
