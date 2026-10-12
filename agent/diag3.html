@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Diag3</title></head>
+<body style="font-family:sans-serif;padding:20px">
+<h2>DB Write Test</h2>
+<button id="btn" style="padding:15px 30px;font-size:18px">Test DB</button>
+<div id="out" style="margin-top:20px;white-space:pre-wrap"></div>
+<script type="module">
+import * as pb from '../shared/pb.js?v=2';
+import * as db from '../shared/db.js?v=1';
+
+document.getElementById('btn').onclick = async () => {
+  const out = document.getElementById('out');
+  out.textContent = 'Testing DB write...\n\n';
+  try {
+    await db.openDB();
+    out.textContent += '✅ DB opened\n';
+    
+    pb.loadBaseUrl(); pb.loadAuth();
+    if (!pb.isLoggedIn()) {
+      await pb.login('agent@2dpro.local', 'Agent2DPro2026Sync!');
+      out.textContent += '✅ Login OK\n';
+    }
+    
+    const items = await pb.listAll('sessions', { filter: '', sort: 'updated' });
+    out.textContent += '✅ Got ' + items.length + ' from server\n';
+    
+    if (items.length > 0) {
+      const item = items[0];
+      out.textContent += '\nTrying to put: ' + item.name + '\n';
+      out.textContent += 'Item ID: ' + item.id + '\n';
+      
+      const rec = {
+        _pbId: item.id,
+        id: item.id,
+        name: item.name,
+        is_open: item.is_open,
+        _updated: Date.now()
+      };
+      
+      try {
+        await db.put('sessions', rec);
+        out.textContent += '✅ db.put succeeded\n';
+      } catch (e) {
+        out.textContent += '❌ db.put FAILED: ' + e.message + '\n';
+        out.textContent += 'Error name: ' + e.name + '\n';
+      }
+      
+      const all = await db.getAll('sessions');
+      out.textContent += '\nSessions in DB now: ' + all.length + '\n';
+    }
+  } catch (e) {
+    out.textContent += '❌ Error: ' + e.message + '\n';
+  }
+};
+</script>
+</body></html>
