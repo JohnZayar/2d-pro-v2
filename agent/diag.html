@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Diagnostic</title></head>
+<body style="font-family:sans-serif;padding:20px">
+<h2>Agent Diagnostic</h2>
+<button id="btn" style="padding:15px 30px;font-size:18px">Check</button>
+<div id="out" style="margin-top:20px;white-space:pre-wrap"></div>
+<script>
+document.getElementById('btn').onclick = async () => {
+  const out = document.getElementById('out');
+  out.textContent = 'Checking...\n\n';
+  
+  // localStorage
+  out.textContent += '=== localStorage ===\n';
+  out.textContent += 'v2_agent_tenant: ' + (localStorage.getItem('v2_agent_tenant') || '(empty)') + '\n';
+  out.textContent += 'v2_agent_name: ' + (localStorage.getItem('v2_agent_name') || '(empty)') + '\n';
+  out.textContent += 'v2_agent_session: ' + (localStorage.getItem('v2_agent_session') || '(empty)') + '\n';
+  out.textContent += 'pb_server_url: ' + (localStorage.getItem('pb_server_url') || '(empty, using default)') + '\n';
+  out.textContent += 'pb_auth exists: ' + (!!localStorage.getItem('pb_auth')) + '\n';
+  
+  // IndexedDB sessions count
+  out.textContent += '\n=== IndexedDB ===\n';
+  try {
+    const req = indexedDB.open('2dProV2', 2);
+    req.onsuccess = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains('sessions')) {
+        out.textContent += 'sessions store: NOT FOUND\n';
+        return;
+      }
+      const tx = db.transaction('sessions', 'readonly');
+      const store = tx.objectStore('sessions');
+      const countReq = store.count();
+      countReq.onsuccess = () => {
+        out.textContent += 'sessions in DB: ' + countReq.result + '\n';
+        if (countReq.result > 0) {
+          const getAll = store.getAll();
+          getAll.onsuccess = () => {
+            getAll.result.slice(0, 3).forEach(s => {
+              out.textContent += '  - ' + (s.name || s.id) + ' (is_open: ' + s.is_open + ')\n';
+            });
+          };
+        }
+      };
+      countReq.onerror = () => out.textContent += 'count error\n';
+    };
+    req.onerror = () => out.textContent += 'DB open error\n';
+  } catch (e) {
+    out.textContent += 'DB error: ' + e.message + '\n';
+  }
+};
+</script>
+</body></html>
