@@ -1301,13 +1301,10 @@ window.doTestPull = async function doTestPull() {
     try {
         const items = await pb.listAll('sessions', {});
         const local = await db.getAll('sessions').catch(() => []);
-        showToast(`✅ Server: ${items.length}, Local: ${local.length}, Tenant: ${tenantId.substring(0,8)}`);
-        if (items.length > 0) {
-            console.log('First session tenant:', items[0].tenant);
-        }
-        if (local.length > 0) {
-            console.log('Local first tenant:', local[0].tenant);
-        }
+        const sTenant = items.length > 0 ? String(items[0].tenant || '').substring(0, 8) : 'none';
+        const myTenant = String(tenantId || '').substring(0, 8);
+        const match = sTenant === myTenant ? '✅တူ' : '❌မတူ';
+        showToast(`Server:${items.length} Local:${local.length} ${match} S:${sTenant} M:${myTenant}`);
     } catch (e) {
         showToast(`❌ Pull မရပါ: ${e.code || e.message}`);
     }
