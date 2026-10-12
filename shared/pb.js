@@ -75,11 +75,16 @@ export function getUser() {
 }
 
 export function isLoggedIn() {
+    // Load from localStorage in case this module instance hasn't loaded yet
+    // (app.js and sync.js may be different instances due to ?v= cache busting).
+    if (!_auth) loadAuth();
     return !!(_auth && _auth.token);
 }
 
 /** Internal fetch helper: JSON in/out, auth header attached when logged in. */
 async function _req(method, path, body) {
+    // Ensure auth loaded (module instance may differ from app.js due to ?v=).
+    if (!_auth) loadAuth();
     const headers = { 'Content-Type': 'application/json' };
     if (_auth && _auth.token) headers['Authorization'] = _auth.token;
 
