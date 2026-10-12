@@ -33,6 +33,7 @@ const SYNC_COLLECTIONS = [
 ];
 
 let _syncing = false;
+let _pushAgain = false;
 let _onlineHandlerAttached = false;
 
 export function isSyncing() {
@@ -82,13 +83,20 @@ export async function mutate(op, collection, obj) {
  * (except unrecoverable 4xx errors, which are dropped to avoid poison).
  */
 export async function pushPending() {
-    if (_syncing) return { pushed: 0, failed: 0, skipped: true };
+    if (_syncing) {
+        // A push is already running; mark that another is needed after it finishes
+        // (prevents lost pushes when many mutates happen in quick succession).
+        _pushAgain = true;
+        return { pushed: 0, failed: 0, skipped: true };
+    }
     if (!pb.isLoggedIn()) return { pushed: 0, failed: 0, skipped: true, reason: 'not-logged-in' };
 
     _syncing = true;
     let pushed = 0, failed = 0;
     try {
-        const queue = (await db.getAll('sync_queue'))
+        do {
+            _pushAgain = false;
+            const queue = (await db.getAll('sync_queue'))
             .sort((a, b) => (a.created || 0) - (b.created || 0));
 
         // Bulk 'create' ops (the common case: dozens of numbers saved at once)
@@ -111,8 +119,10 @@ export async function pushPending() {
             else if (outcome === 'failed') { failed++; break; } // transient: keep order, retry next cycle
             // 'dropped': removed from queue, continue
         }
+        } while (_pushAgain);
     } finally {
         _syncing = false;
+        _pushAgain = false;
     }
     return { pushed, failed, skipped: false };
 }
