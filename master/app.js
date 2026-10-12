@@ -95,12 +95,6 @@ function bindUI() {
     $('agSave').addEventListener('click', saveAgent);
 
     $('syncNowBtn').addEventListener('click', () => fullSync(true));
-    const repushBtn = $('repushBtn');
-    if (repushBtn) repushBtn.addEventListener('click', doRepushAll);
-    const repushSessionsBtn = $('repushSessionsBtn');
-    if (repushSessionsBtn) repushSessionsBtn.addEventListener('click', doRepushSessions);
-    const diagPushBtn = $('diagPushBtn');
-    if (diagPushBtn) diagPushBtn.addEventListener('click', diagnosePush);
     $('logoutBtn').addEventListener('click', doLogout);
     $('buyerCreateBtn').addEventListener('click', createBuyerAccount);
     const buyerRefreshBtn = $('buyerRefreshBtn');
