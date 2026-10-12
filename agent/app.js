@@ -1544,8 +1544,7 @@ async function renderDailyTable(recs, dateKeyStr) {
         let sessBet = 0, sessWin = 0;
         for (const k of pOrder) {
             const pRecs = byPlayer[k];
-            const info = getInfo(k);
-            const bet = pRecs.reduce((s, r) => s + (Number(r.amount) || 0) * (1 - info.commission / 100), 0);
+            const bet = pRecs.reduce((s, r) => s + (Number(r.amount) || 0), 0);
             const win = pRecs
                 .filter((r) => winNums.has(String(r.number).padStart(2, '0')))
                 .reduce((s, r) => s + (Number(r.amount) || 0), 0);
