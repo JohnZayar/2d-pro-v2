@@ -1295,6 +1295,21 @@ window.syncNowManual = async function syncNowManual() {
     updateSyncPill();
 };
 
+/** Test pull: list sessions without filter to see if server is reachable. */
+window.doTestPull = async function doTestPull() {
+    showToast('🔍 Pull စမ်းနေ�…');
+    try {
+        const items = await pb.listAll('sessions', {});
+        showToast(`✅ Sessions: ${items.length} ခု တွေ့တယ်`);
+        if (items.length > 0) {
+            console.log('First session:', JSON.stringify(items[0]).substring(0, 200));
+        }
+    } catch (e) {
+        showToast(`❌ Pull မရပါ: ${e.code || e.message}`);
+    }
+    updateSyncPill();
+};
+
 /** Reset sync state: clear lastPull timestamps so next pull fetches everything. */
 window.doResetSync = async function doResetSync() {
     if (!confirm('Sync state ပြန် စ မလား? (နောက် sync မှာ အကုန် ပြန် ဆွဲမယ်)')) return;
