@@ -4,8 +4,8 @@
  * PocketBase syncs in the background.
  */
 import * as db from '../shared/db.js';
-import * as pb from '../shared/pb.js?v=2';
-import * as sync from '../shared/sync.js?v=12';
+import * as pb from '../shared/pb.js?v=3';
+import * as sync from '../shared/sync.js?v=13';
 import { parseBoard, parseBoardReport, parseLine } from '../shared/parser.js';
 import {
     formatMoney, formatDateStr, getWeekMondayStr, remainingDigits,
