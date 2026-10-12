@@ -208,6 +208,9 @@ function _toServerPayload(obj) {
  */
 export async function pullUpdates() {
     if (_syncing) return { pulled: 0, skipped: true };
+    // Ensure auth is loaded in this module instance (app.js and sync.js may
+    // have different module instances due to ?v= cache busting; localStorage is shared).
+    try { pb.loadAuth(); } catch (e) { /* ignore */ }
     if (!pb.isLoggedIn()) return { pulled: 0, skipped: true, reason: 'not-logged-in' };
 
     _syncing = true;
