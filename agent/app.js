@@ -49,7 +49,7 @@ async function isAgentSessionLocked(sessionId) {
         if (!s) return { locked: false };
         // manually closed by bookie → locked
         if (s.closed) return { locked: true, reason: 'အချိန်ပြည့်လို့ပိတ်သွားပါပြီ' };
-        const wins = await db.query('winning_numbers', 'by_session', sessionId);
+        const wins = await _getWins(sessionId);
         if (wins && wins.length) return { locked: true, reason: 'ပေါက်ဂဏန်း ထည့်ပြီးပြီ' };
         if (s.date) {
             const isAM = (s.timeType || '') === 'မနက်ပိုင်း';
@@ -71,6 +71,16 @@ async function isAgentSessionLocked(sessionId) {
 /* ================= Boot ================= */
 
 document.addEventListener('DOMContentLoaded', init);
+
+/** Robust winning-number lookup: matches by local session ID or server _pbId, no index dependency. */
+async function _getWins(sessionId) {
+    try {
+        const all = await db.getAll('winning_numbers');
+        let pbId = null;
+        try { const s = await db.get('sessions', sessionId); if (s) pbId = s._pbId; } catch (e) {}
+        return all.filter((w) => w.session === sessionId || (pbId && w.session === pbId));
+    } catch (e) { return []; }
+}
 
 async function init() {
     pb.loadBaseUrl(); // custom server URL override (if Pho set one)
@@ -246,7 +256,7 @@ async function refreshSession() {
             // Prominent winning-number display: 🏆 67 — so agents see it the moment it syncs in.
             let winHtml = '';
             try {
-                const wins = await db.query('winning_numbers', 'by_session', pick.id);
+                const wins = await _getWins(pick.id);
                 if (wins && wins.length) {
                     winHtml = ' &nbsp;🏆 <b>' + wins.map((w) => escHtml(String(w.number).padStart(2, '0'))).join(' ') + '</b>';
                     // 🔔 NEW winning number alert (first sighting only)
@@ -863,7 +873,7 @@ window.renderRecordsView = async function renderRecordsView() {
     // Winning numbers for yellow highlight
     let winNums = new Set();
     try {
-        const wins = await db.query('winning_numbers', 'by_session', sessId);
+        const wins = await _getWins(sessId);
         winNums = new Set(wins.map((w) => String(w.number).padStart(2, '0')));
     } catch (e) { /* ignore */ }
 
@@ -1499,7 +1509,7 @@ async function renderDailyTable(recs, dateKeyStr) {
     const winBySess = {};
     for (const sid of sessIds) {
         try {
-            const wins = await db.query('winning_numbers', 'by_session', sid);
+            const wins = await _getWins(sid);
             winBySess[sid] = new Set(wins.map((w) => String(w.number).padStart(2, '0')));
         } catch (e) { winBySess[sid] = new Set(); }
     }
@@ -1577,7 +1587,7 @@ async function renderPlayerGroups(recs, emptyMsg) {
     const winNums = new Set();
     for (const sid of sessIds) {
         try {
-            const wins = await db.query('winning_numbers', 'by_session', sid);
+            const wins = await _getWins(sid);
             wins.forEach((w) => winNums.add(String(w.number).padStart(2, '0')));
         } catch (e) { /* ignore */ }
     }
@@ -1675,7 +1685,7 @@ window.renderWeekly = async function renderWeekly() {
     const winBySess = {};
     for (const sid of sessIds) {
         try {
-            const wins = await db.query('winning_numbers', 'by_session', sid);
+            const wins = await _getWins(sid);
             winBySess[sid] = new Set(wins.map((w) => String(w.number).padStart(2, '0')));
         } catch (e) { winBySess[sid] = new Set(); }
     }
