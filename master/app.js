@@ -2085,10 +2085,24 @@ async function cleanupOldWinnings() {
         const all = await db.getAll('winning_numbers');
         const tenWeeksAgo = new Date();
         tenWeeksAgo.setDate(tenWeeksAgo.getDate() - 70);
-        const cutoffStr = tenWeeksAgo.toISOString().split('T')[0];
+        const cutoff = tenWeeksAgo.getTime();
         for (const w of all) {
-            const wDate = w.week_monday || (w.created ? new Date(w.created).toISOString().split('T')[0] : null);
-            if (wDate && wDate < cutoffStr) {
+            let wTime = null;
+            const wm = w.week_monday;
+            if (wm) {
+                // week_monday is DD.MM.YYYY (from formatDateStr); parse it correctly.
+                const m = String(wm).match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+                if (m) {
+                    wTime = new Date(parseInt(m[3]), parseInt(m[2]) - 1, parseInt(m[1])).getTime();
+                } else {
+                    // Fallback: try ISO YYYY-MM-DD
+                    const t = Date.parse(wm);
+                    if (!isNaN(t)) wTime = t;
+                }
+            } else if (w.created) {
+                wTime = typeof w.created === 'number' ? w.created : Date.parse(w.created);
+            }
+            if (wTime && wTime < cutoff) {
                 await deleteRecord('winning_numbers', w);
             }
         }
