@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Diag4</title></head>
+<body style="font-family:sans-serif;padding:20px">
+<h2>Sync Test</h2>
+<button id="btn" style="padding:15px 30px;font-size:18px">Test Sync</button>
+<div id="out" style="margin-top:20px;white-space:pre-wrap"></div>
+<script type="module">
+import * as pb from '../shared/pb.js?v=2';
+import * as db from '../shared/db.js?v=1';
+import * as sync from '../shared/sync.js?v=12';
+
+document.getElementById('btn').onclick = async () => {
+  const out = document.getElementById('out');
+  out.textContent = 'Testing sync.pullUpdates()...\n\n';
+  try {
+    await db.openDB();
+    out.textContent += '✅ DB opened\n';
+    pb.loadBaseUrl(); pb.loadAuth();
+    out.textContent += 'isLoggedIn: ' + pb.isLoggedIn() + '\n';
+    
+    if (!pb.isLoggedIn()) {
+      await pb.login('agent@2dpro.local', 'Agent2DPro2026Sync!');
+      out.textContent += '✅ Login OK\n';
+    }
+    
+    out.textContent += '\nCalling sync.pullUpdates()...\n';
+    const res = await sync.pullUpdates();
+    out.textContent += 'Result: ' + JSON.stringify(res) + '\n';
+    
+    const sessions = await db.getAll('sessions');
+    out.textContent += '\nSessions in DB: ' + sessions.length + '\n';
+  } catch (e) {
+    out.textContent += '❌ Error: ' + e.message + '\n';
+    out.textContent += e.stack + '\n';
+  }
+};
+</script>
+</body></html>
