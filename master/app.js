@@ -4,7 +4,7 @@
  * PocketBase syncs in the background.
  */
 import * as db from '../shared/db.js';
-import * as pb from '../shared/pb.js?v=1';
+import * as pb from '../shared/pb.js?v=2';
 import * as sync from '../shared/sync.js?v=12';
 import { parseBoard, parseBoardReport, parseLine } from '../shared/parser.js';
 import {
