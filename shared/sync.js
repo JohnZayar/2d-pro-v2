@@ -231,7 +231,8 @@ export async function pullUpdates() {
 async function _pullCollection(collection) {
     const lastPull = await _getLastPull(collection);
     // PocketBase `updated` is an ISO datetime string.
-    const filter = lastPull ? `updated > "${lastPull}"` : '';
+    // Sessions: always full pull (small collection, avoids watermark issues).
+    const filter = (collection === 'sessions' || !lastPull) ? '' : `updated > "${lastPull}"`;
     const items = await pb.listAll(collection, { filter, sort: 'updated' });
 
     let count = 0;
