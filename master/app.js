@@ -283,7 +283,8 @@ async function renderBuyerList() {
     try {
         // Fetch all users (seller-only API rule allows this)
         const users = await pb.list('users', { perPage: 100 });
-        const buyers = (users.items || users).filter((u) => u.email !== 'johnzyt7@gmail.com');
+        // Exclude Pho himself and per-tenant agent accounts (agent_<id>@2dpro.local)
+        const buyers = (users.items || users).filter((u) => u.email !== 'johnzyt7@gmail.com' && !/^agent_.*@2dpro\.local$/.test(u.email || ''));
         if (!buyers.length) {
             box.innerHTML = '<div class="muted">Buyer မရှိသေးပါ</div>';
             return;
@@ -307,9 +308,24 @@ async function renderBuyerList() {
 
 window.toggleBuyerDisabled = async function toggleBuyerDisabled(userId, disable) {
     const action = disable ? 'ပိတ်' : 'ဖွင့်';
-    if (!confirm('ဒီ buyer ကို ' + action + 'မလား?')) return;
+    if (!confirm('ဒီ buyer ကို ' + action + 'မလား? (agent လည်း ' + action + 'မယ်)')) return;
     try {
         await pb.update('users', userId, { disabled: disable });
+        // Also disable/enable the tenant's agent account
+        try {
+            const buyer = await pb.getOne('users', userId);
+            const tenantId = buyer.tenant;
+            if (tenantId) {
+                const agentEmail = agentEmailFor(tenantId);
+                const agents = await pb.list('users', { filter: `email="${agentEmail}"`, perPage: 1 });
+                const agent = (agents.items || agents)[0];
+                if (agent) {
+                    await pb.update('users', agent.id, { disabled: disable });
+                }
+            }
+        } catch (e) {
+            console.warn('Agent toggle failed:', e.message);
+        }
         showToast(disable ? '🔴 ပိတ်ပြီးပြီ' : '🟢 ဖွင့်ပြီးပြီ');
         renderBuyerList();
     } catch (e) {
