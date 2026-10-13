@@ -126,3 +126,15 @@ export function escHtml(s) {
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
 }
+
+/**
+ * Per-tenant agent account credentials, derived deterministically from the
+ * tenant's link code (which IS the tenant's PocketBase ID).
+ * The link code is the secret; the password is just a PocketBase formality.
+ */
+export function agentEmailFor(linkCode) {
+    return `agent_${linkCode}@2dpro.local`;
+}
+export function agentPasswordFor(linkCode) {
+    return `Ag2D_${linkCode}`;
+}
