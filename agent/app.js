@@ -775,6 +775,16 @@ window.submitEntry = async function submitEntry() {
     allowedItems.forEach((it) => {
         if (addPendingUnique(playerName, it.number, it.amount)) addedCount++;
     });
+    // Safety net: remove exact duplicates
+    {
+        const seenK = new Set();
+        pendingEntries = pendingEntries.filter((e) => {
+            const key = (e.player_name || '') + '|' + String(e.number).padStart(2, '0') + '|' + (Number(e.amount) || 0);
+            if (seenK.has(key)) return false;
+            seenK.add(key);
+            return true;
+        });
+    }
     if (addedCount < allowedItems.length) {
         showToast('⚠️ ထပ်နေတာ ' + (allowedItems.length - addedCount) + ' ကွက် ကျော်လိုက်တယ်');
     }
@@ -1296,6 +1306,14 @@ window.saveBoard = async function saveBoard() {
         let addedBoard = 0;
         allowedBoard.forEach((it) => {
             if (addPendingUnique(playerName, it.number, it.amount)) addedBoard++;
+        });
+        // Final dedup: remove any exact duplicates from pending (safety net)
+        const seen = new Set();
+        pendingEntries = pendingEntries.filter((e) => {
+            const key = (e.player_name || '') + '|' + String(e.number).padStart(2, '0') + '|' + (Number(e.amount) || 0);
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
         });
         if (addedBoard < allowedBoard.length) {
             showToast('⚠️ ထပ်နေတာ ' + (allowedBoard.length - addedBoard) + ' ကွက် ကျော်လိုက်တယ်');
