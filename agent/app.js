@@ -736,6 +736,7 @@ window.submitEntry = async function submitEntry() {
     const lkE = await isAgentSessionLocked(currentSessionId);
     if (lkE.locked) { showToast('🔒 ' + lkE.reason + ' — တင် မရပါ'); return; }
     const playerName = $('entryPlayerSelect').value || null;
+    if (!playerName) { showToast('❌ အမည် ရွေးပါ (မရွေးရင် တင်မရ)'); return; }
     const noText = boxNo().value.trim();
     const amtText = boxAmt().value.trim().replace(/[^\d]/g, '');
     const revText = boxRev().value.trim();
@@ -803,6 +804,8 @@ window.submitEntry = async function submitEntry() {
 window.savePendingBatch = async function savePendingBatch() {
     if (saveInFlight) return;
     if (!pendingEntries.length) { showToast('စာရင်း မရှိသေးပါ'); return; }
+    // Block if any pending entry has no player name
+    if (pendingEntries.some((e) => !(e.player_name || '').trim())) { showToast('❌ အမည် မပါ တဲ့ စာရင်း ရှိ — ဖျက် ပြီး ပြန် ထည့်'); return; }
     if (!currentSessionId) { showToast('⚠️ Session မရှိသေးပါ'); return; }
     const lkS = await isAgentSessionLocked(currentSessionId);
     if (lkS.locked) { showToast('🔒 ' + lkS.reason + ' — သိမ်း မရပါ'); return; }
@@ -1278,6 +1281,7 @@ window.saveBoard = async function saveBoard() {
     saveInFlight = true;
     try {
         const playerName = $('boardPlayer').value || null;
+        if (!playerName) { saveInFlight = false; showToast('❌ အမည် ရွေးပါ (မရွေးရင် တင်မရ)'); return; }
         // Strict per-line: only fully-valid lines are entered. Bad lines stay
         // on the board for fixing — never guess-entered.
         const okItems = [];
