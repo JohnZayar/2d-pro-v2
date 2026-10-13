@@ -135,8 +135,8 @@ export async function login(email, password) {
 
 /** Log out: clear local auth state (also tries server-side invalidation). */
 export async function logout() {
-    // Best-effort server logout; ignore failures (e.g. offline).
-    try { await _req('POST', '/api/collections/users/auth-refresh'); } catch (e) { /* ignore */ }
+    // PocketBase token auth has no server-side invalidation; clearing local
+    // auth is what actually logs out. No server call needed.
     _saveAuth(null);
 }
 
