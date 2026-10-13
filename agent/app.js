@@ -12,9 +12,9 @@
  * Batches keep entry order — never re-sorted — so they match what was sent.
  */
 
-import * as db from '../shared/db.js';
+import * as db from '../shared/db.js?v=2';
 import * as pb from '../shared/pb.js?v=3';
-import * as sync from '../shared/sync.js?v=16';
+import * as sync from '../shared/sync.js?v=17';
 import { parseBoardReport, parseLine } from '../shared/parser.js';
 import { uid, formatMoney, formatDateStr, getWeekMonday, showToast, escHtml, debounce } from '../shared/utils.js';
 
@@ -230,10 +230,12 @@ function showLinkError(msg) {
 }
 
 window.disconnectAgent = function disconnectAgent() {
-    if (!confirm('ထွက်မှာလား? (local စာရင်းတွေ ဖုန်းထဲ ကျန်မယ်)')) return;
+    if (!confirm('ထွက်မှာလား?')) return;
     localStorage.removeItem(LS_TENANT);
     localStorage.removeItem(LS_AGENT_NAME);
     localStorage.removeItem(LS_SESSION);
+    // Clear IndexedDB so the next tenant doesn't see previous tenant's data.
+    try { indexedDB.deleteDatabase('2dProV2'); } catch (e) { /* ignore */ }
     location.reload();
 };
 
@@ -700,8 +702,8 @@ window.submitEntry = async function submitEntry() {
 
     const { items, invalidLines } = parseBoardReport(line);
     // Guard: the parser can echo unknown formula text into "numbers"
-    // (e.g. 12ဖုံ → "12ဖုံ"). Only accept real 2-digit numbers.
-    const validItems = items.filter((it) => /^\d{2}$/.test(String(it.number)));
+    // (e.g. 12ဖုံ → "12ဖုံ"). Only accept real 2-digit numbers with amount > 0.
+    const validItems = items.filter((it) => /^\d{2}$/.test(String(it.number)) && (Number(it.amount) || 0) > 0);
     if (!validItems.length) {
         showToast('❌ ဖော်မြူလာ မသိပါ (ဂဏန်း မှားနေတယ်)' + (invalidLines.length ? ': ' + invalidLines[0] : ''));
         return;
