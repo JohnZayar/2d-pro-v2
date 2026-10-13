@@ -11,7 +11,7 @@ import {
     formatMoney, formatDateStr, getWeekMondayStr, remainingDigits,
     uid, showToast, escHtml, extractDigits, agentEmailFor, agentPasswordFor,
     agentEmailForNum, agentPasswordForNum, agentCodeFor, parseAgentCode
-} from '../shared/utils.js?v=3';
+} from '../shared/utils.js?v=4';
 
 // Global safety net: log unhandled promise rejections instead of failing silently.
 if (typeof window !== 'undefined') {
@@ -293,12 +293,26 @@ async function renderBuyerList() {
             box.innerHTML = '<div class="muted">Buyer မရှိသေးပါ</div>';
             return;
         }
-        let html = '<table class="v-table"><thead><tr><th>Email</th><th>ဆိုင်</th><th>အခြေအနေ</th><th></th></tr></thead><tbody>';
+        let html = '<table class="v-table"><thead><tr><th>Email</th><th>ဆိုင်</th><th>Agent</th><th>အခြေအနေ</th><th></th></tr></thead><tbody>';
         for (const b of buyers) {
             const disabled = !!b.disabled;
+            const tenantId = b.tenant;
+            const agentLimit = tenantId ? await getAgentLimit(tenantId) : DEFAULT_MAX_AGENTS;
+            // Count existing agents
+            let agentCount = 0;
+            if (tenantId) {
+                for (let n = 1; n <= agentLimit; n++) {
+                    try {
+                        const email = agentEmailForNum(tenantId, n);
+                        const res = await pb.list('users', { filter: `email="${email}"`, perPage: 1 });
+                        if ((res.items || res)[0]) agentCount++;
+                    } catch (e) { /* skip */ }
+                }
+            }
             html += '<tr>' +
                 '<td>' + escHtml(b.email) + '</td>' +
                 '<td>' + escHtml(b.name || '') + '</td>' +
+                '<td><button class="btn small gray" onclick="editAgentLimit(\'' + b.id + '\',\'' + (tenantId || '') + '\',' + agentLimit + ')">' + agentCount + '/' + agentLimit + ' ✏️</button></td>' +
                 '<td>' + (disabled ? '<span style="color:#ef4444">🔴 ပိတ်</span>' : '<span style="color:#4ade80">🟢 ဖွင့်</span>') + '</td>' +
                 '<td><button class="btn small ' + (disabled ? 'gray' : 'red') + '" onclick="toggleBuyerDisabled(\'' + b.id + '\',' + (!disabled) + ')">' + (disabled ? 'ဖွင့်' : 'ပိတ်') + '</button></td>' +
                 '</tr>';
@@ -2914,8 +2928,36 @@ window.saveAkanBatch = async function saveAkanBatch() {
     }
 };
 
-/* ============ AGENT MANAGEMENT (5 per buyer max) ============ */
-const MAX_AGENTS_PER_BUYER = 5;
+/* ============ AGENT MANAGEMENT (default 5 per buyer, Pho can raise) ============ */
+const DEFAULT_MAX_AGENTS = 5;
+
+async function getAgentLimit(tenantId) {
+    try {
+        const key = `agent_limit_${tenantId}`;
+        const rec = await pb.list('app_settings', { filter: `key="${key}"`, perPage: 1 });
+        const item = (rec.items || rec)[0];
+        if (item && item.value) {
+            const n = parseInt(item.value, 10);
+            if (n >= 1 && n <= 99) return n;
+        }
+    } catch (e) { /* ignore */ }
+    return DEFAULT_MAX_AGENTS;
+}
+
+async function setAgentLimit(tenantId, limit) {
+    const key = `agent_limit_${tenantId}`;
+    try {
+        const rec = await pb.list('app_settings', { filter: `key="${key}"`, perPage: 1 });
+        const item = (rec.items || rec)[0];
+        if (item) {
+            await pb.update('app_settings', item.id, { value: String(limit) });
+        } else {
+            await pb.create('app_settings', { key, value: String(limit), tenant: tenantId });
+        }
+    } catch (e) {
+        showToast('❌ ' + (e.message || 'error'));
+    }
+}
 
 async function renderAgentList() {
     const box = $('agentList');
@@ -2927,9 +2969,10 @@ async function renderAgentList() {
     }
     try {
         box.innerHTML = '<div class="muted">ရှာနေတယ်…</div>';
+        const maxAgents = await getAgentLimit(tenantId);
         let html = '<table class="v-table"><thead><tr><th>Agent</th><th>Code</th><th>အခြေအနေ</th><th></th></tr></thead><tbody>';
         let count = 0;
-        for (let n = 1; n <= MAX_AGENTS_PER_BUYER; n++) {
+        for (let n = 1; n <= maxAgents; n++) {
             try {
                 const email = agentEmailForNum(tenantId, n);
                 const res = await pb.list('users', { filter: `email="${email}"`, perPage: 1 });
@@ -2948,10 +2991,10 @@ async function renderAgentList() {
         }
         html += '</tbody></table>';
         if (!count) html = '<div class="muted">Agent မရှိသေးပါ</div>';
-        else html += `<div class="small muted mt">${count}/${MAX_AGENTS_PER_BUYER} သုံး ပြီးပြီ</div>`;
+        else html += `<div class="small muted mt">${count}/${maxAgents} သုံး ပြီးပြီ</div>`;
         box.innerHTML = html;
         const btn = $('agentCreateBtn');
-        if (btn) btn.disabled = count >= MAX_AGENTS_PER_BUYER;
+        if (btn) btn.disabled = count >= maxAgents;
     } catch (e) {
         box.innerHTML = '<div class="muted">မရဘူး: ' + escHtml(e.message || 'error') + '</div>';
     }
@@ -2975,9 +3018,10 @@ window.createAgentAccount = async function createAgentAccount() {
         showToast('❌ Tenant မရှိပါ');
         return;
     }
+    const maxAgents = await getAgentLimit(tenantId);
     // Find the next available agent number
     let nextNum = 0;
-    for (let n = 1; n <= MAX_AGENTS_PER_BUYER; n++) {
+    for (let n = 1; n <= maxAgents; n++) {
         try {
             const email = agentEmailForNum(tenantId, n);
             const res = await pb.list('users', { filter: `email="${email}"`, perPage: 1 });
@@ -2986,7 +3030,7 @@ window.createAgentAccount = async function createAgentAccount() {
         } catch (e) { /* skip */ }
     }
     if (!nextNum) {
-        showToast(`❌ Agent ${MAX_AGENTS_PER_BUYER} ယောက် ပြည့်ပြီ — Pho စီ လာ ပြော ပါ`);
+        showToast(`❌ Agent ${maxAgents} ယောက် ပြည့်ပြီ — Pho စီ လာ ပြော ပါ`);
         return;
     }
     const agentName = prompt(`Agent ${nextNum} နာမည်:`, `Agent ${nextNum}`);
@@ -3007,4 +3051,22 @@ window.createAgentAccount = async function createAgentAccount() {
     } catch (e) {
         showToast('❌ ' + (e.message || 'error'));
     }
+};
+
+/* Pho: Edit agent limit for a buyer */
+window.editAgentLimit = async function editAgentLimit(buyerId, tenantId, currentLimit) {
+    if (!tenantId) {
+        showToast('❌ Tenant မရှိပါ');
+        return;
+    }
+    const input = prompt(`Agent limit (ခု ${currentLimit}):`, String(currentLimit));
+    if (!input) return;
+    const n = parseInt(input, 10);
+    if (isNaN(n) || n < 1 || n > 99) {
+        showToast('❌ 1-99 ကြား ထည့်ပါ');
+        return;
+    }
+    await setAgentLimit(tenantId, n);
+    showToast(`✅ Agent limit → ${n}`);
+    renderBuyerList();
 };
