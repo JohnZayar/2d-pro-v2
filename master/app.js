@@ -1559,22 +1559,30 @@ function openWinning(sessionId) {
 }
 
 async function saveWinning() {
-    let num = $('winNumber').value.replace(/\D/g, '').slice(0, 2);
-    if (num.length !== 2) { showToast('ဂဏန်း ၂ လုံး ထည့်ပါ'); return; }
-    const sessionId = _winSessionId;
-    const weekMonday = getWeekMondayStr(new Date());
-    const existing = await _getWins(sessionId);
-    if (existing.length) {
-        existing[0].number = num;
-        existing[0].week_monday = weekMonday;
-        await updateRecord('winning_numbers', existing[0]);
-    } else {
-        await createRecord('winning_numbers', { session: sessionId, number: num, week_monday: weekMonday });
+    const btn = $('winSave');
+    if (btn && btn.disabled) return; // Already saving — prevent double-tap
+    if (btn) { btn.disabled = true; btn.textContent = 'သိမ်းနေတယ်…'; }
+    try {
+        let num = $('winNumber').value.replace(/\D/g, '').slice(0, 2);
+        if (num.length !== 2) { showToast('ဂဏန်း ၂ လုံး ထည့်ပါ'); return; }
+        const sessionId = _winSessionId;
+        const weekMonday = getWeekMondayStr(new Date());
+        // Re-check for existing (another tap may have created one)
+        const existing = await _getWins(sessionId);
+        if (existing.length) {
+            existing[0].number = num;
+            existing[0].week_monday = weekMonday;
+            await updateRecord('winning_numbers', existing[0]);
+        } else {
+            await createRecord('winning_numbers', { session: sessionId, number: num, week_monday: weekMonday });
+        }
+        closeModal('modal-winning');
+        showToast('🏆 ပေါက်သီး ' + num + ' သိမ်းပြီးပြီ');
+        renderLedger();
+        if ($('tab-winning') && $('tab-winning').classList.contains('active')) renderWinningHome();
+    } finally {
+        if (btn) { btn.disabled = false; btn.textContent = 'သိမ်းမယ်'; }
     }
-    closeModal('modal-winning');
-    showToast('🏆 ပေါက်သီး ' + num + ' သိမ်းပြီးပြီ');
-    renderLedger();
-    if ($('tab-winning') && $('tab-winning').classList.contains('active')) renderWinningHome();
 }
 
 /** Home 🎯 ပေါက်သီး tab: every session with its winning number + ထည့်/ပြင် button. */
