@@ -2959,7 +2959,7 @@ async function setAgentLimit(tenantId, limit) {
 }
 
 async function renderAgentList() {
-    const box = $('agentList');
+    const box = $('agentListSettings');
     if (!box) return;
     const tenantId = state.tenantPbId;
     if (!tenantId) {
