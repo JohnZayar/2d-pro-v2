@@ -2999,7 +2999,16 @@ window.toggleAgentDisabled = async function toggleAgentDisabled(agentId, disable
         showToast(disable ? '🔴 ပိတ်ပြီးပြီ' : '🟢 ဖွင့်ပြီးပြီ');
         renderAgentList();
     } catch (e) {
-        showToast('❌ ' + (e.message || 'error'));
+        let msg = e.message || 'error';
+        // Show PocketBase validation details if available
+        try {
+            const data = e.response?.data?.data;
+            if (data) {
+                const details = Object.entries(data).map(([k, v]) => `${k}: ${v.message || v.code || 'invalid'}`).join(', ');
+                if (details) msg += ` (${details})`;
+            }
+        } catch (_) { /* ignore */ }
+        showToast('❌ ' + msg);
     }
 };
 
@@ -3040,7 +3049,15 @@ window.createAgentAccount = async function createAgentAccount() {
         showToast(`✅ Agent ဖန်တီးပြီးပြီ\nCode: ${code}`);
         renderAgentList();
     } catch (e) {
-        showToast('❌ ' + (e.message || 'error'));
+        let msg = e.message || 'error';
+        try {
+            const respData = e.response && e.response.data;
+            if (respData) {
+                msg += ' | data: ' + JSON.stringify(respData).slice(0, 200);
+            }
+        } catch (_) {}
+        showToast('❌ ' + msg);
+        console.error('createAgentAccount failed:', e);
     }
 };
 
