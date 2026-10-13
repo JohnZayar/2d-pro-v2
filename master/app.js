@@ -292,12 +292,24 @@ async function renderBuyerList() {
             box.innerHTML = '<div class="muted">Buyer မရှိသေးပါ</div>';
             return;
         }
-        let html = '<table class="v-table"><thead><tr><th>Email</th><th>ဆိုင်</th><th>အခြေအနေ</th><th></th></tr></thead><tbody>';
+        // Fetch agent limits for all buyers in one query (fast)
+        let limitMap = {};
+        try {
+            const limRes = await pb.list('app_settings', { filter: 'key ~ "agent_limit_"', perPage: 100 });
+            for (const r of (limRes.items || limRes)) {
+                const tid = (r.key || '').replace('agent_limit_', '');
+                limitMap[tid] = parseInt(r.value, 10) || 5;
+            }
+        } catch (e) { /* ignore */ }
+        let html = '<table class="v-table"><thead><tr><th>Email</th><th>ဆိုင်</th><th>Agent</th><th>အခြေအနေ</th><th></th></tr></thead><tbody>';
         for (const b of buyers) {
             const disabled = !!b.disabled;
+            const tenantId = typeof b.tenant === 'string' ? b.tenant : (b.tenant && b.tenant.id);
+            const limit = limitMap[tenantId] || 5;
             html += '<tr>' +
                 '<td>' + escHtml(b.email) + '</td>' +
                 '<td>' + escHtml(b.name || '') + '</td>' +
+                '<td><button class="btn small gray" onclick="editAgentLimit(\'' + (tenantId || '') + '\',' + limit + ')">' + limit + ' ✏️</button></td>' +
                 '<td>' + (disabled ? '<span style="color:#ef4444">🔴 ပိတ်</span>' : '<span style="color:#4ade80">🟢 ဖွင့်</span>') + '</td>' +
                 '<td><button class="btn small ' + (disabled ? 'gray' : 'red') + '" onclick="toggleBuyerDisabled(\'' + b.id + '\',' + (!disabled) + ')">' + (disabled ? 'ဖွင့်' : 'ပိတ်') + '</button> ' +
                 '<button class="btn small red" onclick="deleteBuyerAccount(\'' + b.id + '\',\'' + escHtml(b.email).replace(/'/g, "\\'") + '\')">🗑️</button></td>' +
@@ -3118,7 +3130,7 @@ window.createAgentAccount = async function createAgentAccount() {
 };
 
 /* Pho: Edit agent limit for a buyer */
-window.editAgentLimit = async function editAgentLimit(buyerId, tenantId, currentLimit) {
+window.editAgentLimit = async function editAgentLimit(tenantId, currentLimit) {
     if (!tenantId) {
         showToast('❌ Tenant မရှိပါ');
         return;
