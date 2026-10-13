@@ -3018,19 +3018,12 @@ window.createAgentAccount = async function createAgentAccount() {
         showToast('❌ Tenant မရှိပါ');
         return;
     }
-    const maxAgents = await getAgentLimit(tenantId);
-    // Find the next available agent number
-    let nextNum = 0;
-    for (let n = 1; n <= maxAgents; n++) {
-        try {
-            const email = agentEmailForNum(tenantId, n);
-            const res = await pb.list('users', { filter: `email="${email}"`, perPage: 1 });
-            const existing = (res.items || res)[0];
-            if (!existing) { nextNum = n; break; }
-        } catch (e) { /* skip */ }
-    }
-    if (!nextNum) {
-        showToast(`❌ Agent ${maxAgents} ယောက် ပြည့်ပြီ — Pho စီ လာ ပြော ပါ`);
+    // Simple: ask for agent number directly (1-99)
+    const numInput = prompt('Agent နံပါတ် (1-99):', '2');
+    if (!numInput) return;
+    const nextNum = parseInt(numInput, 10);
+    if (isNaN(nextNum) || nextNum < 1 || nextNum > 99) {
+        showToast('❌ 1-99 ကြား ထည့်ပါ');
         return;
     }
     const agentName = prompt(`Agent ${nextNum} နာမည်:`, `Agent ${nextNum}`);
@@ -3053,7 +3046,7 @@ window.createAgentAccount = async function createAgentAccount() {
         try {
             const respData = e.response && e.response.data;
             if (respData) {
-                msg += ' | data: ' + JSON.stringify(respData).slice(0, 200);
+                msg += ' | ' + JSON.stringify(respData).slice(0, 300);
             }
         } catch (_) {}
         showToast('❌ ' + msg);
