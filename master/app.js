@@ -2969,24 +2969,35 @@ async function renderAgentList() {
     try {
         box.innerHTML = '<div class="muted">ရှာနေတယ်…</div>';
         const maxAgents = await getAgentLimit(tenantId);
+        // Find ALL agent accounts for this tenant (any number, not just 1-5)
+        const prefix = `agent_${tenantId}_`;
+        let agents = [];
+        try {
+            const res = await pb.list('users', { filter: `email ~ "${prefix}"`, perPage: 100 });
+            agents = (res.items || res).filter((u) => (u.email || '').startsWith(prefix) && (u.email || '').endsWith('@2dpro.local'));
+            // Sort by agent number
+            agents.sort((a, b) => {
+                const na = parseInt((a.email || '').slice(prefix.length).split('@')[0], 10) || 0;
+                const nb = parseInt((b.email || '').slice(prefix.length).split('@')[0], 10) || 0;
+                return na - nb;
+            });
+        } catch (e) { /* ignore, show empty */ }
         let html = '<table class="v-table"><thead><tr><th>Agent</th><th>Code</th><th>အခြေအနေ</th><th></th></tr></thead><tbody>';
         let count = 0;
-        for (let n = 1; n <= maxAgents; n++) {
-            try {
-                const email = agentEmailForNum(tenantId, n);
-                const res = await pb.list('users', { filter: `email="${email}"`, perPage: 1 });
-                const agent = (res.items || res)[0];
-                if (!agent) continue;
-                count++;
-                const disabled = !!agent.disabled;
-                const code = agentCodeFor(tenantId, n);
-                html += '<tr>' +
-                    '<td>' + escHtml(agent.name || `Agent ${n}`) + '</td>' +
-                    '<td><code>' + escHtml(code) + '</code></td>' +
-                    '<td>' + (disabled ? '<span style="color:#ef4444">🔴 ပိတ်</span>' : '<span style="color:#4ade80">🟢 ဖွင့်</span>') + '</td>' +
-                    '<td><button class="btn small ' + (disabled ? 'gray' : 'red') + '" onclick="toggleAgentDisabled(\'' + agent.id + '\',' + (!disabled) + ')">' + (disabled ? 'ဖွင့်' : 'ပိတ်') + '</button></td>' +
-                    '</tr>';
-            } catch (e) { /* skip */ }
+        for (const agent of agents) {
+            const email = agent.email || '';
+            const numStr = email.slice(prefix.length).split('@')[0];
+            const n = parseInt(numStr, 10);
+            if (isNaN(n)) continue;
+            count++;
+            const disabled = !!agent.disabled;
+            const code = agentCodeFor(tenantId, n);
+            html += '<tr>' +
+                '<td>' + escHtml(agent.name || `Agent ${n}`) + '</td>' +
+                '<td><code>' + escHtml(code) + '</code></td>' +
+                '<td>' + (disabled ? '<span style="color:#ef4444">🔴 ပိတ်</span>' : '<span style="color:#4ade80">🟢 ဖွင့်</span>') + '</td>' +
+                '<td><button class="btn small ' + (disabled ? 'gray' : 'red') + '" onclick="toggleAgentDisabled(\'' + agent.id + '\',' + (!disabled) + ')">' + (disabled ? 'ဖွင့်' : 'ပိတ်') + '</button></td>' +
+                '</tr>';
         }
         html += '</tbody></table>';
         if (!count) html = '<div class="muted">Agent မရှိသေးပါ</div>';
