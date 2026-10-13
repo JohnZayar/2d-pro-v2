@@ -56,8 +56,11 @@ if ('serviceWorker' in navigator) {
         <div class="menu-link" onclick="goDrawer('settings')"><span>⚙️</span><span>ဆက်တင်များ</span></div>
         <div class="menu-link" onclick="doLogout()"><span>🚪</span><span>အကောင့်ထွက်ရန်</span></div>
         <div class="linkcode-box">
-          <div class="lc-label">👥 Agent များ</div>
-          <div class="small muted">Settings → 👥 Agent များ မှာ code တွေ ကြည့်ပါ</div>
+          <div class="lc-label">🔗 Agent ချိတ်ဆက်ကုဒ် (Agent တွေကို ပေးရန်)</div>
+          <div class="lc-row">
+            <div class="lc-code" id="linkCodeDrawer">—</div>
+            <button class="lc-copy" onclick="copyLinkCode()">ကူးရန်</button>
+          </div>
         </div>
       </div>
     </aside>
@@ -289,15 +292,16 @@ if ('serviceWorker' in navigator) {
         </div>
       </section>
       <section id="tab-settings" class="tabpane">
-        <div class="card" id="agentMgmtCard">
-          <div class="set-row"><span>👥 Agent များ</span><button id="agentCreateBtn" class="btn small">+ အသစ်</button></div>
-          <div class="small muted">Master ၁ ယောက် = Agent ၅ ယောက် max</div>
-          <div id="agentList" class="mt">—</div>
+        <div class="card">
+          <div class="set-row"><span>🔗 Agent Link Code</span></div>
+          <div class="code-box" id="linkCode">—</div>
+          <div class="small muted mt">Agent app မှာ ဒီ code ထည့်ပြီး ချိတ်ပါ</div>
         </div>
         <div class="card">
           <div class="set-row"><span>☁️ Cloud Sync</span><button id="syncNowBtn" class="btn small gray">Sync လုပ်မယ်</button></div>
           <div class="set-row"><span>⏳ ပို့ဖို့ကျန်</span><span id="pendingCount" class="muted">0</span></div>
         </div>
+        <div class="card">
         <div class="card">
           <div class="set-row"><span>🔑 Password ချိန်းမယ်</span></div>
           <div class="set-row"><input id="pwOld" type="password" placeholder="လက်ရှိ password" autocomplete="current-password" style="flex:1;min-width:0"></div>
@@ -319,7 +323,7 @@ if ('serviceWorker' in navigator) {
         <div class="card">
           <button id="logoutBtn" class="btn red block">ထွက်မည်</button>
         </div>
-        <div class="small muted" style="text-align:center;margin-top:8px"><b>v89</b></div>
+        <div class="small muted" style="text-align:center;margin-top:8px"><b>v90</b></div>
       </section>
     </main>
   </div>
@@ -515,6 +519,6 @@ if ('serviceWorker' in navigator) {
 
 
 </div>
-<script type="module" src="app.js?v=89"></script>
+<script type="module" src="app.js?v=90"></script>
 </body>
 </html>
