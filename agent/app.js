@@ -23,7 +23,7 @@ if (typeof window !== 'undefined') {
         console.error('[agent] Unhandled rejection:', e.reason);
     });
 }
-import { uid, formatMoney, formatDateStr, getWeekMonday, showToast, escHtml, debounce, agentEmailFor, agentPasswordFor } from '../shared/utils.js?v=2';
+import { uid, formatMoney, formatDateStr, getWeekMonday, showToast, escHtml, debounce, agentEmailFor, agentPasswordFor, agentEmailForNum, agentPasswordForNum, parseAgentCode } from '../shared/utils.js?v=3';
 
 const LS_TENANT = 'v2_agent_tenant';
 const LS_AGENT_NAME = 'v2_agent_name';
@@ -97,12 +97,16 @@ async function _getWins(sessionId) {
 async function loginAsTenantAgent() {
     const code = localStorage.getItem(LS_TENANT) || '';
     if (!code) return; // No link code yet — user needs to connect first
-    // If already logged in as the correct tenant agent, skip
+    const parsed = parseAgentCode(code);
+    if (!parsed) return;
+    const { tenantId, agentNum } = parsed;
+    const email = agentEmailForNum(tenantId, agentNum);
+    // If already logged in as the correct agent, skip
     const current = pb.getUser();
-    if (current && current.email === agentEmailFor(code) && pb.isLoggedIn()) return;
-    // Log out from any previous account (e.g., different tenant or shared account)
+    if (current && current.email === email && pb.isLoggedIn()) return;
+    // Log out from any previous account (e.g., different agent or old format)
     pb.logout();
-    await pb.login(agentEmailFor(code), agentPasswordFor(code));
+    await pb.login(email, agentPasswordForNum(tenantId, agentNum));
 }
 
 async function init() {
@@ -120,7 +124,9 @@ async function init() {
         return;
     }
 
-    tenantId = localStorage.getItem(LS_TENANT) || '';
+    const savedCode = localStorage.getItem(LS_TENANT) || '';
+    const parsedCode = parseAgentCode(savedCode);
+    tenantId = parsedCode ? parsedCode.tenantId : savedCode;
     agentName = localStorage.getItem(LS_AGENT_NAME) || '';
     currentSessionId = localStorage.getItem(LS_SESSION) || '';
 
@@ -209,22 +215,26 @@ window.connectAgent = async function connectAgent() {
     btn.textContent = 'ချိတ်နေတယ်…';
 
     try {
+        // Parse agent code: "<tenantId>-<n>" or legacy "<tenantId>"
+        const parsed = parseAgentCode(code);
+        if (!parsed) return showLinkError('Code မှားနေတယ်');
+        const tid = parsed.tenantId;
         // Verify tenant exists: try local DB first, then PocketBase (if logged in).
-        let tenant = await db.get('tenants', code);
+        let tenant = await db.get('tenants', tid);
         if (!tenant && pb.isLoggedIn()) {
             try {
-                const pbTenant = await pb.getOne('tenants', code);
+                const pbTenant = await pb.getOne('tenants', tid);
                 tenant = { id: pbTenant.id, name: pbTenant.name };
                 await db.put('tenants', tenant);
             } catch (e) { /* not found remotely either */ }
         }
         // Local-first: accept the code even if unverified (works offline).
         if (!tenant) {
-            tenant = { id: code, name: 'Main (' + code.slice(0, 6) + '…)' };
+            tenant = { id: tid, name: 'Main (' + tid.slice(0, 6) + '…)' };
             await db.put('tenants', tenant);
         }
 
-        tenantId = code;
+        tenantId = tid;
         agentName = name;
         localStorage.setItem(LS_TENANT, code);
         localStorage.setItem(LS_AGENT_NAME, name);
