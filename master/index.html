@@ -56,11 +56,8 @@ if ('serviceWorker' in navigator) {
         <div class="menu-link" onclick="goDrawer('settings')"><span>⚙️</span><span>ဆက်တင်များ</span></div>
         <div class="menu-link" onclick="doLogout()"><span>🚪</span><span>အကောင့်ထွက်ရန်</span></div>
         <div class="linkcode-box">
-          <div class="lc-label">🔗 Agent ချိတ်ဆက်ကုဒ် (Agent တွေကို ပေးရန်)</div>
-          <div class="lc-row">
-            <div class="lc-code" id="linkCodeDrawer">—</div>
-            <button class="lc-copy" onclick="copyLinkCode()">ကူးရန်</button>
-          </div>
+          <div class="lc-label">👥 Agent များ</div>
+          <div class="small muted">Settings → 👥 Agent များ မှာ code တွေ ကြည့်ပါ</div>
         </div>
       </div>
     </aside>
@@ -292,11 +289,6 @@ if ('serviceWorker' in navigator) {
         </div>
       </section>
       <section id="tab-settings" class="tabpane">
-        <div class="card">
-          <div class="set-row"><span>🔗 Agent Link Code</span></div>
-          <div class="code-box" id="linkCode">—</div>
-          <div class="small muted mt">Agent app မှာ ဒီ code ထည့်ပြီး ချိတ်ပါ</div>
-        </div>
         <div class="card" id="agentMgmtCard">
           <div class="set-row"><span>👥 Agent များ</span><button id="agentCreateBtn" class="btn small">+ အသစ်</button></div>
           <div class="small muted">Master ၁ ယောက် = Agent ၅ ယောက် max</div>
