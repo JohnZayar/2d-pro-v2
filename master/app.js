@@ -9,8 +9,8 @@ import * as sync from '../shared/sync.js?v=18';
 import { parseBoard, parseBoardReport, parseLine } from '../shared/parser.js';
 import {
     formatMoney, formatDateStr, getWeekMondayStr, remainingDigits,
-    uid, showToast, escHtml, extractDigits
-} from '../shared/utils.js';
+    uid, showToast, escHtml, extractDigits, agentEmailFor, agentPasswordFor
+} from '../shared/utils.js?v=2';
 
 // Global safety net: log unhandled promise rejections instead of failing silently.
 if (typeof window !== 'undefined') {
@@ -242,6 +242,16 @@ async function createBuyerAccount() {
             password: tmp,
             passwordConfirm: tmp,
             name: shopName,
+            tenant: tenant.id
+        });
+        // 3. Create per-tenant agent account (for Agent app sync, tenant-isolated)
+        const agentEmail = agentEmailFor(tenant.id);
+        const agentPass = agentPasswordFor(tenant.id);
+        await pb.create('users', {
+            email: agentEmail,
+            password: agentPass,
+            passwordConfirm: agentPass,
+            name: `Agent (${shopName})`,
             tenant: tenant.id
         });
         resultEl.style.display = '';
