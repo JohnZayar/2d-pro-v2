@@ -290,7 +290,8 @@ async function renderBuyerList() {
                 '<td>' + escHtml(b.email) + '</td>' +
                 '<td>' + escHtml(b.name || '') + '</td>' +
                 '<td>' + (disabled ? '<span style="color:#ef4444">🔴 ပိတ်</span>' : '<span style="color:#4ade80">🟢 ဖွင့်</span>') + '</td>' +
-                '<td><button class="btn small ' + (disabled ? 'gray' : 'red') + '" onclick="toggleBuyerDisabled(\'' + b.id + '\',' + (!disabled) + ')">' + (disabled ? 'ဖွင့်' : 'ပိတ်') + '</button></td>' +
+                '<td><button class="btn small ' + (disabled ? 'gray' : 'red') + '" onclick="toggleBuyerDisabled(\'' + b.id + '\',' + (!disabled) + ')">' + (disabled ? 'ဖွင့်' : 'ပိတ်') + '</button> ' +
+                '<button class="btn small red" onclick="deleteBuyerAccount(\'' + b.id + '\',\'' + escHtml(b.email).replace(/'/g, "\\'") + '\')">🗑️</button></td>' +
                 '</tr>';
         }
         html += '</tbody></table>';
@@ -331,6 +332,31 @@ window.toggleBuyerDisabled = async function toggleBuyerDisabled(userId, disable)
         showToast('❌ ' + (e.message || 'error'));
     }
 }
+
+/** Delete a buyer account permanently (seller only). Also deletes their agents. */
+window.deleteBuyerAccount = async function deleteBuyerAccount(userId, email) {
+    if (!confirm('"' + email + '" ကို အပြီးဖျက်မလား? (agent တွေလည်း ပျက်မယ်, ပြန်မရဘူး)')) return;
+    if (!confirm('သေချာလား? နောက်ဆုံး အကြိမ် မေးတာ')) return;
+    try {
+        try {
+            const buyer = await pb.getOne('users', userId);
+            const tenantId = buyer.tenant;
+            if (tenantId) {
+                const prefix = 'agent_' + tenantId + '_';
+                const res = await pb.list('users', { filter: 'email ~ "' + prefix + '"', perPage: 100 });
+                const agents = (res.items || res);
+                for (const a of agents) {
+                    try { await pb.del('users', a.id); } catch (e) {}
+                }
+            }
+        } catch (e) { console.warn('Agent cleanup failed:', e.message); }
+        await pb.del('users', userId);
+        showToast('🗑️ ဖျက်ပြီးပြီ');
+        renderBuyerList();
+    } catch (e) {
+        showToast('❌ ' + (e.message || 'error'));
+    }
+};
 
 /* ============ PASSWORD CHANGE ============ */
 async function changePassword() {
