@@ -2996,7 +2996,8 @@ async function renderAgentList() {
                 '<td>' + escHtml(agent.name || `Agent ${n}`) + '</td>' +
                 '<td><code>' + escHtml(code) + '</code></td>' +
                 '<td>' + (disabled ? '<span style="color:#ef4444">🔴 ပိတ်</span>' : '<span style="color:#4ade80">🟢 ဖွင့်</span>') + '</td>' +
-                '<td><button class="btn small ' + (disabled ? 'gray' : 'red') + '" onclick="toggleAgentDisabled(\'' + agent.id + '\',' + (!disabled) + ')">' + (disabled ? 'ဖွင့်' : 'ပိတ်') + '</button></td>' +
+                '<td><button class="btn small ' + (disabled ? 'gray' : 'red') + '" onclick="toggleAgentDisabled(\'' + agent.id + '\',' + (!disabled) + ')">' + (disabled ? 'ဖွင့်' : 'ပိတ်') + '</button> ' +
+                '<button class="btn small red" onclick="deleteAgentAccount(\'' + agent.id + '\',\'' + escHtml(agent.name || `Agent ${n}`).replace(/'/g, "\\'") + '\')">🗑️</button></td>' +
                 '</tr>';
         }
         html += '</tbody></table>';
@@ -3028,6 +3029,19 @@ window.toggleAgentDisabled = async function toggleAgentDisabled(agentId, disable
             }
         } catch (_) { /* ignore */ }
         showToast('❌ ' + msg);
+    }
+};
+
+/** Delete an agent account permanently (seller only). */
+window.deleteAgentAccount = async function deleteAgentAccount(agentId, agentName) {
+    if (!confirm(`"${agentName}" ကို အပြီးဖျက်မလား? (ပြန်မရဘူး)`)) return;
+    if (!confirm('သေချာလား? နောက်ဆုံး အကြိမ် မေးတာ')) return;
+    try {
+        await pb.del('users', agentId);
+        showToast('🗑️ ဖျက်ပြီးပြီ');
+        renderAgentList();
+    } catch (e) {
+        showToast('❌ ' + (e.message || 'error'));
     }
 };
 
