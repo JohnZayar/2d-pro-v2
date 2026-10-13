@@ -3,9 +3,9 @@
  * Local-first: IndexedDB is the source of truth for the UI;
  * PocketBase syncs in the background.
  */
-import * as db from '../shared/db.js';
+import * as db from '../shared/db.js?v=2';
 import * as pb from '../shared/pb.js?v=3';
-import * as sync from '../shared/sync.js?v=16';
+import * as sync from '../shared/sync.js?v=17';
 import { parseBoard, parseBoardReport, parseLine } from '../shared/parser.js';
 import {
     formatMoney, formatDateStr, getWeekMondayStr, remainingDigits,
@@ -1288,7 +1288,7 @@ window.entryDeleteRow = function entryDeleteRow(i) {
     renderEntryTable();
 };
 
-/** Session lock: betting closes at 11:55 (AM) / 15:05 (PM) on session date;
+/** Session lock: betting closes at 11:55 (AM) / 15:55 (PM) on session date;
     and locks entirely once winning numbers are entered. */
 async function isSessionLocked(sessionId) {
     const s = state.sessions.find((x) => x.id === sessionId);
