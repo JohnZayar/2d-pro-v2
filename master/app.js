@@ -276,12 +276,17 @@ async function renderBuyerList() {
     if (!box) return;
     box.innerHTML = '<div class="muted">တင်နေတယ်…</div>';
     try {
-        // Fetch all users, filter in JS (API filter was too aggressive)
+        // Fetch all users, filter in JS by name (email is hidden by PocketBase for other users)
+        // Agents are named "Agent N" or "Agent N (Shop)"; buyers have shop names; exclude Pho himself
         const users = await pb.list('users', { perPage: 100 });
         const allUsers = (users.items || users);
+        const myEmail = (state.user && state.user.email || '').toLowerCase();
         const buyers = allUsers.filter((u) => {
+            const name = (u.name || '').trim();
             const email = (u.email || '').toLowerCase();
-            return email !== 'johnzyt7@gmail.com' && !email.includes('@2dpro.local');
+            if (email === 'johnzyt7@gmail.com' || email === myEmail) return false;
+            if (name.toLowerCase().startsWith('agent ')) return false;
+            return true;
         });
         if (!buyers.length) {
             box.innerHTML = '<div class="muted">Buyer မရှိသေးပါ</div>';
@@ -2988,26 +2993,31 @@ async function renderAgentList() {
     try {
         box.innerHTML = '<div class="muted">ရှာနေတယ်…</div>';
         const maxAgents = await getAgentLimit(tenantId);
-        // Find ALL agent accounts for this tenant (any number, not just 1-5)
-        const prefix = `agent_${tenantId}_`;
+        // Find agent accounts for this tenant by name (email hidden by PocketBase)
+        // Agents are named "Agent N" or "Agent N (Shop)"; match by tenant + name pattern
         let agents = [];
         try {
-            const res = await pb.list('users', { filter: `email ~ "${prefix}"`, perPage: 100 });
-            agents = (res.items || res).filter((u) => (u.email || '').startsWith(prefix) && (u.email || '').endsWith('@2dpro.local'));
-            // Sort by agent number
+            const res = await pb.list('users', { perPage: 100 });
+            const allUsers = (res.items || res);
+            agents = allUsers.filter((u) => {
+                const name = (u.name || '').trim();
+                if (!name.toLowerCase().startsWith('agent ')) return false;
+                const uTenant = typeof u.tenant === 'string' ? u.tenant : (u.tenant && u.tenant.id);
+                return uTenant === tenantId;
+            });
+            // Sort by agent number extracted from name
             agents.sort((a, b) => {
-                const na = parseInt((a.email || '').slice(prefix.length).split('@')[0], 10) || 0;
-                const nb = parseInt((b.email || '').slice(prefix.length).split('@')[0], 10) || 0;
-                return na - nb;
+                const ma = (a.name || '').match(/agent\s+(\d+)/i);
+                const mb = (b.name || '').match(/agent\s+(\d+)/i);
+                return (ma ? parseInt(ma[1], 10) : 0) - (mb ? parseInt(mb[1], 10) : 0);
             });
         } catch (e) { /* ignore, show empty */ }
         let html = '<table class="v-table"><thead><tr><th>Agent</th><th>Code</th><th>အခြေအနေ</th><th></th></tr></thead><tbody>';
         let count = 0;
         for (const agent of agents) {
-            const email = agent.email || '';
-            const numStr = email.slice(prefix.length).split('@')[0];
-            const n = parseInt(numStr, 10);
-            if (isNaN(n)) continue;
+            const m = (agent.name || '').match(/agent\s+(\d+)/i);
+            const n = m ? parseInt(m[1], 10) : 0;
+            if (!n) continue;
             count++;
             const disabled = !!agent.disabled;
             const code = agentCodeFor(tenantId, n);
