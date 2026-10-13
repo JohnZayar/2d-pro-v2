@@ -37,6 +37,22 @@ const _agentRemind = { warned: {}, knownWins: {} };
 let saveInFlight = false; // double-tap guard
 let pendingEntries = []; // typed but NOT yet saved: [{player_name, number, amount}]
 
+/** Add to pending, skipping exact duplicates (prevents double-add glitches). */
+function addPendingUnique(playerName, number, amount) {
+    const num = String(number).padStart(2, '0');
+    const amt = Number(amount) || 0;
+    const exists = pendingEntries.some((e) =>
+        e.player_name === playerName &&
+        String(e.number).padStart(2, '0') === num &&
+        (Number(e.amount) || 0) === amt
+    );
+    if (!exists) {
+        pendingEntries.push({ player_name: playerName, number: num, amount: amt });
+        return true;
+    }
+    return false;
+}
+
 /** Get blocked numbers for a session (synced from Master via PocketBase). */
 async function getAgentBlocked(sessionId) {
     try {
@@ -755,9 +771,13 @@ window.submitEntry = async function submitEntry() {
         return true;
     });
     if (!allowedItems.length) { clearInputs(); showToast('🚫 ဒိုင်ပိတ် ဂဏန်းတွေ ချည်း — တင် မရပါ'); return; }
+    let addedCount = 0;
     allowedItems.forEach((it) => {
-        pendingEntries.push({ player_name: playerName, number: it.number, amount: it.amount });
+        if (addPendingUnique(playerName, it.number, it.amount)) addedCount++;
     });
+    if (addedCount < allowedItems.length) {
+        showToast('⚠️ ထပ်နေတာ ' + (allowedItems.length - addedCount) + ' ကွက် ကျော်လိုက်တယ်');
+    }
     clearInputs();
     await renderEntryTable();
     const skipped = invalidLines.length + (items.length - validItems.length) + blockedHit.length;
@@ -1273,9 +1293,13 @@ window.saveBoard = async function saveBoard() {
             return true;
         });
         if (!allowedBoard.length) { saveInFlight = false; showToast('🚫 ဒိုင်ပိတ် ဂဏန်းတွေ ချည်း — တင် မရပါ'); return; }
+        let addedBoard = 0;
         allowedBoard.forEach((it) => {
-            pendingEntries.push({ player_name: playerName, number: it.number, amount: it.amount });
+            if (addPendingUnique(playerName, it.number, it.amount)) addedBoard++;
         });
+        if (addedBoard < allowedBoard.length) {
+            showToast('⚠️ ထပ်နေတာ ' + (allowedBoard.length - addedBoard) + ' ကွက် ကျော်လိုက်တယ်');
+        }
         await renderEntryTable();
         const blkMsgB = blockedHitB.length ? ' (🚫 ' + [...new Set(blockedHitB)].join(',') + ' ပိတ်)' : '';
         if (badLines.length) {
