@@ -433,7 +433,7 @@ export async function repushAll(collections) {    const cols = collections || ['
         for (const rec of records) {
             try {
                 // queueOp strips server metadata on push; fresh IDs assigned by server.
-                await queueOp({ op: 'create', collection: col, data: rec });
+                await queueOp({ op: 'create', collection: col, localId: rec.id, data: rec });
                 queued++;
             } catch (e) {
                 errors.push(`${col}: queue failed (${e.message})`);
