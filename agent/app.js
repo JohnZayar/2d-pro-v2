@@ -1693,3 +1693,16 @@ window.renderWeekly = async function renderWeekly() {
     }
     content.innerHTML = html;
 };
+
+/* 🔄 App Reset: clear all local data and reload */
+window.resetAgentApp = async function resetAgentApp() {
+    if (!confirm('App data အကုန် ရှင်း မလား? (code ပြန် ထည့် ရ မယ်)')) return;
+    try {
+        const dbs = await indexedDB.databases();
+        for (const d of dbs) {
+            if (d.name) indexedDB.deleteDatabase(d.name);
+        }
+    } catch (e) { /* ignore */ }
+    localStorage.clear();
+    location.reload();
+};
