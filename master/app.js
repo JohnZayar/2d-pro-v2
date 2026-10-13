@@ -140,18 +140,7 @@ function bindUI() {
         akanPending.forEach((e) => { e.player_name = bookie; });
         renderAkanTable();
     });
-    $('serverUrlSave').addEventListener('click', () => {
-        const v = $('serverUrlInput').value.trim();
-        if (v && !/^https?:\/\//i.test(v)) { showToast('URL က https:// နဲ့ စရမယ်'); return; }
-        if (v) pb.setBaseUrl(v); else pb.clearBaseUrl();
-        showToast('✅ Server URL သိမ်းပြီးပြီ — reload လုပ်ပါ');
-    });
-    $('serverUrlReset').addEventListener('click', () => {
-        pb.clearBaseUrl();
-        $('serverUrlInput').value = '';
-        $('serverUrlInput').placeholder = pb.getDefaultBaseUrl();
-        showToast('✅ Default URL ပြန်သုံးမယ် — reload လုပ်ပါ');
-    });
+    // Server URL UI removed (hardcoded to https://2d.skylinkvpn.stream)
 }
 
 /* ================= AUTH ================= */
