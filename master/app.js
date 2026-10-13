@@ -3039,8 +3039,9 @@ window.createAgentAccount = async function createAgentAccount() {
             tenant: tenantId
         });
         const code = agentCodeFor(tenantId, nextNum);
-        showToast(`✅ Agent ဖန်တီးပြီးပြီ\nCode: ${code}`);
         renderAgentList();
+        // Show code in a copyable dialog
+        prompt(`✅ Agent ဖန်တီးပြီးပြီ\nCode (ကူးယူပါ):`, code);
     } catch (e) {
         let msg = e.message || 'error';
         try {
