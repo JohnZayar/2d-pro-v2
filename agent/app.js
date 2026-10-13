@@ -23,7 +23,7 @@ if (typeof window !== 'undefined') {
         console.error('[agent] Unhandled rejection:', e.reason);
     });
 }
-import { uid, formatMoney, formatDateStr, getWeekMonday, showToast, escHtml, debounce, agentEmailFor, agentPasswordFor, agentEmailForNum, agentPasswordForNum, parseAgentCode } from '../shared/utils.js?v=3';
+import { uid, formatMoney, formatDateStr, getWeekMonday, showToast, escHtml, debounce, agentEmailFor, agentPasswordFor, agentEmailForNum, agentPasswordForNum, parseAgentCode } from '../shared/utils.js?v=4';
 
 const LS_TENANT = 'v2_agent_tenant';
 const LS_AGENT_NAME = 'v2_agent_name';
@@ -1300,28 +1300,7 @@ window.saveBoard = async function saveBoard() {
 window.openSettings = function openSettings() {
     $('settingsSyncState').textContent =
         pb.isLoggedIn() ? '✅ ' + (sync.isOnline() ? 'Online' : 'Offline') : '📴 Local only';
-    const urlInput = $('serverUrlInput');
-    if (urlInput) {
-        const cur = pb.getBaseUrl();
-        const def = pb.getDefaultBaseUrl();
-        urlInput.value = cur === def ? '' : cur;
-        urlInput.placeholder = def;
-    }
     $('settingsModal').hidden = false;
-};
-
-window.saveServerUrl = function saveServerUrl() {
-    const v = ($('serverUrlInput').value || '').trim();
-    if (v && !/^https?:\/\//i.test(v)) { showToast('URL က https:// နဲ့ စရမယ်'); return; }
-    if (v) pb.setBaseUrl(v); else pb.clearBaseUrl();
-    showToast('✅ Server URL သိမ်းပြီးပြီ — reload လုပ်ပါ');
-    closeSettings();
-};
-
-window.resetServerUrl = function resetServerUrl() {
-    pb.clearBaseUrl();
-    $('serverUrlInput').value = '';
-    showToast('✅ Default URL ပြန်သုံးမယ် — reload လုပ်ပါ');
 };
 
 window.closeSettings = function closeSettings() {
