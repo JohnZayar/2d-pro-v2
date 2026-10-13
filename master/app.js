@@ -278,8 +278,8 @@ async function renderBuyerList() {
     try {
         // Fetch all users (seller-only API rule allows this)
         const users = await pb.list('users', { perPage: 100 });
-        // Exclude Pho himself and per-tenant agent accounts (agent_<id>@2dpro.local)
-        const buyers = (users.items || users).filter((u) => u.email !== 'johnzyt7@gmail.com' && !/^agent_.*@2dpro\.local$/.test(u.email || ''));
+        // Exclude Pho himself and ALL agent accounts (*@2dpro.local)
+        const buyers = (users.items || users).filter((u) => u.email !== 'johnzyt7@gmail.com' && !(u.email || '').endsWith('@2dpro.local'));
         if (!buyers.length) {
             box.innerHTML = '<div class="muted">Buyer မရှိသေးပါ</div>';
             return;
