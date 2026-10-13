@@ -276,9 +276,13 @@ async function renderBuyerList() {
     if (!box) return;
     box.innerHTML = '<div class="muted">တင်နေတယ်…</div>';
     try {
-        // Fetch buyers only (exclude Pho and all @2dpro.local agent accounts via API filter)
-        const users = await pb.list('users', { perPage: 100, filter: 'email != "johnzyt7@gmail.com" && email !~ "@2dpro.local"' });
-        const buyers = (users.items || users);
+        // Fetch all users, filter in JS (API filter was too aggressive)
+        const users = await pb.list('users', { perPage: 100 });
+        const allUsers = (users.items || users);
+        const buyers = allUsers.filter((u) => {
+            const email = (u.email || '').toLowerCase();
+            return email !== 'johnzyt7@gmail.com' && !email.includes('@2dpro.local');
+        });
         if (!buyers.length) {
             box.innerHTML = '<div class="muted">Buyer မရှိသေးပါ</div>';
             return;
