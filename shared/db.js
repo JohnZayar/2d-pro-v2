@@ -113,7 +113,8 @@ function _tx(storeName, mode, fn) {
  */
 export function put(store, obj) {
     // Stamp local updated time for last-write-wins conflict resolution.
-    const stamped = Object.assign({}, obj, { _updated: Date.now() });
+    // Do NOT overwrite if already set (e.g. server timestamp from sync pull).
+    const stamped = obj._updated ? obj : Object.assign({}, obj, { _updated: Date.now() });
     return _tx(store, 'readwrite', (s) => s.put(stamped));
 }
 
