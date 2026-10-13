@@ -138,24 +138,3 @@ export function agentEmailFor(linkCode) {
 export function agentPasswordFor(linkCode) {
     return `Ag2D_${linkCode}`;
 }
-
-/**
- * Individual agent account credentials (up to 5 per buyer).
- * Agent code format: "<tenantId>-<n>" where n = 1..5
- * Email: agent_<tenantId>_<n>@2dpro.local
- * Password: Ag2D_<tenantId>_<n>
- */
-export function parseAgentCode(code) {
-    const m = String(code || '').trim().match(/^([A-Za-z0-9]+)(?:-([1-9][0-9]?))?$/);
-    if (!m) return null;
-    return { tenantId: m[1], agentNum: parseInt(m[2] || '1', 10) };
-}
-export function agentEmailForNum(tenantId, n) {
-    return `agent_${tenantId}_${n}@2dpro.local`;
-}
-export function agentPasswordForNum(tenantId, n) {
-    return `Ag2D_${tenantId}_${n}`;
-}
-export function agentCodeFor(tenantId, n) {
-    return `${tenantId}-${n}`;
-}
