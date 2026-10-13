@@ -4,13 +4,20 @@
  * PocketBase syncs in the background.
  */
 import * as db from '../shared/db.js?v=2';
-import * as pb from '../shared/pb.js?v=3';
-import * as sync from '../shared/sync.js?v=17';
+import * as pb from '../shared/pb.js?v=4';
+import * as sync from '../shared/sync.js?v=18';
 import { parseBoard, parseBoardReport, parseLine } from '../shared/parser.js';
 import {
     formatMoney, formatDateStr, getWeekMondayStr, remainingDigits,
     uid, showToast, escHtml, extractDigits
 } from '../shared/utils.js';
+
+// Global safety net: log unhandled promise rejections instead of failing silently.
+if (typeof window !== 'undefined') {
+    window.addEventListener('unhandledrejection', (e) => {
+        console.error('[master] Unhandled rejection:', e.reason);
+    });
+}
 
 const MM_DAYS = ['တနင်္ဂနွေ', 'တနင်္လာ', 'အင်္ဂါ', 'ဗုဒ္ဓဟူး', 'ကြာသပတေး', 'သောကြာ', 'စနေ'];
 
@@ -1753,7 +1760,12 @@ async function renderHomeDaily() {
     const allRecs = await db.getAll('lottery_records');
     const dayRecs = allRecs.filter((r) => {
         // New records have session_date; old records: look up via session
-        if (r.session_date) return r.session_date === ds;
+        if (r.session_date) {
+            if (r.session_date !== ds) return false;
+            // Tenant isolation: skip records from other tenants (defense in depth)
+            if (r.tenant && state.tenantPbId && r.tenant !== state.tenantPbId) return false;
+            return true;
+        }
         const sess = state.sessions.find((s) => s.id === r.session);
         return sess && sess.date === ds;
     });
