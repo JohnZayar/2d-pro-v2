@@ -301,7 +301,7 @@ async function renderBuyerList() {
                 limitMap[tid] = parseInt(r.value, 10) || 5;
             }
         } catch (e) { /* ignore */ }
-        let html = '<table class="v-table"><thead><tr><th>Email</th><th>ဆိုင်</th><th>Agent</th><th>အခြေအနေ</th><th></th></tr></thead><tbody>';
+        let html = '<div style="overflow-x:auto"><table class="v-table"><thead><tr><th>Email</th><th>ဆိုင်</th><th>Agent</th><th>အခြေအနေ</th><th></th></tr></thead><tbody>';
         for (const b of buyers) {
             const disabled = !!b.disabled;
             const tenantId = typeof b.tenant === 'string' ? b.tenant : (b.tenant && b.tenant.id);
@@ -311,11 +311,11 @@ async function renderBuyerList() {
                 '<td>' + escHtml(b.name || '') + '</td>' +
                 '<td><button class="btn small gray" onclick="editAgentLimit(\'' + (tenantId || '') + '\',' + limit + ')">' + limit + ' ✏️</button></td>' +
                 '<td>' + (disabled ? '<span style="color:#ef4444">🔴 ပိတ်</span>' : '<span style="color:#4ade80">🟢 ဖွင့်</span>') + '</td>' +
-                '<td><button class="btn small ' + (disabled ? 'gray' : 'red') + '" onclick="toggleBuyerDisabled(\'' + b.id + '\',' + (!disabled) + ')">' + (disabled ? 'ဖွင့်' : 'ပိတ်') + '</button> ' +
-                '<button class="btn small red" onclick="deleteBuyerAccount(\'' + b.id + '\',\'' + escHtml(b.email).replace(/'/g, "\\'") + '\')">🗑️</button></td>' +
+                '<td style="white-space:nowrap"><button class="btn small ' + (disabled ? 'gray' : 'red') + '" style="padding:4px 8px;font-size:12px" onclick="toggleBuyerDisabled(\'' + b.id + '\',' + (!disabled) + ')">' + (disabled ? 'ဖွင့်' : 'ပိတ်') + '</button>' +
+                '<button class="btn small" style="padding:4px 8px;font-size:12px;background:#374151;color:#fca5a5;border:1px solid #4b5563;margin-left:4px" onclick="deleteBuyerAccount(\'' + b.id + '\',\'' + escHtml(b.email).replace(/'/g, "\\'") + '\')">🗑️</button></td>' +
                 '</tr>';
         }
-        html += '</tbody></table>';
+        html += '</tbody></table></div>';
         box.innerHTML = html;
     } catch (e) {
         box.innerHTML = '<div class="muted">မရဘူး: ' + escHtml(e.message || 'error') + '</div>';
@@ -3024,7 +3024,7 @@ async function renderAgentList() {
                 return (ma ? parseInt(ma[1], 10) : 0) - (mb ? parseInt(mb[1], 10) : 0);
             });
         } catch (e) { /* ignore, show empty */ }
-        let html = '<table class="v-table"><thead><tr><th>Agent</th><th>Code</th><th>အခြေအနေ</th><th></th></tr></thead><tbody>';
+        let html = '<div style="overflow-x:auto"><table class="v-table"><thead><tr><th>Agent</th><th>Code</th><th>အခြေအနေ</th><th></th></tr></thead><tbody>';
         let count = 0;
         for (const agent of agents) {
             const m = (agent.name || '').match(/agent\s+(\d+)/i);
@@ -3037,11 +3037,11 @@ async function renderAgentList() {
                 '<td>' + escHtml(agent.name || `Agent ${n}`) + '</td>' +
                 '<td><code>' + escHtml(code) + '</code></td>' +
                 '<td>' + (disabled ? '<span style="color:#ef4444">🔴 ပိတ်</span>' : '<span style="color:#4ade80">🟢 ဖွင့်</span>') + '</td>' +
-                '<td><button class="btn small ' + (disabled ? 'gray' : 'red') + '" onclick="toggleAgentDisabled(\'' + agent.id + '\',' + (!disabled) + ')">' + (disabled ? 'ဖွင့်' : 'ပိတ်') + '</button> ' +
-                '<button class="btn small red" onclick="deleteAgentAccount(\'' + agent.id + '\',\'' + escHtml(agent.name || `Agent ${n}`).replace(/'/g, "\\'") + '\')">🗑️</button></td>' +
+                '<td style="white-space:nowrap"><button class="btn small ' + (disabled ? 'gray' : 'red') + '" style="padding:4px 8px;font-size:12px" onclick="toggleAgentDisabled(\'' + agent.id + '\',' + (!disabled) + ')">' + (disabled ? 'ဖွင့်' : 'ပိတ်') + '</button>' +
+                '<button class="btn small" style="padding:4px 8px;font-size:12px;background:#374151;color:#fca5a5;border:1px solid #4b5563;margin-left:4px" onclick="deleteAgentAccount(\'' + agent.id + '\',\'' + escHtml(agent.name || `Agent ${n}`).replace(/'/g, "\\'") + '\')">🗑️</button></td>' +
                 '</tr>';
         }
-        html += '</tbody></table>';
+        html += '</tbody></table></div>';
         if (!count) html = '<div class="muted">Agent မရှိသေးပါ</div>';
         else html += `<div class="small muted mt">${count}/${maxAgents} သုံး ပြီးပြီ</div>`;
         box.innerHTML = html;
