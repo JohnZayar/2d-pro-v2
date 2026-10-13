@@ -72,6 +72,8 @@ export async function mutate(op, collection, obj) {
     if (op === 'delete') {
         await db.del(collection, obj.id);
     } else {
+        // Mark as locally modified for last-write-wins.
+        obj._updated = Date.now();
         await db.put(collection, obj);
     }
     await queueOp({ op, collection, localId: obj.id, data: obj });
@@ -136,8 +138,11 @@ async function _pushEntrySettled(entry) {
         await _pushOne(entry);
     } catch (err) {
         // Drop unrecoverable client errors (bad data); keep the rest for retry.
-        if (err && err.code >= 400 && err.code < 500 && err.code !== 429) {
+        // 403 (Forbidden) is NOT dropped — it's usually an API rule config issue
+        // that may be fixed server-side; keep queued for retry.
+        if (err && err.code >= 400 && err.code < 500 && err.code !== 429 && err.code !== 403) {
             console.warn('[sync] dropping poison op', entry.op, entry.collection, err.message);
+            _lastPushError = 'DROPPED ' + (err.code + ': ' + err.message) + ' (' + entry.collection + ')';
             await db.del('sync_queue', entry.id).catch(() => {});
             return 'dropped';
         }
