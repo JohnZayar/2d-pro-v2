@@ -284,26 +284,12 @@ async function renderBuyerList() {
             box.innerHTML = '<div class="muted">Buyer မရှိသေးပါ</div>';
             return;
         }
-        let html = '<table class="v-table"><thead><tr><th>Email</th><th>ဆိုင်</th><th>Agent</th><th>အခြေအနေ</th><th></th></tr></thead><tbody>';
+        let html = '<table class="v-table"><thead><tr><th>Email</th><th>ဆိုင်</th><th>အခြေအနေ</th><th></th></tr></thead><tbody>';
         for (const b of buyers) {
             const disabled = !!b.disabled;
-            const tenantId = b.tenant;
-            const agentLimit = tenantId ? await getAgentLimit(tenantId) : DEFAULT_MAX_AGENTS;
-            // Count existing agents
-            let agentCount = 0;
-            if (tenantId) {
-                for (let n = 1; n <= agentLimit; n++) {
-                    try {
-                        const email = agentEmailForNum(tenantId, n);
-                        const res = await pb.list('users', { filter: `email="${email}"`, perPage: 1 });
-                        if ((res.items || res)[0]) agentCount++;
-                    } catch (e) { /* skip */ }
-                }
-            }
             html += '<tr>' +
                 '<td>' + escHtml(b.email) + '</td>' +
                 '<td>' + escHtml(b.name || '') + '</td>' +
-                '<td><button class="btn small gray" onclick="editAgentLimit(\'' + b.id + '\',\'' + (tenantId || '') + '\',' + agentLimit + ')">' + agentCount + '/' + agentLimit + ' ✏️</button></td>' +
                 '<td>' + (disabled ? '<span style="color:#ef4444">🔴 ပိတ်</span>' : '<span style="color:#4ade80">🟢 ဖွင့်</span>') + '</td>' +
                 '<td><button class="btn small ' + (disabled ? 'gray' : 'red') + '" onclick="toggleBuyerDisabled(\'' + b.id + '\',' + (!disabled) + ')">' + (disabled ? 'ဖွင့်' : 'ပိတ်') + '</button></td>' +
                 '</tr>';
