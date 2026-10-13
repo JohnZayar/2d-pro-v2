@@ -276,10 +276,9 @@ async function renderBuyerList() {
     if (!box) return;
     box.innerHTML = '<div class="muted">တင်နေတယ်…</div>';
     try {
-        // Fetch all users (seller-only API rule allows this)
-        const users = await pb.list('users', { perPage: 100 });
-        // Exclude Pho himself and ALL agent accounts (*@2dpro.local)
-        const buyers = (users.items || users).filter((u) => u.email !== 'johnzyt7@gmail.com' && !(u.email || '').endsWith('@2dpro.local'));
+        // Fetch buyers only (exclude Pho and all @2dpro.local agent accounts via API filter)
+        const users = await pb.list('users', { perPage: 100, filter: 'email != "johnzyt7@gmail.com" && email !~ "@2dpro.local"' });
+        const buyers = (users.items || users);
         if (!buyers.length) {
             box.innerHTML = '<div class="muted">Buyer မရှိသေးပါ</div>';
             return;
@@ -2947,7 +2946,8 @@ async function setAgentLimit(tenantId, limit) {
 async function renderAgentList() {
     const box = $('agentListSettings');
     if (!box) return;
-    const tenantId = state.tenantPbId;
+    // Get tenant ID from state or directly from logged-in user
+    const tenantId = state.tenantPbId || (state.user && state.user.tenant);
     if (!tenantId) {
         box.innerHTML = '<div class="muted">—</div>';
         return;
