@@ -296,12 +296,13 @@ async function refreshSession() {
             try {
                 const wins = await _getWins(pick.id);
                 if (wins && wins.length) {
-                    winHtml = ' &nbsp;🏆 <b>' + wins.map((w) => escHtml(String(w.number).padStart(2, '0'))).join(' ') + '</b>';
+                    // Dedupe: same number from duplicate rows shows only once
+                    const uniqNums = [...new Set(wins.map((w) => String(w.number).padStart(2, '0')))];
+                    winHtml = ' &nbsp;🏆 <b>' + uniqNums.map((n) => escHtml(n)).join(' ') + '</b>';
                     // 🔔 NEW winning number alert (first sighting only)
                     if (!_agentRemind.knownWins[pick.id]) {
                         _agentRemind.knownWins[pick.id] = true;
-                        const nums = wins.map((w) => String(w.number).padStart(2, '0')).join(' ');
-                        showToast('🏆 ပေါက်သီး ထွက်ပြီ: ' + nums);
+                        showToast('🏆 ပေါက်သီး ထွက်ပြီ: ' + uniqNums.join(' '));
                         try { navigator.vibrate && navigator.vibrate([300, 150, 300]); } catch (e) {}
                     }
                 }
