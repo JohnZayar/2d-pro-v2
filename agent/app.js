@@ -13,9 +13,16 @@
  */
 
 import * as db from '../shared/db.js?v=2';
-import * as pb from '../shared/pb.js?v=3';
-import * as sync from '../shared/sync.js?v=17';
+import * as pb from '../shared/pb.js?v=4';
+import * as sync from '../shared/sync.js?v=18';
 import { parseBoardReport, parseLine } from '../shared/parser.js';
+
+// Global safety net: log unhandled promise rejections instead of failing silently.
+if (typeof window !== 'undefined') {
+    window.addEventListener('unhandledrejection', (e) => {
+        console.error('[agent] Unhandled rejection:', e.reason);
+    });
+}
 import { uid, formatMoney, formatDateStr, getWeekMonday, showToast, escHtml, debounce } from '../shared/utils.js';
 
 const LS_TENANT = 'v2_agent_tenant';
@@ -1304,77 +1311,6 @@ window.syncNowManual = async function syncNowManual() {
         refreshActiveScreen();
     } catch (e) {
         showToast('❌ Sync မရပါ: ' + e.message);
-    }
-    updateSyncPill();
-};
-
-/** Clear local sessions and re-pull from server. */
-window.doClearSessions = async function doClearSessions() {
-    if (!confirm('Local sessions ဖျက်�ြီး server က ပြန် ဆွဲမလား?')) return;
-    const all = await db.getAll('sessions').catch(() => []);
-    for (const r of all) {
-        await db.del('sessions', r.id).catch(() => {});
-    }
-    // Clear lastPull so next sync does full pull.
-    const lp = await db.get('app_settings', 'sync:lastPull:sessions').catch(() => null);
-    if (lp) await db.del('app_settings', lp.id).catch(() => {});
-    showToast('✅ Sessions ရှင်းပြီးပြီ — Sync နှိပ်');
-    updateSyncPill();
-};
-
-/** Test pull: list sessions without filter to see if server is reachable. */
-window.doTestPull = async function doTestPull() {
-    showToast('🔍 Pull စမ်းနေ…');
-    try {
-        const items = await pb.listAll('sessions', {});
-        const local = await db.getAll('sessions').catch(() => []);
-        const sTenant = items.length > 0 ? String(items[0].tenant || '').substring(0, 8) : 'none';
-        const myTenant = String(tenantId || '').substring(0, 8);
-        const match = sTenant === myTenant ? '✅တူ' : '❌မတူ';
-        showToast(`Server:${items.length} Local:${local.length} ${match} S:${sTenant} M:${myTenant}`);
-    } catch (e) {
-        showToast(`❌ Pull မရပါ: ${e.code || e.message}`);
-    }
-    updateSyncPill();
-};
-
-/** Reset sync state: clear lastPull timestamps so next pull fetches everything. */
-window.doResetSync = async function doResetSync() {
-    if (!confirm('Sync state ပြန် စ မလား? (နောက် sync မှာ အကုန် ပြန် ဆွဲမယ်)')) return;
-    const all = await db.getAll('app_settings').catch(() => []);
-    for (const r of all) {
-        if (r.key && r.key.startsWith('sync:lastPull:')) {
-            await db.del('app_settings', r.id).catch(() => {});
-        }
-    }
-    showToast('✅ Sync state ရှင်းပြီးပြီ — Sync နှိပ်');
-    updateSyncPill();
-};
-
-/** Re-authenticate: clear cached token and auto-login fresh (fixes stale tokens after DB wipe). */
-window.doReauth = async function doReauth() {    if (!confirm('Auth ပြန် လုပ်မလား? (token အသစ် ယူမယ်)')) return;
-    pb.logout();
-    showToast('🔄 Login ပြန် ဝင် နေ…');
-    try {
-        await pb.login('agent@2dpro.local', 'Agent2DPro2026Sync!');
-        showToast('✅ Login ရ ပြီ');
-    } catch (e) {
-        showToast('❌ Login မရပါ: ' + e.message);
-    }
-    updateSyncPill();
-};
-
-/** Disaster recovery: push all local records to the (wiped) server. */
-window.doRepushAll = async function doRepushAll() {    if (!confirm('ဖုန်း ထဲ က data အကုန် server ကို ပြန် တင်မလား?')) return;
-    showToast('📤 ပြန် တင်နေ ပြီ…');
-    updateSyncPill('working');
-    try {
-        const res = await sync.repushAll();
-        showToast(`📤 ${res.queued} တင်, ✅ ${res.pushed} ရောက်` +
-            (res.failed ? `, ❌ ${res.failed} မရ` : '') +
-            (res.errors.length ? '\n' + res.errors.slice(0, 3).join('\n') : ''));
-    } catch (e) {
-        showToast('❌ ပြန် တင် မရပါ: ' + e.message);
     }
     updateSyncPill();
 };
