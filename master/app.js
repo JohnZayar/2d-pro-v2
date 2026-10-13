@@ -115,6 +115,8 @@ function bindUI() {
 
     $('syncNowBtn').addEventListener('click', () => fullSync(true));
     $('logoutBtn').addEventListener('click', doLogout);
+    const resetBtn = $('resetAppBtn');
+    if (resetBtn) resetBtn.addEventListener('click', resetApp);
     $('buyerCreateBtn').addEventListener('click', createBuyerAccount);
     const agentCreateBtn = $('agentCreateBtn');
     if (agentCreateBtn) agentCreateBtn.addEventListener('click', () => window.createAgentAccount());
@@ -3059,3 +3061,19 @@ window.editAgentLimit = async function editAgentLimit(buyerId, tenantId, current
     showToast(`✅ Agent limit → ${n}`);
     renderBuyerList();
 };
+
+/* 🔄 App Reset: clear all local data and reload */
+async function resetApp() {
+    if (!confirm('App data အကုန် ရှင်း မလား? (login ပြန် ဝင် ရ မယ်)')) return;
+    try {
+        // Clear IndexedDB
+        const dbs = await indexedDB.databases();
+        for (const d of dbs) {
+            if (d.name) indexedDB.deleteDatabase(d.name);
+        }
+    } catch (e) { /* ignore */ }
+    // Clear localStorage
+    localStorage.clear();
+    // Reload
+    location.reload();
+}
