@@ -146,7 +146,7 @@ export function agentPasswordFor(linkCode) {
  * Password: Ag2D_<tenantId>_<n>
  */
 export function parseAgentCode(code) {
-    const m = String(code || '').trim().match(/^([A-Za-z0-9]+)(?:-([1-5]))?$/);
+    const m = String(code || '').trim().match(/^([A-Za-z0-9]+)(?:-([1-9][0-9]?))?$/);
     if (!m) return null;
     return { tenantId: m[1], agentNum: parseInt(m[2] || '1', 10) };
 }
