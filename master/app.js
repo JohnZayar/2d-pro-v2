@@ -1220,6 +1220,7 @@ async function saveBoard() {
     const target = $('boardTarget').value;
     const agent = state.agents.find((a) => a.id === target);
     const personName = agent ? agent.name : '';
+    if (!personName) { showToast('❌ အမည် ရွေးပါ (မရွေးရင် တင်မရ)'); return; }
 
     // 🚫 ဒိုင်ပိတ်: blocked numbers cannot be bet (incoming only)
     const blockedSet2 = new Set(getBlocked(sessionId));
@@ -1449,6 +1450,8 @@ window.submitEntryRow = async function submitEntryRow() {
 window.saveEntryBatch = async function saveEntryBatch() {
     if (entrySaveInFlight) return;
     if (!entryPending.length) { showToast('စာရင်း မရှိသေးပါ'); return; }
+    // Block if any entry has no player name
+    if (entryPending.some((e) => !(e.player_name || '').trim())) { showToast('❌ အမည် မပါ တဲ့ စာရင်း ရှိ — ဖျက် ပြီး ပြန် ထည့်'); return; }
     if (!state.activeSessionId) { showToast('⚠️ Session မရှိသေးပါ'); return; }
     const lk = await isSessionLocked(state.activeSessionId);
     if (lk.locked) { showToast('🔒 ' + lk.reason + ' — သိမ်း မရပါ'); return; }
