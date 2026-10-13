@@ -9,8 +9,9 @@ import * as sync from '../shared/sync.js?v=18';
 import { parseBoard, parseBoardReport, parseLine } from '../shared/parser.js';
 import {
     formatMoney, formatDateStr, getWeekMondayStr, remainingDigits,
-    uid, showToast, escHtml, extractDigits, agentEmailFor, agentPasswordFor
-} from '../shared/utils.js?v=2';
+    uid, showToast, escHtml, extractDigits, agentEmailFor, agentPasswordFor,
+    agentEmailForNum, agentPasswordForNum, agentCodeFor, parseAgentCode
+} from '../shared/utils.js?v=3';
 
 // Global safety net: log unhandled promise rejections instead of failing silently.
 if (typeof window !== 'undefined') {
@@ -115,6 +116,8 @@ function bindUI() {
     $('syncNowBtn').addEventListener('click', () => fullSync(true));
     $('logoutBtn').addEventListener('click', doLogout);
     $('buyerCreateBtn').addEventListener('click', createBuyerAccount);
+    const agentCreateBtn = $('agentCreateBtn');
+    if (agentCreateBtn) agentCreateBtn.addEventListener('click', () => window.createAgentAccount());
     const buyerRefreshBtn = $('buyerRefreshBtn');
     if (buyerRefreshBtn) buyerRefreshBtn.addEventListener('click', renderBuyerList);
     $('pwChangeBtn').addEventListener('click', changePassword);
@@ -244,14 +247,15 @@ async function createBuyerAccount() {
             name: shopName,
             tenant: tenant.id
         });
-        // 3. Create per-tenant agent account (for Agent app sync, tenant-isolated)
-        const agentEmail = agentEmailFor(tenant.id);
-        const agentPass = agentPasswordFor(tenant.id);
+        // 3. Create per-tenant agent account #1 (for Agent app sync, tenant-isolated)
+        // Buyer can add up to 4 more via Agent management (5 total max)
+        const agentEmail = agentEmailForNum(tenant.id, 1);
+        const agentPass = agentPasswordForNum(tenant.id, 1);
         await pb.create('users', {
             email: agentEmail,
             password: agentPass,
             passwordConfirm: agentPass,
-            name: `Agent (${shopName})`,
+            name: `Agent 1 (${shopName})`,
             tenant: tenant.id
         });
         resultEl.style.display = '';
@@ -316,11 +320,16 @@ window.toggleBuyerDisabled = async function toggleBuyerDisabled(userId, disable)
             const buyer = await pb.getOne('users', userId);
             const tenantId = buyer.tenant;
             if (tenantId) {
-                const agentEmail = agentEmailFor(tenantId);
-                const agents = await pb.list('users', { filter: `email="${agentEmail}"`, perPage: 1 });
-                const agent = (agents.items || agents)[0];
-                if (agent) {
-                    await pb.update('users', agent.id, { disabled: disable });
+                // Disable/enable all of this tenant's agent accounts (up to 5)
+                for (let n = 1; n <= 5; n++) {
+                    try {
+                        const agentEmail = agentEmailForNum(tenantId, n);
+                        const agents = await pb.list('users', { filter: `email="${agentEmail}"`, perPage: 1 });
+                        const agent = (agents.items || agents)[0];
+                        if (agent) {
+                            await pb.update('users', agent.id, { disabled: disable });
+                        }
+                    } catch (e) { /* agent n may not exist */ }
                 }
             }
         } catch (e) {
@@ -543,6 +552,8 @@ async function ensureTenant() {
     if (lcHome) lcHome.textContent = state.tenantPbId;
     const lcDrawer = $('linkCodeDrawer');
     if (lcDrawer) lcDrawer.textContent = state.tenantPbId;
+    // Load the agent list for this tenant (buyer's own agents)
+    renderAgentList().catch(() => {});
 }
 
 /* Copy the Agent link code to clipboard */
@@ -2900,5 +2911,100 @@ window.saveAkanBatch = async function saveAkanBatch() {
         showToast('သိမ်းမရပါ: ' + e.message);
     } finally {
         akanSaveInFlight = false;
+    }
+};
+
+/* ============ AGENT MANAGEMENT (5 per buyer max) ============ */
+const MAX_AGENTS_PER_BUYER = 5;
+
+async function renderAgentList() {
+    const box = $('agentList');
+    if (!box) return;
+    const tenantId = state.tenantPbId;
+    if (!tenantId) {
+        box.innerHTML = '<div class="muted">—</div>';
+        return;
+    }
+    try {
+        box.innerHTML = '<div class="muted">ရှာနေတယ်…</div>';
+        let html = '<table class="v-table"><thead><tr><th>Agent</th><th>Code</th><th>အခြေအနေ</th><th></th></tr></thead><tbody>';
+        let count = 0;
+        for (let n = 1; n <= MAX_AGENTS_PER_BUYER; n++) {
+            try {
+                const email = agentEmailForNum(tenantId, n);
+                const res = await pb.list('users', { filter: `email="${email}"`, perPage: 1 });
+                const agent = (res.items || res)[0];
+                if (!agent) continue;
+                count++;
+                const disabled = !!agent.disabled;
+                const code = agentCodeFor(tenantId, n);
+                html += '<tr>' +
+                    '<td>' + escHtml(agent.name || `Agent ${n}`) + '</td>' +
+                    '<td><code>' + escHtml(code) + '</code></td>' +
+                    '<td>' + (disabled ? '<span style="color:#ef4444">🔴 ပိတ်</span>' : '<span style="color:#4ade80">🟢 ဖွင့်</span>') + '</td>' +
+                    '<td><button class="btn small ' + (disabled ? 'gray' : 'red') + '" onclick="toggleAgentDisabled(\'' + agent.id + '\',' + (!disabled) + ')">' + (disabled ? 'ဖွင့်' : 'ပိတ်') + '</button></td>' +
+                    '</tr>';
+            } catch (e) { /* skip */ }
+        }
+        html += '</tbody></table>';
+        if (!count) html = '<div class="muted">Agent မရှိသေးပါ</div>';
+        else html += `<div class="small muted mt">${count}/${MAX_AGENTS_PER_BUYER} သုံး ပြီးပြီ</div>`;
+        box.innerHTML = html;
+        const btn = $('agentCreateBtn');
+        if (btn) btn.disabled = count >= MAX_AGENTS_PER_BUYER;
+    } catch (e) {
+        box.innerHTML = '<div class="muted">မရဘူး: ' + escHtml(e.message || 'error') + '</div>';
+    }
+}
+
+window.toggleAgentDisabled = async function toggleAgentDisabled(agentId, disable) {
+    const action = disable ? 'ပိတ်' : 'ဖွင့်';
+    if (!confirm(`ဒီ agent ကို ${action}မလား?`)) return;
+    try {
+        await pb.update('users', agentId, { disabled: disable });
+        showToast(disable ? '🔴 ပိတ်ပြီးပြီ' : '🟢 ဖွင့်ပြီးပြီ');
+        renderAgentList();
+    } catch (e) {
+        showToast('❌ ' + (e.message || 'error'));
+    }
+};
+
+window.createAgentAccount = async function createAgentAccount() {
+    const tenantId = state.tenantPbId;
+    if (!tenantId) {
+        showToast('❌ Tenant မရှိပါ');
+        return;
+    }
+    // Find the next available agent number
+    let nextNum = 0;
+    for (let n = 1; n <= MAX_AGENTS_PER_BUYER; n++) {
+        try {
+            const email = agentEmailForNum(tenantId, n);
+            const res = await pb.list('users', { filter: `email="${email}"`, perPage: 1 });
+            const existing = (res.items || res)[0];
+            if (!existing) { nextNum = n; break; }
+        } catch (e) { /* skip */ }
+    }
+    if (!nextNum) {
+        showToast(`❌ Agent ${MAX_AGENTS_PER_BUYER} ယောက် ပြည့်ပြီ — Pho စီ လာ ပြော ပါ`);
+        return;
+    }
+    const agentName = prompt(`Agent ${nextNum} နာမည်:`, `Agent ${nextNum}`);
+    if (!agentName) return;
+    try {
+        const email = agentEmailForNum(tenantId, nextNum);
+        const pass = agentPasswordForNum(tenantId, nextNum);
+        await pb.create('users', {
+            email: email,
+            password: pass,
+            passwordConfirm: pass,
+            name: agentName.trim(),
+            tenant: tenantId
+        });
+        const code = agentCodeFor(tenantId, nextNum);
+        showToast(`✅ Agent ဖန်တီးပြီးပြီ\nCode: ${code}`);
+        renderAgentList();
+    } catch (e) {
+        showToast('❌ ' + (e.message || 'error'));
     }
 };
