@@ -2976,8 +2976,11 @@ async function setAgentLimit(tenantId, limit) {
 async function renderAgentList() {
     const box = $('agentListSettings');
     if (!box) return;
-    // Get tenant ID from state or directly from logged-in user
-    const tenantId = state.tenantPbId || (state.user && state.user.tenant);
+    // Get tenant ID from state or directly from logged-in user (handle both string ID and expanded object)
+    let tenantId = state.tenantPbId;
+    if (!tenantId && state.user && state.user.tenant) {
+        tenantId = typeof state.user.tenant === 'string' ? state.user.tenant : state.user.tenant.id;
+    }
     if (!tenantId) {
         box.innerHTML = '<div class="muted">—</div>';
         return;
