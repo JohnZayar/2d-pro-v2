@@ -23,7 +23,7 @@ if (typeof window !== 'undefined') {
         console.error('[agent] Unhandled rejection:', e.reason);
     });
 }
-import { uid, formatMoney, formatDateStr, getWeekMonday, showToast, escHtml, debounce } from '../shared/utils.js';
+import { uid, formatMoney, formatDateStr, getWeekMonday, showToast, escHtml, debounce, agentEmailFor, agentPasswordFor } from '../shared/utils.js?v=2';
 
 const LS_TENANT = 'v2_agent_tenant';
 const LS_AGENT_NAME = 'v2_agent_name';
@@ -89,18 +89,30 @@ async function _getWins(sessionId) {
     } catch (e) { return []; }
 }
 
+/**
+ * Login as the tenant-specific agent account.
+ * Each buyer (tenant) has their own agent account for data isolation.
+ * Credentials are derived from the link code (tenant PB ID).
+ */
+async function loginAsTenantAgent() {
+    const code = localStorage.getItem(LS_TENANT) || '';
+    if (!code) return; // No link code yet — user needs to connect first
+    // If already logged in as the correct tenant agent, skip
+    const current = pb.getUser();
+    if (current && current.email === agentEmailFor(code) && pb.isLoggedIn()) return;
+    // Log out from any previous account (e.g., different tenant or shared account)
+    pb.logout();
+    await pb.login(agentEmailFor(code), agentPasswordFor(code));
+}
+
 async function init() {
     pb.loadBaseUrl(); // custom server URL override (if Pho set one)
     pb.loadAuth();
-    // Auto-login as shared agent account for PocketBase sync (if not already logged in)
-    if (!pb.isLoggedIn()) {
-        try {
-            await pb.login('agent@2dpro.local', 'Agent2DPro2026Sync!');
-        } catch (e) {
-            // Sync will work offline; login failure is non-fatal
-            console.warn('Agent auto-login failed:', e.message);
-        }
-    }
+    // Auto-login as the tenant-specific agent account (if link code is saved)
+    // Each buyer has their own agent account for tenant isolation.
+    await loginAsTenantAgent().catch(() => {
+        // Sync will work offline; login failure is non-fatal
+    });
     try {
         await db.openDB();
     } catch (e) {
@@ -216,6 +228,13 @@ window.connectAgent = async function connectAgent() {
         agentName = name;
         localStorage.setItem(LS_TENANT, code);
         localStorage.setItem(LS_AGENT_NAME, name);
+
+        // Login as this tenant's agent account for isolated sync
+        try {
+            await loginAsTenantAgent();
+        } catch (e) {
+            console.warn('Tenant agent login failed:', e.message);
+        }
 
         showApp();
         await refreshSession();
