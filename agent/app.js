@@ -1043,7 +1043,7 @@ window.renderRecordsView = async function renderRecordsView() {
                 b.items.map((r) => {
                     const numStr = String(r.number).padStart(2, '0');
                     const isWin = winNums.has(numStr);
-                    return '<tr data-rid="' + escHtml(r.id) + '"' + (isWin ? ' class="win-row"' : '') + '><td' + (isWin ? ' class="win-cell"' : '') + '>' +
+                    return '<tr data-rid="' + escHtml(r.id) + '" style="user-select:none;-webkit-user-select:none;"' + (isWin ? ' class="win-row"' : '') + '><td' + (isWin ? ' class="win-cell"' : '') + '>' +
                         escHtml(r.number) + '</td><td' + (isWin ? ' class="win-cell"' : '') + '>' + formatMoney(r.amount) + '</td></tr>';
                 }).join('') +
                 '</tbody><tfoot><tr><td>Total</td><td>' + formatMoney(b.totalAmt) + '</td></tr></tfoot></table>' +
