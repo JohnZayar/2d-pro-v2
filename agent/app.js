@@ -1844,6 +1844,14 @@ window.resetAgentApp = async function resetAgentApp() {
     document.addEventListener('touchstart', onPressStart, { passive: true });
     document.addEventListener('touchend', clearPress);
     document.addEventListener('touchmove', clearPress);
+    // Block native context menu (Copy/Select all) on voucher rows
+    document.addEventListener('contextmenu', (e) => {
+        let tgt = e.target;
+        if (tgt && tgt.nodeType === 3) tgt = tgt.parentElement;
+        if (tgt && tgt.closest && tgt.closest('tr[data-rid]')) {
+            e.preventDefault();
+        }
+    });
     document.addEventListener('mousedown', (e) => { if (e.button === 0) onPressStart(e); });
     document.addEventListener('mouseup', clearPress);
     document.addEventListener('mousemove', (e) => { if (pressTimer && e.buttons === 0) clearPress(); });
