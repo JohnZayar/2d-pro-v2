@@ -743,18 +743,21 @@ async function resolvePendingRelations() {
     return fixed;
 }
 
-/** Auto-ack batches for Agent "Ok" display. Runs after sync. */
+/** Auto-ack batches for Agent "Ok" display. Runs after sync. Reads from server. */
 async function writeBatchAcks() {
     if (!isSeller) return;
     try {
-        const records = await db.getAll('lottery_records');
+        // Read from server directly (not local DB) for reliability
+        const res = await pb.list('lottery_records', { perPage: 100, sort: '-created' });
+        const records = res.items || res;
         const seen = new Map();
         for (const r of records) {
             if (!r.agent_name || !r.batch_no) continue;
-            const key = [r.tenant, r.agent_name, r.player_name || '', r.batch_no, r.session].join('|');
-            if (!seen.has(key)) seen.set(key, r);
+            const tenantId = r.tenant || '';
+            const key = [tenantId, r.agent_name, r.player_name || '', r.batch_no, r.session].join('|');
+            if (!seen.has(key)) seen.set(key, { r, tenantId });
         }
-        for (const [key, r] of seen) {
+        for (const [key, { r, tenantId }] of seen) {
             const ackKey = 'ack_' + key.replace(/[^a-zA-Z0-9]/g, '_');
             try {
                 const ex = await pb.list('app_settings', { filter: `key="${ackKey}"`, perPage: 1 });
@@ -762,7 +765,7 @@ async function writeBatchAcks() {
                     await pb.create('app_settings', {
                         key: ackKey,
                         value: JSON.stringify({ agent: r.agent_name, player: r.player_name, batch_no: r.batch_no, at: Date.now() }),
-                        tenant: r.tenant
+                        tenant: tenantId
                     });
                 }
             } catch (e) { /* skip */ }
@@ -778,9 +781,9 @@ async function fullSync(manual) {
     try {
         await resolvePendingRelations();
         let res = await sync.syncNow();
-        // Auto-ack: mark batches received (for Agent "Ok" display)
-        writeBatchAcks().catch(() => {});
         if (await resolvePendingRelations()) res = await sync.syncNow();
+        // Auto-ack: mark batches received (for Agent "Ok" display) - await it
+        try { await writeBatchAcks(); } catch (e) { console.warn('Ack failed:', e.message); }
         // Refresh UI only when the pull actually brought changes (like Agent does) —
         // re-rendering every 45s unconditionally caused visible stutter.
         const pulled = (res && res.pull && res.pull.pulled) || 0;
