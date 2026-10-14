@@ -1854,12 +1854,17 @@ window.resetAgentApp = async function resetAgentApp() {
     document.addEventListener('touchstart', onPressStart, { passive: true });
     document.addEventListener('touchend', clearPress);
     document.addEventListener('touchmove', onPressMove, { passive: true });
-    // Block native context menu (Copy/Select all) on voucher rows
+    // Use contextmenu (long-press) as primary trigger - more reliable on Android
     document.addEventListener('contextmenu', (e) => {
         let tgt = e.target;
         if (tgt && tgt.nodeType === 3) tgt = tgt.parentElement;
-        if (tgt && tgt.closest && tgt.closest('tr[data-rid]')) {
-            e.preventDefault();
+        if (tgt && tgt.closest) {
+            const tr = tgt.closest('tr[data-rid]');
+            if (tr) {
+                e.preventDefault();
+                clearPress();
+                showEditDeleteMenu(tr.getAttribute('data-rid'), e);
+            }
         }
     });
     document.addEventListener('mousedown', (e) => { if (e.button === 0) onPressStart(e); });
