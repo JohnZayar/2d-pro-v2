@@ -2610,7 +2610,7 @@ async function renderVoucherContent() {
                 b.items.map((r) => {
                     const numStr = String(r.number).padStart(2, '0');
                     const isWin = winNums.has(numStr);
-                    return '<tr' + (isWin ? ' class="win-row"' : '') + '><td' + (isWin ? ' class="win-cell"' : '') + '>' +
+                    return '<tr data-rid="' + escHtml(r.id) + '"' + (isWin ? ' class="win-row"' : '') + '><td' + (isWin ? ' class="win-cell"' : '') + '>' +
                         escHtml(numStr) + '</td>' +
                         '<td' + (isWin ? ' class="win-cell"' : '') + '>' + formatMoney(r.amount) + '</td></tr>';
                 }).join('') +
@@ -3201,3 +3201,96 @@ async function resetApp() {
     // Reload
     location.reload();
 }
+
+/** Long-press Edit/Delete for voucher rows (Pho's spec: nothing shows until long-press) */
+(function() {
+    let pressTimer = null;
+    let pressTarget = null;
+    const clearPress = () => {
+        if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; }
+        pressTarget = null;
+    };
+    const onPressStart = (e) => {
+        const tr = e.target.closest('tr[data-rid]');
+        if (!tr) return;
+        pressTarget = tr;
+        pressTimer = setTimeout(() => {
+            showEditDeleteMenu(pressTarget.getAttribute('data-rid'), e);
+            clearPress();
+        }, 600);
+    };
+    document.addEventListener('touchstart', onPressStart, { passive: true });
+    document.addEventListener('touchend', clearPress);
+    document.addEventListener('touchmove', clearPress);
+    document.addEventListener('mousedown', (e) => { if (e.button === 0) onPressStart(e); });
+    document.addEventListener('mouseup', clearPress);
+    window.showEditDeleteMenu = function(rid, e) {
+        closeEditDeleteMenu();
+        const menu = document.createElement('div');
+        menu.id = 'editDeleteMenu';
+        menu.style.cssText = 'position:fixed;z-index:9999;background:#1e293b;border:1px solid #3b82f6;border-radius:8px;padding:8px;box-shadow:0 4px 12px rgba(0,0,0,0.5);';
+        const x = (e.changedTouches ? e.changedTouches[0].clientX : e.clientX) || window.innerWidth/2;
+        const y = (e.changedTouches ? e.changedTouches[0].clientY : e.clientY) || window.innerHeight/2;
+        menu.style.left = Math.min(x, window.innerWidth - 140) + 'px';
+        menu.style.top = Math.min(y, window.innerHeight - 100) + 'px';
+        menu.innerHTML =
+            '<button onclick="openEditRecord(\'' + rid + '\')" style="display:block;width:100%;padding:8px 16px;margin:4px 0;background:#3b82f6;color:white;border:none;border-radius:4px;">✏️ ပြင်</button>' +
+            '<button onclick="deleteRecord(\'' + rid + '\')" style="display:block;width:100%;padding:8px 16px;margin:4px 0;background:#ef4444;color:white;border:none;border-radius:4px;">🗑️ ဖျက်</button>';
+        document.body.appendChild(menu);
+        setTimeout(() => { document.addEventListener('click', closeEditDeleteMenu, { once: true }); }, 100);
+    };
+    window.closeEditDeleteMenu = function() {
+        const m = document.getElementById('editDeleteMenu');
+        if (m) m.remove();
+        const em = document.getElementById('editRecordModal');
+        if (em) em.remove();
+    };
+    window.openEditRecord = async function(rid) {
+        closeEditDeleteMenu();
+        try {
+            const r = await db.get('lottery_records', rid);
+            if (!r) { alert('မတွေ့ပါ'); return; }
+            const modal = document.createElement('div');
+            modal.id = 'editRecordModal';
+            modal.style.cssText = 'position:fixed;z-index:9999;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;';
+            modal.innerHTML =
+                '<div style="background:#1e293b;border:1px solid #3b82f6;border-radius:12px;padding:20px;min-width:280px;">' +
+                '<h3 style="color:white;margin:0 0 16px;">ပြင်</h3>' +
+                '<label style="color:#94a3b8;display:block;margin-bottom:8px;">ဂဏန်း</label>' +
+                '<input id="editNum" type="text" value="' + escHtml(r.number) + '" style="width:100%;padding:8px;margin-bottom:12px;background:#0f172a;color:white;border:1px solid #334155;border-radius:4px;">' +
+                '<label style="color:#94a3b8;display:block;margin-bottom:8px;">ပမာဏ</label>' +
+                '<input id="editAmt" type="number" value="' + r.amount + '" style="width:100%;padding:8px;margin-bottom:16px;background:#0f172a;color:white;border:1px solid #334155;border-radius:4px;">' +
+                '<div style="display:flex;gap:8px;">' +
+                '<button onclick="saveEditRecord(\'' + rid + '\')" style="flex:1;padding:10px;background:#3b82f6;color:white;border:none;border-radius:4px;">သိမ်း</button>' +
+                '<button onclick="closeEditDeleteMenu()" style="flex:1;padding:10px;background:#475569;color:white;border:none;border-radius:4px;">ပိတ်</button>' +
+                '</div></div>';
+            document.body.appendChild(modal);
+        } catch (e) { alert('Error: ' + e.message); }
+    };
+    window.saveEditRecord = async function(rid) {
+        const num = document.getElementById('editNum').value.trim();
+        const amt = Number(document.getElementById('editAmt').value);
+        if (!num || !(amt > 0)) { alert('မှန်ကန်စွာ ဖြည့်ပါ'); return; }
+        try {
+            const r = await db.get('lottery_records', rid);
+            if (!r) return;
+            r.number = num; r.amount = amt;
+            await db.put('lottery_records', r);
+            await sync.mutate('update', 'lottery_records', { id: rid, number: num, amount: amt });
+            closeEditDeleteMenu();
+            if (window.refreshVoucherView) await window.refreshVoucherView();
+            else location.reload();
+        } catch (e) { alert('Error: ' + e.message); }
+    };
+    window.deleteRecord = async function(rid) {
+        closeEditDeleteMenu();
+        if (!confirm('ဖျက်မလား?')) return;
+        try {
+            await db.delete('lottery_records', rid);
+            await sync.mutate('delete', 'lottery_records', { id: rid });
+            if (window.refreshVoucherView) await window.refreshVoucherView();
+            else location.reload();
+        } catch (e) { alert('Error: ' + e.message); }
+    };
+})();
+
