@@ -949,6 +949,20 @@ window.renderRecordsView = async function renderRecordsView() {
         winNums = new Set(wins.map((w) => String(w.number).padStart(2, '0')));
     } catch (e) { /* ignore */ }
 
+    // Play a soft beep when Ok appears (Pho's request)
+    const playOkSound = () => {
+        try {
+            const ctx = new (window.AudioContext || window.webkitAudioContext)();
+            const o = ctx.createOscillator();
+            const g = ctx.createGain();
+            o.connect(g); g.connect(ctx.destination);
+            o.frequency.value = 880; o.type = 'sine';
+            g.gain.setValueAtTime(0.15, ctx.currentTime);
+            g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+            o.start(ctx.currentTime); o.stop(ctx.currentTime + 0.3);
+        } catch (e) { /* ignore */ }
+    };
+
     // Fetch Master acks (for "Ok" badges) - TRUE confirmation only
     let ackedBatches = new Set();
     try {
@@ -1013,13 +1027,16 @@ window.renderRecordsView = async function renderRecordsView() {
     };
 
     let html = '';
-    voucherPlayers.forEach((p) => {
+    let hasOk = false;
+    voucherPlayers.forEach((p, pIdx) => {
+        if (pIdx > 0) html += '<div style="border-top:1px dashed #3b82f6;margin:12px 0;opacity:0.5"></div>';
         html += '<div class="v-player-block">' +
             '<div class="v-player-name">' + escHtml(p.label) + '</div>';
         p.batches.forEach((b) => {
             const bFirst = b.items[0];
             const bAcked = bFirst && isBatchAcked(bFirst.agent_name, p.key, b.no);
             const bOkBadge = bAcked ? ' <span style="color:#4ade80;font-size:12px">✅ Ok</span>' : '';
+            if (bAcked) hasOk = true;
             html += '<div class="v-batch">' +
                 '<div class="v-batch-no" onclick="openBatchDetail(\'' + escHtml(p.key) + '\',' + b.no + ')" title="အသေးစိတ် ကြည့်ရန် (ပြင်/ဖျက်)">' + escHtml(b.label) + bOkBadge + '</div>' +
                 '<table class="v-table"><thead><tr><th>ဂဏန်း</th><th>ပမာဏ</th></tr></thead><tbody>' +
@@ -1036,7 +1053,8 @@ window.renderRecordsView = async function renderRecordsView() {
     });
     html += '<div class="voucher-total"><span>စုစုပေါင်း</span><b>' + formatMoney(grandAmt) +
         '</b></div>';
-    content.innerHTML = html;
+    if (hasOk) playOkSound();
+        content.innerHTML = html;
 };
 
 /* ================= Voucher actions: Copy / Print / Share ================= */
