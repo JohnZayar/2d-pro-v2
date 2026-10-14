@@ -1828,7 +1828,11 @@ window.resetAgentApp = async function resetAgentApp() {
     };
 
     const onPressStart = (e) => {
-        const tr = e.target.closest('tr[data-rid]');
+        let tgt = e.target;
+        // Handle text nodes
+        if (tgt && tgt.nodeType === 3) tgt = tgt.parentElement;
+        if (!tgt || !tgt.closest) return;
+        const tr = tgt.closest('tr[data-rid]');
         if (!tr) return;
         pressTarget = tr;
         pressTimer = setTimeout(() => {
