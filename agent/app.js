@@ -949,6 +949,22 @@ window.renderRecordsView = async function renderRecordsView() {
         winNums = new Set(wins.map((w) => String(w.number).padStart(2, '0')));
     } catch (e) { /* ignore */ }
 
+    // Fetch Master acks (for "Ok" badges) - TRUE confirmation only
+    let ackedBatches = new Set();
+    try {
+        const ackRes = await pb.list('batch_acks', { perPage: 200 });
+        for (const a of (ackRes.items || ackRes)) {
+            if (a.batch_key) ackedBatches.add(a.batch_key);
+        }
+    } catch (e) { /* ignore */ }
+    const isBatchAcked = (agentName, playerName, batchNo) => {
+        const prefix = [agentName, playerName || '', batchNo].join('|') + '|';
+        for (const ak of ackedBatches) {
+            if (ak.startsWith(prefix)) return true;
+        }
+        return false;
+    };
+
     // Group: player (entry order of first appearance) → batch_no asc → numbers keep order
     const playerOrder = [];
     const byPlayer = {};
@@ -1001,8 +1017,11 @@ window.renderRecordsView = async function renderRecordsView() {
         html += '<div class="v-player-block">' +
             '<div class="v-player-name">' + escHtml(p.label) + '</div>';
         p.batches.forEach((b) => {
+            const bFirst = b.items[0];
+            const bAcked = bFirst && isBatchAcked(bFirst.agent_name, p.key, b.no);
+            const bOkBadge = bAcked ? ' <span style="color:#4ade80;font-size:12px">✅ Ok</span>' : '';
             html += '<div class="v-batch">' +
-                '<div class="v-batch-no" onclick="openBatchDetail(\'' + escHtml(p.key) + '\',' + b.no + ')" title="အသေးစိတ် ကြည့်ရန် (ပြင်/ဖျက်)">' + escHtml(b.label) + '</div>' +
+                '<div class="v-batch-no" onclick="openBatchDetail(\'' + escHtml(p.key) + '\',' + b.no + ')" title="အသေးစိတ် ကြည့်ရန် (ပြင်/ဖျက်)">' + escHtml(b.label) + bOkBadge + '</div>' +
                 '<table class="v-table"><thead><tr><th>ဂဏန်း</th><th>ပမာဏ</th></tr></thead><tbody>' +
                 b.items.map((r) => {
                     const numStr = String(r.number).padStart(2, '0');
