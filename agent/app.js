@@ -1561,6 +1561,7 @@ async function renderPlayerGroups(recs, emptyMsg) {
 
     // Check which batches Master has confirmed (via batch_acks)
     // Ok shows ONLY when Master has truly received the batch
+    // Note: ack uses SERVER session ID, local records use local ID - map via _pbId
     let ackedBatches = new Set();
     try {
         const ackRes = await pb.list('batch_acks', { perPage: 200 });
@@ -1568,8 +1569,17 @@ async function renderPlayerGroups(recs, emptyMsg) {
             if (a.batch_key) ackedBatches.add(a.batch_key);
         }
     } catch (e) { /* ignore */ }
+    // Map local session ID -> server session ID
+    const sessIdMap = {};
+    try {
+        const allSess = await db.getAll('sessions');
+        for (const s of allSess) {
+            if (s._pbId) sessIdMap[s.id] = s._pbId;
+        }
+    } catch (e) { /* ignore */ }
     const batchKeyFor = (r) => {
-        return [r.agent_name, r.player_name || '', r.batch_no, r.session].join('|');
+        const srvSess = sessIdMap[r.session] || r.session;
+        return [r.agent_name, r.player_name || '', r.batch_no, srvSess].join('|');
     };
 
     // Build player info map: name → {commission, multiplier}
