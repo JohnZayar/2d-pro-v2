@@ -745,7 +745,10 @@ async function resolvePendingRelations() {
 
 /** Auto-ack batches for Agent "Ok" display. Runs after sync. Reads from server. */
 async function writeBatchAcks() {
-    if (!isSeller) return;
+    // Only Pho (seller) writes acks - check via state.user
+    try {
+        if (!state.user || state.user.email !== 'johnzyt7@gmail.com') return;
+    } catch (e) { return; }
     try {
         // Read from server directly (not local DB) for reliability
         const res = await pb.list('lottery_records', { perPage: 100, sort: '-created' });
