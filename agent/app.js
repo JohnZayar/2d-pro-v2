@@ -1559,17 +1559,20 @@ async function renderDailyTable(recs, dateKeyStr) {
 async function renderPlayerGroups(recs, emptyMsg) {
     if (!recs.length) return '<div class="empty-state">' + escHtml(emptyMsg || 'စာရင်း မရှိပါ') + '</div>';
 
-    // Fetch batch acks (Master received confirmations)
-    let ackedBatches = new Set();
+    // Check which batches are confirmed on server (Master has them)
+    // A batch is "Ok" if its records exist on the server
+    let serverBatches = new Set();
     try {
-        const ackRes = await pb.list('app_settings', { filter: 'key ~ "ack_"', perPage: 200 });
-        for (const a of (ackRes.items || ackRes)) {
-            ackedBatches.add(a.key);
+        const srvRes = await pb.list('lottery_records', { perPage: 100, sort: '-created' });
+        for (const sr of (srvRes.items || srvRes)) {
+            if (sr.agent_name && sr.batch_no) {
+                const sk = [sr.agent_name, sr.player_name || '', sr.batch_no, sr.session].join('|');
+                serverBatches.add(sk);
+            }
         }
     } catch (e) { /* ignore */ }
-    const ackKeyFor = (r) => {
-        const key = [r.tenant, r.agent_name, r.player_name || '', r.batch_no, r.session].join('|');
-        return 'ack_' + key.replace(/[^a-zA-Z0-9]/g, '_');
+    const batchKeyFor = (r) => {
+        return [r.agent_name, r.player_name || '', r.batch_no, r.session].join('|');
     };
 
     // Build player info map: name → {commission, multiplier}
@@ -1631,7 +1634,7 @@ async function renderPlayerGroups(recs, emptyMsg) {
         batchOrder.forEach((b) => {
             const bAmt = byBatch[b].reduce((s, r) => s + netAmt(r), 0);
             const firstR = byBatch[b][0];
-            const isAcked = firstR && ackedBatches.has(ackKeyFor(firstR));
+            const isAcked = firstR && serverBatches.has(batchKeyFor(firstR));
             const okBadge = isAcked ? ' <span style="color:#4ade80;font-size:12px">✅ Ok</span>' : '';
             html += '<div class="v-batch">' +
                 '<div class="v-batch-no">' + escHtml(batchLabel(b)) + okBadge + '</div>' +
