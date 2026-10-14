@@ -1569,17 +1569,17 @@ async function renderPlayerGroups(recs, emptyMsg) {
             if (a.batch_key) ackedBatches.add(a.batch_key);
         }
     } catch (e) { /* ignore */ }
-    // Map local session ID -> server session ID
-    const sessIdMap = {};
-    try {
-        const allSess = await db.getAll('sessions');
-        for (const s of allSess) {
-            if (s._pbId) sessIdMap[s.id] = s._pbId;
+    // Match ack by (agent|player|batch) prefix - session-independent
+    // This avoids local/server session ID mismatch issues
+    const batchKeyPrefixFor = (r) => {
+        return [r.agent_name, r.player_name || '', r.batch_no].join('|') + '|';
+    };
+    const isAcked = (r) => {
+        const prefix = batchKeyPrefixFor(r);
+        for (const ak of ackedBatches) {
+            if (ak.startsWith(prefix)) return true;
         }
-    } catch (e) { /* ignore */ }
-    const batchKeyFor = (r) => {
-        const srvSess = sessIdMap[r.session] || r.session;
-        return [r.agent_name, r.player_name || '', r.batch_no, srvSess].join('|');
+        return false;
     };
 
     // Build player info map: name → {commission, multiplier}
@@ -1641,8 +1641,8 @@ async function renderPlayerGroups(recs, emptyMsg) {
         batchOrder.forEach((b) => {
             const bAmt = byBatch[b].reduce((s, r) => s + netAmt(r), 0);
             const firstR = byBatch[b][0];
-            const isAcked = firstR && ackedBatches.has(batchKeyFor(firstR));
-            const okBadge = isAcked ? ' <span style="color:#4ade80;font-size:12px">✅ Ok</span>' : '';
+            const acked = firstR && isAcked(firstR);
+            const okBadge = acked ? ' <span style="color:#4ade80;font-size:12px">✅ Ok</span>' : '';
             html += '<div class="v-batch">' +
                 '<div class="v-batch-no">' + escHtml(batchLabel(b)) + okBadge + '</div>' +
                 '<table class="v-table"><thead><tr><th>ဂဏန်း</th><th>ပမာဏ</th></tr></thead><tbody>' +
