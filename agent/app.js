@@ -1827,6 +1827,7 @@ window.resetAgentApp = async function resetAgentApp() {
         pressTarget = null;
     };
 
+    let startX = 0, startY = 0;
     const onPressStart = (e) => {
         let tgt = e.target;
         // Handle text nodes
@@ -1835,15 +1836,24 @@ window.resetAgentApp = async function resetAgentApp() {
         const tr = tgt.closest('tr[data-rid]');
         if (!tr) return;
         pressTarget = tr;
+        const t = e.touches ? e.touches[0] : e;
+        startX = t.clientX || 0; startY = t.clientY || 0;
         pressTimer = setTimeout(() => {
             showEditDeleteMenu(pressTarget.getAttribute('data-rid'), e);
             clearPress();
         }, 600);
     };
+    const onPressMove = (e) => {
+        if (!pressTimer) return;
+        const t = e.touches ? e.touches[0] : e;
+        const dx = Math.abs((t.clientX || 0) - startX);
+        const dy = Math.abs((t.clientY || 0) - startY);
+        if (dx > 10 || dy > 10) clearPress();
+    };
 
     document.addEventListener('touchstart', onPressStart, { passive: true });
     document.addEventListener('touchend', clearPress);
-    document.addEventListener('touchmove', clearPress);
+    document.addEventListener('touchmove', onPressMove, { passive: true });
     // Block native context menu (Copy/Select all) on voucher rows
     document.addEventListener('contextmenu', (e) => {
         let tgt = e.target;
