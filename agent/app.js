@@ -1559,16 +1559,13 @@ async function renderDailyTable(recs, dateKeyStr) {
 async function renderPlayerGroups(recs, emptyMsg) {
     if (!recs.length) return '<div class="empty-state">' + escHtml(emptyMsg || 'စာရင်း မရှိပါ') + '</div>';
 
-    // Check which batches are confirmed on server (Master has them)
-    // A batch is "Ok" if its records exist on the server
-    let serverBatches = new Set();
+    // Check which batches Master has confirmed (via batch_acks)
+    // Ok shows ONLY when Master has truly received the batch
+    let ackedBatches = new Set();
     try {
-        const srvRes = await pb.list('lottery_records', { perPage: 100, sort: '-created' });
-        for (const sr of (srvRes.items || srvRes)) {
-            if (sr.agent_name && sr.batch_no) {
-                const sk = [sr.agent_name, sr.player_name || '', sr.batch_no, sr.session].join('|');
-                serverBatches.add(sk);
-            }
+        const ackRes = await pb.list('batch_acks', { perPage: 200 });
+        for (const a of (ackRes.items || ackRes)) {
+            if (a.batch_key) ackedBatches.add(a.batch_key);
         }
     } catch (e) { /* ignore */ }
     const batchKeyFor = (r) => {
@@ -1634,7 +1631,7 @@ async function renderPlayerGroups(recs, emptyMsg) {
         batchOrder.forEach((b) => {
             const bAmt = byBatch[b].reduce((s, r) => s + netAmt(r), 0);
             const firstR = byBatch[b][0];
-            const isAcked = firstR && serverBatches.has(batchKeyFor(firstR));
+            const isAcked = firstR && ackedBatches.has(batchKeyFor(firstR));
             const okBadge = isAcked ? ' <span style="color:#4ade80;font-size:12px">✅ Ok</span>' : '';
             html += '<div class="v-batch">' +
                 '<div class="v-batch-no">' + escHtml(batchLabel(b)) + okBadge + '</div>' +
