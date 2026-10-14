@@ -743,31 +743,32 @@ async function resolvePendingRelations() {
     return fixed;
 }
 
-/** Auto-ack batches for Agent "Ok" display. Runs after sync. Reads from server. */
+/** Auto-ack batches for Agent "Ok" display. Runs after sync. Writes to batch_acks. */
 async function writeBatchAcks() {
     // Only Pho (seller) writes acks - check via state.user
     try {
         if (!state.user || state.user.email !== 'johnzyt7@gmail.com') return;
     } catch (e) { return; }
     try {
-        // Read from server directly (not local DB) for reliability
         const res = await pb.list('lottery_records', { perPage: 100, sort: '-created' });
         const records = res.items || res;
         const seen = new Map();
         for (const r of records) {
             if (!r.agent_name || !r.batch_no) continue;
             const tenantId = r.tenant || '';
-            const key = [tenantId, r.agent_name, r.player_name || '', r.batch_no, r.session].join('|');
-            if (!seen.has(key)) seen.set(key, { r, tenantId });
+            const batchKey = [r.agent_name, r.player_name || '', r.batch_no, r.session].join('|');
+            if (!seen.has(batchKey)) seen.set(batchKey, { r, tenantId, batchKey });
         }
-        for (const [key, { r, tenantId }] of seen) {
-            const ackKey = 'ack_' + key.replace(/[^a-zA-Z0-9]/g, '_');
+        for (const [batchKey, { r, tenantId }] of seen) {
             try {
-                const ex = await pb.list('app_settings', { filter: `key="${ackKey}"`, perPage: 1 });
+                const ex = await pb.list('batch_acks', { filter: `batch_key="${batchKey}"`, perPage: 1 });
                 if (!(ex.items || ex).length) {
-                    await pb.create('app_settings', {
-                        key: ackKey,
-                        value: JSON.stringify({ agent: r.agent_name, player: r.player_name, batch_no: r.batch_no, at: Date.now() }),
+                    await pb.create('batch_acks', {
+                        batch_key: batchKey,
+                        agent_name: r.agent_name,
+                        player_name: r.player_name || '',
+                        batch_no: Number(r.batch_no) || 0,
+                        session: r.session || '',
                         tenant: tenantId
                     });
                 }
