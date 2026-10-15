@@ -1252,6 +1252,8 @@ async function saveBoard() {
             return;
         }
         showToast('✅ ' + okItems.length + ' ကွက် ထည့်ပြီးပြီ (အထွက်)');
+        $('boardText').value = '';
+        renderBoardLineCheck();
         closeModal('modal-board');
         await openAkandain(sessionId);
         return;
@@ -1285,6 +1287,8 @@ async function saveBoard() {
         return;
     }
     showToast('✅ ' + allowedBoard.length + ' ကွက် ထည့်ပြီးပြီ');
+    $('boardText').value = '';
+    renderBoardLineCheck();
     closeModal('modal-board');
     await openEntry(sessionId);
 }
