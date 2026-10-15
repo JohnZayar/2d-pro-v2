@@ -1239,12 +1239,7 @@ async function saveBoard() {
         const bookie = (($('akanBookieSelect') && $('akanBookieSelect').value) || '').trim() || null;
         if (!bookie) { showToast('❌ ဒိုင် နာမည် ရွေးပါ'); return; }
         okItems.forEach((it) => {
-            akanPending.push({
-                player_name: bookie,
-                number: String(it.number).padStart(2, '0'),
-                amount: Number(it.amount) || 0,
-                record_type: 'akan',
-            });
+            addAkanUnique(bookie, it.number, it.amount);
         });
         if (badLines.length) {
             keepBadOpen();
@@ -1274,12 +1269,7 @@ async function saveBoard() {
     });
     if (blockedHit2.length) showToast('🚫 ဒိုင်ပိတ်: ' + [...new Set(blockedHit2)].join(', ') + ' — တင် မရပါ');
     allowedBoard.forEach((it) => {
-        entryPending.push({
-            player_name: personName || null,
-            number: String(it.number).padStart(2, '0'),
-            amount: Number(it.amount) || 0,
-            record_type: 'pos', // entry board is incoming-only
-        });
+        addEntryUnique(personName || null, it.number, it.amount, 'pos');
     });
     if (badLines.length) {
         keepBadOpen();
@@ -1296,6 +1286,22 @@ async function saveBoard() {
 /* ================= ENTRY SCREEN (ထိုးကွက် — Agent-style) ================= */
 
 let entryPending = [];      // typed but NOT yet saved: [{player_name, number, amount, record_type}]
+/** Add to entryPending, skipping exact duplicates (prevents double-add glitches). */
+function addEntryUnique(playerName, number, amount, recordType) {
+    const num = String(number).padStart(2, '0');
+    const amt = Number(amount) || 0;
+    const exists = entryPending.some((e) =>
+        (e.player_name || '') === (playerName || '') &&
+        String(e.number).padStart(2, '0') === num &&
+        (Number(e.amount) || 0) === amt &&
+        (e.record_type || 'pos') === (recordType || 'pos')
+    );
+    if (!exists) {
+        entryPending.push({ player_name: playerName, number: num, amount: amt, record_type: recordType || 'pos' });
+        return true;
+    }
+    return false;
+}
 let entryActiveBox = 'no';  // 'no' | 'amt' | 'rev'
 let entrySaveInFlight = false;
 
@@ -1481,7 +1487,7 @@ window.submitEntryRow = async function submitEntryRow() {
     });
     if (!allowedItems.length) { entryClearInputs(); showToast('🚫 ဒိုင်ပိတ် ဂဏန်းတွေ ချည်း — တင် မရပါ'); return; }
     allowedItems.forEach((it) => {
-        entryPending.push({ player_name: playerName, number: String(it.number), amount: it.amount, record_type: rType });
+        addEntryUnique(playerName, it.number, it.amount, rType);
     });
     entryClearInputs();
     renderEntryTable();
@@ -2597,10 +2603,17 @@ async function renderVoucherContent() {
             if (!byBatch[b]) { byBatch[b] = []; batchOrder.push(b); }
             byBatch[b].push(r);
         });
-        const batches = batchOrder.map((b, i) => ({
-            label: 'NO ' + (i + 1),
-            items: byBatch[b],
-        }));
+        const batches = batchOrder.map((b, i) => {
+            // Dedup: same number+amount shows only once
+            const seenB = new Set();
+            const items = byBatch[b].filter((r) => {
+                const key = String(r.number).padStart(2, '0') + '|' + (Number(r.amount) || 0);
+                if (seenB.has(key)) return false;
+                seenB.add(key);
+                return true;
+            });
+            return { label: 'NO ' + (i + 1), items };
+        });
         const isAkan = pRecs.length > 0 && pRecs.every((r) => r.record_type === 'akan');
         return { key: k, label: voucherPersonLabel(k), batches, isAkan };
     });
@@ -2775,12 +2788,7 @@ async function sendOverToAkan() {
     const bookie = (($('akanBookieSelect') && $('akanBookieSelect').value) || '').trim() || null;
     if (!bookie) { showToast('❌ ဒိုင် နာမည် ရွေးပါ'); return; }
     validItems.forEach((it) => {
-        akanPending.push({
-            player_name: bookie,
-            number: String(it.number).padStart(2, '0'),
-            amount: Number(it.amount) || 0,
-            record_type: 'akan',
-        });
+        addAkanUnique(bookie, it.number, it.amount);
     });
     const ok = await copyTextHelper(t);
     await openAkandain(state.overSessionId || state.activeSessionId);
@@ -2793,6 +2801,21 @@ async function sendOverToAkan() {
    ledger nets it out and vouchers exclude it, same as the house-akan flow. */
 
 let akanPending = [];      // typed but NOT yet saved: [{player_name(bookie), number, amount, record_type:'akan'}]
+/** Add to akanPending, skipping exact duplicates. */
+function addAkanUnique(bookie, number, amount) {
+    const num = String(number).padStart(2, '0');
+    const amt = Number(amount) || 0;
+    const exists = akanPending.some((e) =>
+        (e.player_name || '') === (bookie || '') &&
+        String(e.number).padStart(2, '0') === num &&
+        (Number(e.amount) || 0) === amt
+    );
+    if (!exists) {
+        akanPending.push({ player_name: bookie, number: num, amount: amt, record_type: 'akan' });
+        return true;
+    }
+    return false;
+}
 let akanActiveBox = 'no';  // 'no' | 'amt' | 'rev'
 let akanSaveInFlight = false;
 
@@ -2949,7 +2972,7 @@ window.submitAkanRow = async function submitAkanRow() {
         return;
     }
     validItems.forEach((it) => {
-        akanPending.push({ player_name: bookie, number: String(it.number), amount: it.amount, record_type: 'akan' });
+        addAkanUnique(bookie, it.number, it.amount);
     });
     akanClearInputs();
     renderAkanTable();
