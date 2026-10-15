@@ -78,8 +78,8 @@ export function expandFormula(fullNoText) {
                 }
             }
         });
-    } else if (cleanText.endsWith('R') || cleanText.endsWith('r')) {
-        const cleanNo = cleanText.replace(/R|r/g, '').trim();
+    } else if (cleanText.endsWith('R') || cleanText.endsWith('r') || cleanText.endsWith('အာ')) {
+        const cleanNo = cleanText.replace(/R|r|အာ/g, '').trim();
         // "34r 35r" list — expand each with reverse
         const rParts = cleanNo.split(/[\s,.\-\/]+/).filter((p) => p.length > 0);
         if (rParts.length > 1) {
@@ -134,7 +134,9 @@ export function expandFormula(fullNoText) {
         const setNums = new Set();
         for (let i = 0; i <= 9; i++) { setNums.add(`${d}${i}`); setNums.add(`${i}${d}`); }
         return Array.from(setNums);
-    } else if (cleanText.includes('အပူး') || cleanText === 'ပူး') {
+    } else if (cleanText.includes('ပူး')) {
+        const dPoo = cleanText.replace(/အပူး|ပူး/g, '').replace(/[^\d]/g, '').slice(-1);
+        if (dPoo) return [`${dPoo}${dPoo}`];
         return ['00', '11', '22', '33', '44', '55', '66', '77', '88', '99'];
     } else if (cleanText.includes('အပါ') || cleanText.includes('အပတ်') || cleanText.includes('ပါ')) {
         const d = cleanText.replace(/အပါ|အပတ်|ပါ/g, '').replace(/[^\d]/g, '').slice(-1) || '5';
