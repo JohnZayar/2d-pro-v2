@@ -80,6 +80,24 @@ async function init() {
         await enterApp();
         return;
     }
+    // Try auto-login with saved credentials (Pho: stay logged in)
+    try {
+        const savedEmail = localStorage.getItem('v2_saved_email');
+        const savedPass = localStorage.getItem('v2_saved_pass');
+        if (savedEmail && savedPass) {
+            state.user = await pb.login(savedEmail, savedPass);
+            if (state.user.disabled) {
+                await pb.logout();
+                localStorage.removeItem('v2_saved_email');
+                localStorage.removeItem('v2_saved_pass');
+                showPage('page-login');
+                return;
+            }
+            localStorage.setItem('v2_last_user_id', state.user.id);
+            await enterApp();
+            return;
+        }
+    } catch (e) { /* auto-login failed, show login page */ }
     showPage('page-login');
 }
 
@@ -171,6 +189,11 @@ async function doLogin() {
             return;
         }
         localStorage.setItem('v2_last_user_id', state.user.id);
+        // Save credentials for auto-login (Pho requested persistent login)
+        try {
+            localStorage.setItem('v2_saved_email', email);
+            localStorage.setItem('v2_saved_pass', pass);
+        } catch (e) { /* ignore */ }
         await enterApp();
     } catch (e) {
         $('loginError').textContent = e.code === 'NETWORK_ERROR'
@@ -182,6 +205,10 @@ async function doLogin() {
 }
 
 async function doLogout() {
+    try {
+        localStorage.removeItem('v2_saved_email');
+        localStorage.removeItem('v2_saved_pass');
+    } catch (e) { /* ignore */ }
     if (!confirm('ထွက်မှာလား?')) return;
     await pb.logout();
     localStorage.removeItem('v2_active_session');
