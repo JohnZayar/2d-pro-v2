@@ -137,7 +137,7 @@ export function expandFormula(fullNoText) {
     } else if (cleanText.includes('အပူး') || cleanText === 'ပူး') {
         return ['00', '11', '22', '33', '44', '55', '66', '77', '88', '99'];
     } else if (cleanText.includes('အပါ') || cleanText.includes('အပတ်') || cleanText.includes('ပါ')) {
-        const d = cleanText.replace(/အပါ|အပတ်|ပါ/g, '').trim() || '5';
+        const d = cleanText.replace(/အပါ|အပတ်|ပါ/g, '').replace(/[^\d]/g, '').slice(-1) || '5';
         const setNums = new Set();
         for (let i = 0; i <= 9; i++) { setNums.add(`${d}${i}`); setNums.add(`${i}${d}`); }
         return Array.from(setNums);
