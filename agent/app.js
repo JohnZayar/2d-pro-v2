@@ -1004,7 +1004,15 @@ window.renderRecordsView = async function renderRecordsView() {
         batchOrder.sort((a, b) => a - b);
 
         const batches = batchOrder.map((b) => {
-            const items = byBatch[b]; // entry order — NEVER re-sorted, matches what was sent
+            let items = byBatch[b]; // entry order — NEVER re-sorted, matches what was sent
+            // Dedup: same number+amount shows only once (prevents double-save glitches)
+            const seenV = new Set();
+            items = items.filter((r) => {
+                const key = String(r.number).padStart(2, '0') + '|' + (Number(r.amount) || 0);
+                if (seenV.has(key)) return false;
+                seenV.add(key);
+                return true;
+            });
             const tAmt = items.reduce((s, r) => s + (Number(r.amount) || 0), 0);
             const t0 = items.length && items[0].created ? items[0].created : 0;
             return { no: b, label: batchLabel(b), items, totalAmt: tAmt, totalCount: items.length, time: fmtTime12(t0) };
