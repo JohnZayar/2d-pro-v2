@@ -10,7 +10,7 @@ import { parseBoard, parseBoardReport, parseLine } from '../shared/parser.js';
 import {
     formatMoney, formatDateStr, getWeekMondayStr, remainingDigits,
     uid, showToast, escHtml, extractDigits, agentEmailFor, agentPasswordFor,
-    agentEmailForNum, agentPasswordForNum, agentCodeFor, parseAgentCode
+    agentEmailForNum, agentPasswordForNum, agentCodeFor, parseAgentCode, generateAgentSecret
 } from '../shared/utils.js?v=5';
 
 // Global safety net: log unhandled promise rejections instead of failing silently.
@@ -241,7 +241,9 @@ async function createBuyerAccount() {
         // 3. Create per-tenant agent account #1 (for Agent app sync, tenant-isolated)
         // Buyer can add up to 4 more via Agent management (5 total max)
         const agentEmail = agentEmailForNum(tenant.id, 1);
-        const agentPass = agentPasswordForNum(tenant.id, 1);
+        const agentSecret1 = generateAgentSecret();
+        const agentPass = agentPasswordForNum(tenant.id, 1, agentSecret1);
+        const agentCode1 = agentCodeFor(tenant.id, 1, agentSecret1);
         await pb.create('users', {
             email: agentEmail,
             password: agentPass,
@@ -256,6 +258,7 @@ async function createBuyerAccount() {
             '<div class="mt">Email: <b>' + escHtml(email) + '</b></div>' +
             '<div>Temp password: <b style="font-size:16px;letter-spacing:1px">' + escHtml(tmp) + '</b></div>' +
             '<div class="small muted mt">Buyer ကို ပို့ပေးပါ — သူ Settings မှာ password ချိန်းရမယ်</div>' +
+            '<div class="mt" style="border-top:1px solid #16a34a;padding-top:8px">Agent 1 Code: <b style="font-size:14px;letter-spacing:1px">' + escHtml(agentCode1) + '</b><div class="small muted">ကူးယူထားပါ — နောက်မှ ပြန်မရဘူး</div></div>' +
             '</div>';
         emailEl.value = '';
         shopEl.value = '';
@@ -3071,10 +3074,9 @@ async function renderAgentList() {
             if (!n) continue;
             count++;
             const disabled = !!agent.disabled;
-            const code = agentCodeFor(tenantId, n);
             html += '<tr>' +
                 '<td>' + escHtml(agent.name || `Agent ${n}`) + '</td>' +
-                '<td><code>' + escHtml(code) + '</code></td>' +
+                '<td><span style="color:#64748b;font-size:11px">ဖန်တီးတုန်းက ပြပြီး</span></td>' +
                 '<td>' + (disabled ? '<span style="color:#ef4444">🔴 ပိတ်</span>' : '<span style="color:#4ade80">🟢 ဖွင့်</span>') + '</td>' +
                 '<td style="white-space:nowrap"><button class="btn small ' + (disabled ? 'gray' : 'red') + '" style="padding:4px 8px;font-size:12px" onclick="toggleAgentDisabled(\'' + agent.id + '\',' + (!disabled) + ')">' + (disabled ? 'ဖွင့်' : 'ပိတ်') + '</button>' +
                 '<button class="btn small" style="padding:4px 8px;font-size:12px;background:#374151;color:#fca5a5;border:1px solid #4b5563;margin-left:4px" onclick="deleteAgentAccount(\'' + agent.id + '\',\'' + escHtml(agent.name || `Agent ${n}`).replace(/'/g, "\\'") + '\')">🗑️</button></td>' +
@@ -3143,7 +3145,8 @@ window.createAgentAccount = async function createAgentAccount() {
     if (!agentName) return;
     try {
         const email = agentEmailForNum(tenantId, nextNum);
-        const pass = agentPasswordForNum(tenantId, nextNum);
+        const secret = generateAgentSecret();
+        const pass = agentPasswordForNum(tenantId, nextNum, secret);
         await pb.create('users', {
             email: email,
             password: pass,
@@ -3151,7 +3154,7 @@ window.createAgentAccount = async function createAgentAccount() {
             name: agentName.trim(),
             tenant: tenantId
         });
-        const code = agentCodeFor(tenantId, nextNum);
+        const code = agentCodeFor(tenantId, nextNum, secret);
         renderAgentList();
         // Show code in a copyable dialog
         prompt(`✅ Agent ဖန်တီးပြီးပြီ\nCode (ကူးယူပါ):`, code);
