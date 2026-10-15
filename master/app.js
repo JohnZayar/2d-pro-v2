@@ -3133,6 +3133,26 @@ window.createAgentAccount = async function createAgentAccount() {
         showToast('❌ Tenant မရှိပါ');
         return;
     }
+    // Enforce agent limit (server-side check)
+    try {
+        const maxAgents = await getAgentLimit(tenantId);
+        const res = await pb.list('users', { perPage: 100 });
+        const allUsers = (res.items || res);
+        let agentCount = 0;
+        for (const u of allUsers) {
+            const name = (u.name || '').trim();
+            if (!name.toLowerCase().startsWith('agent ')) continue;
+            const uTenant = typeof u.tenant === 'string' ? u.tenant : (u.tenant && u.tenant.id);
+            if (uTenant === tenantId) agentCount++;
+        }
+        if (agentCount >= maxAgents) {
+            showToast(`❌ Agent ${maxAgents} ဦးပြည့်နေပြီ (Main Admin ခွင့်ပြုမှရမယ်)`);
+            return;
+        }
+    } catch (e) {
+        console.warn('agent limit check failed', e);
+        // Continue anyway if check fails (don't block on error)
+    }
     // Simple: ask for agent number directly (1-99)
     const numInput = prompt('Agent နံပါတ် (1-99):', '2');
     if (!numInput) return;
