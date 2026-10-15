@@ -1237,6 +1237,7 @@ async function saveBoard() {
     // အကန်ဒိုင် mode → rows land in the OUTGOING pending table, not the entry table.
     if (state.boardMode === 'akan') {
         const bookie = (($('akanBookieSelect') && $('akanBookieSelect').value) || '').trim() || null;
+        if (!bookie) { showToast('❌ ဒိုင် နာမည် ရွေးပါ'); return; }
         okItems.forEach((it) => {
             akanPending.push({
                 player_name: bookie,
@@ -2768,6 +2769,7 @@ async function sendOverToAkan() {
     const validItems = items.filter((it) => /^\d{2}$/.test(String(it.number)));
     if (!validItems.length) { showToast('ထည့်တာ မမှန်ပါ'); return; }
     const bookie = (($('akanBookieSelect') && $('akanBookieSelect').value) || '').trim() || null;
+    if (!bookie) { showToast('❌ ဒိုင် နာမည် ရွေးပါ'); return; }
     validItems.forEach((it) => {
         akanPending.push({
             player_name: bookie,
@@ -2918,6 +2920,7 @@ window.submitAkanRow = async function submitAkanRow() {
     const lkA = await isSessionLocked(state.activeSessionId);
     if (lkA.locked) { showToast('🔒 ' + lkA.reason + ' — ပြင်/ထည့် မရပါ'); return; }
     const bookie = ($('akanBookieSelect').value || '').trim() || null;
+    if (!bookie) { showToast('❌ ဒိုင် နာမည် ရွေးပါ'); return; }
     const noText = $('akanBoxNo').value.trim();
     const amtText = $('akanBoxAmt').value.trim().replace(/[^\d]/g, '');
     const revText = $('akanBoxRev').value.trim();
