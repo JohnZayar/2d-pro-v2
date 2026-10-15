@@ -115,14 +115,14 @@ async function loginAsTenantAgent() {
     if (!code) return; // No link code yet — user needs to connect first
     const parsed = parseAgentCode(code);
     if (!parsed) return;
-    const { tenantId, agentNum } = parsed;
+    const { tenantId, agentNum, secret } = parsed;
     const email = agentEmailForNum(tenantId, agentNum);
     // If already logged in as the correct agent, skip
     const current = pb.getUser();
     if (current && current.email === email && pb.isLoggedIn()) return;
     // Log out from any previous account (e.g., different agent or old format)
     pb.logout();
-    await pb.login(email, agentPasswordForNum(tenantId, agentNum));
+    await pb.login(email, agentPasswordForNum(tenantId, agentNum, secret));
 }
 
 async function init() {
