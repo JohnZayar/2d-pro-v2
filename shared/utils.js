@@ -146,16 +146,22 @@ export function agentPasswordFor(linkCode) {
  * Password: Ag2D_<tenantId>_<n>
  */
 export function parseAgentCode(code) {
-    const m = String(code || '').trim().match(/^([A-Za-z0-9]+)(?:-([1-9][0-9]?))?$/);
+    const m = String(code || '').trim().match(/^([A-Za-z0-9]+)(?:-([1-9][0-9]?))?(?:-([A-Za-z0-9]{8}))?$/);
     if (!m) return null;
-    return { tenantId: m[1], agentNum: parseInt(m[2] || '1', 10) };
+    return { tenantId: m[1], agentNum: parseInt(m[2] || '1', 10), secret: m[3] || null };
 }
 export function agentEmailForNum(tenantId, n) {
     return `agent_${tenantId}_${n}@2dpro.local`;
 }
-export function agentPasswordForNum(tenantId, n) {
-    return `Ag2D_${tenantId}_${n}`;
+export function agentPasswordForNum(tenantId, n, secret) {
+    return secret ? `Ag2D_${tenantId}_${n}_${secret}` : `Ag2D_${tenantId}_${n}`;
 }
-export function agentCodeFor(tenantId, n) {
-    return `${tenantId}-${n}`;
+export function generateAgentSecret() {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+    let s = '';
+    for (let i = 0; i < 8; i++) s += chars[Math.floor(Math.random() * chars.length)];
+    return s;
+}
+export function agentCodeFor(tenantId, n, secret) {
+    return secret ? `${tenantId}-${n}-${secret}` : `${tenantId}-${n}`;
 }
