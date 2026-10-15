@@ -125,6 +125,23 @@ async function loginAsTenantAgent() {
     await pb.login(email, agentPasswordForNum(tenantId, agentNum, secret));
 }
 
+/** Check if current agent is disabled; if so, log out. */
+async function checkAgentDisabled() {
+    try {
+        const u = pb.getUser();
+        if (!u || !u.id || !pb.isLoggedIn()) return false;
+        const rec = await pb.getOne('users', u.id);
+        if (rec && rec.disabled) {
+            pb.logout();
+            showToast('🔴 Disabled — Admin က ပိတ်ထားတယ်');
+            // Reload to show login screen
+            setTimeout(() => location.reload(), 1500);
+            return true;
+        }
+    } catch (e) { /* ignore - don't block on check failure */ }
+    return false;
+}
+
 async function init() {
     pb.loadBaseUrl(); // custom server URL override (if Pho set one)
     pb.loadAuth();
@@ -198,7 +215,9 @@ async function autoSyncRefresh(res) {
     // Phone sleep → foreground: sync immediately so stale data doesn't linger
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible' && pb.isLoggedIn()) {
-            sync.syncNow().then((res) => autoSyncRefresh(res)).catch(() => updateSyncPill());
+            checkAgentDisabled().then((disabled) => {
+                if (!disabled) sync.syncNow().then((res) => autoSyncRefresh(res)).catch(() => updateSyncPill());
+            });
         }
     });
 }
@@ -803,6 +822,7 @@ window.submitEntry = async function submitEntry() {
  */
 window.savePendingBatch = async function savePendingBatch() {
     if (saveInFlight) return;
+    if (await checkAgentDisabled()) return;
     if (!pendingEntries.length) { showToast('စာရင်း မရှိသေးပါ'); return; }
     // Block if any pending entry has no player name
     if (pendingEntries.some((e) => !(e.player_name || '').trim())) { showToast('❌ အမည် မပါ တဲ့ စာရင်း ရှိ — ဖျက် ပြီး ပြန် ထည့်'); return; }
