@@ -15,7 +15,7 @@
 import * as db from '../shared/db.js?v=2';
 import * as pb from '../shared/pb.js?v=4';
 import * as sync from '../shared/sync.js?v=18';
-import { parseBoardReport, parseLine, setCustomRules } from '../shared/parser.js?v=2';
+import { parseBoardReport, parseLine, setCustomRules } from '../shared/parser.js?v=3';
 
 // Global safety net: log unhandled promise rejections instead of failing silently.
 if (typeof window !== 'undefined') {
@@ -38,7 +38,7 @@ let saveInFlight = false; // double-tap guard
 let pendingEntries = []; // typed but NOT yet saved: [{player_name, number, amount}]
 
 /** Add to pending, skipping exact duplicates (prevents double-add glitches). */
-function addPendingUnique(playerName, number, amount, fromFormula) {
+function addPendingUnique(playerName, number, amount, fromFormula, formulaText) {
     const num = String(number).padStart(2, '0');
     const amt = Number(amount) || 0;
     const exists = pendingEntries.some((e) =>
@@ -47,7 +47,7 @@ function addPendingUnique(playerName, number, amount, fromFormula) {
         (Number(e.amount) || 0) === amt
     );
     if (!exists) {
-        pendingEntries.push({ player_name: playerName, number: num, amount: amt, fromFormula: !!fromFormula });
+        pendingEntries.push({ player_name: playerName, number: num, amount: amt, fromFormula: !!fromFormula, formula_text: formulaText || '' });
         return true;
     }
     return false;
@@ -929,6 +929,7 @@ window.savePendingBatch = async function savePendingBatch() {
                     record_type: 'pos',
                     batch_no: batchNos[k],
                     fromFormula: !!e.fromFormula,
+                    formula_text: e.formula_text || '',
                     created: Date.now()
                 });
                 count++;
@@ -1141,12 +1142,29 @@ window.renderRecordsView = async function renderRecordsView() {
             html += '<div class="v-batch">' +
                 '<div class="v-batch-no" onclick="openBatchDetail(\'' + escHtml(p.key) + '\',' + b.no + ')" title="အသေးစိတ် ကြည့်ရန် (ပြင်/ဖျက်)">' + escHtml(b.label) + bOkBadge + '</div>' +
                 '<table class="v-table"><thead><tr><th>ဂဏန်း</th><th>ပမာဏ</th></tr></thead><tbody>' +
-                b.items.map((r) => {
-                    const numStr = String(r.number).padStart(2, '0');
-                    const isWin = winNums.has(numStr);
-                    return '<tr data-rid="' + escHtml(r.id) + '" style="user-select:none;-webkit-user-select:none;"' + (isWin ? ' class="win-row"' : '') + '><td' + (isWin ? ' class="win-cell"' : '') + '>' +
-                        escHtml(r.number) + '</td><td' + (isWin ? ' class="win-cell"' : '') + '>' + formatMoney(r.amount) + '</td></tr>';
-                }).join('') +
+                (() => {
+                    // Group by formula_text for compact display
+                    const byF = {}; const fOrder = [];
+                    b.items.forEach((r) => {
+                        const ft = (r.formula_text || '').trim();
+                        const key = ft || `__s__${r.id}`;
+                        if (!byF[key]) { byF[key] = []; fOrder.push(key); }
+                        byF[key].push(r);
+                    });
+                    return fOrder.map((key) => {
+                        const grp = byF[key];
+                        if (grp.length > 1) {
+                            const ft = (grp[0].formula_text || '').trim();
+                            const total = grp.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+                            return '<tr><td>' + escHtml(ft) + '</td><td>(' + grp.length + ') ' + formatMoney(total) + '</td></tr>';
+                        }
+                        const r = grp[0];
+                        const numStr = String(r.number).padStart(2, '0');
+                        const isWin = winNums.has(numStr);
+                        return '<tr data-rid="' + escHtml(r.id) + '" style="user-select:none;-webkit-user-select:none;"' + (isWin ? ' class="win-row"' : '') + '><td' + (isWin ? ' class="win-cell"' : '') + '>' +
+                            escHtml(r.number) + '</td><td' + (isWin ? ' class="win-cell"' : '') + '>' + formatMoney(r.amount) + '</td></tr>';
+                    }).join('');
+                })() +
                 '</tbody><tfoot><tr><td>Total</td><td>' + formatMoney(b.totalAmt) + '</td></tr></tfoot></table>' +
                 '</div>';
         });
@@ -1170,8 +1188,23 @@ function buildVoucherText() {
         p.batches.forEach((b, bi) => {
             if (bi > 0) lines.push('');
             lines.push(b.label);
+            const byF = {}; const fOrder = [];
             b.items.forEach((r) => {
-                lines.push(r.number + ' ' + (Number(r.amount) || 0));
+                const ft = (r.formula_text || '').trim();
+                const key = ft || `__s__${r.id}`;
+                if (!byF[key]) { byF[key] = []; fOrder.push(key); }
+                byF[key].push(r);
+            });
+            fOrder.forEach((key) => {
+                const grp = byF[key];
+                if (grp.length > 1) {
+                    const ft = (grp[0].formula_text || '').trim();
+                    const total = grp.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+                    lines.push(`${ft} (${grp.length}) ${total}`);
+                } else {
+                    const r = grp[0];
+                    lines.push(r.number + ' ' + (Number(r.amount) || 0));
+                }
             });
             lines.push('Total ' + b.totalAmt);
         });
@@ -1448,7 +1481,7 @@ window.saveBoard = async function saveBoard() {
         if (!allowedBoard.length) { saveInFlight = false; showToast('🚫 ဒိုင်ပိတ် ဂဏန်းတွေ ချည်း — တင် မရပါ'); return; }
         let addedBoard = 0;
         allowedBoard.forEach((it) => {
-            if (addPendingUnique(playerName, it.number, it.amount, it._fromFormula)) addedBoard++;
+            if (addPendingUnique(playerName, it.number, it.amount, it._fromFormula, it.formula_text)) addedBoard++;
         });
         // Final dedup: remove any exact duplicates from pending (safety net)
         const seen = new Set();
