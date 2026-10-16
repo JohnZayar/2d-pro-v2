@@ -963,7 +963,28 @@ async function loadSettingsIntoUI() {
 
 /* ================= TABS & MODALS ================= */
 
-function switchTab(name) {
+/* ---- Header back-button navigation history ---- */
+let navStack = [];
+let currentTab = 'home';
+function updateBackBtn() {
+    const b = $('backBtn');
+    if (b) b.style.display = (currentTab === 'home' || !navStack.length) ? 'none' : '';
+}
+function goBack() {
+    const prev = navStack.pop();
+    switchTab(prev || 'home', { noPush: true });
+}
+window.goBack = goBack;
+
+function switchTab(name, opts) {
+    const noPush = opts && opts.noPush;
+    if (name !== currentTab) {
+        if (!noPush) {
+            navStack.push(currentTab);
+            if (navStack.length > 30) navStack.shift();
+        }
+        currentTab = name;
+    }
     document.querySelectorAll('.tabpane').forEach((p) => p.classList.remove('active'));
     $('tab-' + name).classList.add('active');
     // The entry/akandain keypads are fixed overlays — hide them whenever leaving their tab.
@@ -980,6 +1001,7 @@ function switchTab(name) {
     if (name === 'winning') renderWinningHome();
     if (name === 'weekly') renderWeekly();
     if (name === 'daily') renderHomeDaily();
+    updateBackBtn();
 }
 window.switchTab = switchTab;
 
