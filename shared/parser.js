@@ -38,6 +38,24 @@ function _normR(s) {
 }
 
 /**
+ * Custom separator symbols (admin-defined via Rule settings).
+ * e.g. ['$', '-'] lets "45$46$ 2000" or "45-46=2000" parse as 45,46 x 2000.
+ */
+let customSeps = [];
+export function setCustomSeparators(seps) {
+    customSeps = Array.isArray(seps) ? seps.filter((s) => typeof s === 'string' && s.length > 0) : [];
+}
+export function getCustomSeparators() {
+    return [...customSeps];
+}
+/** Build the number-list split regex: base seps + admin custom seps. */
+function sepRegex() {
+    const base = '\\s,.\\-/';
+    const extra = customSeps.map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('');
+    return new RegExp(`[${base}${extra}]+`);
+}
+
+/**
  * Expand a formula text into a list of 2-digit number strings.
  * E.g. expandFormula('6ထိပ်') -> ['60','61',...,'69']
  */
@@ -81,7 +99,7 @@ export function expandFormula(fullNoText) {
     } else if (cleanText.endsWith('R') || cleanText.endsWith('r') || cleanText.endsWith('အာ')) {
         const cleanNo = cleanText.replace(/R|r|အာ/g, '').trim();
         // "34r 35r" list — expand each with reverse
-        const rParts = cleanNo.split(/[\s,.\-\/]+/).filter((p) => p.length > 0);
+        const rParts = cleanNo.split(sepRegex()).filter((p) => p.length > 0);
         if (rParts.length > 1) {
             rParts.forEach((p) => {
                 if (p.length === 2) {
@@ -107,7 +125,7 @@ export function expandFormula(fullNoText) {
     } else if (cleanText.includes('ထိပ်')) {
         // Multi-digit: 6.4.5ထိပ် -> 6ထိပ် + 4ထိပ် + 5ထိပ်
         const dPartH = cleanText.replace(/ထိပ်/g, '').trim();
-        let dListH = dPartH.split(/[\.,\-\/\s]+/).filter((x) => x);
+        let dListH = dPartH.split(sepRegex()).filter((x) => x);
         if (dListH.length === 0) dListH = [dPartH.replace(/[^\d]/g, '') || '5'];
         const seenH = new Set();
         dListH.forEach((dd) => {
@@ -119,7 +137,7 @@ export function expandFormula(fullNoText) {
         });
     } else if (cleanText.includes('နောက်')) {
         const dPartN = cleanText.replace(/နောက်/g, '').trim();
-        let dListN = dPartN.split(/[\.,\-\/\s]+/).filter((x) => x);
+        let dListN = dPartN.split(sepRegex()).filter((x) => x);
         if (dListN.length === 0) dListN = [dPartN.replace(/[^\d]/g, '') || '5'];
         const seenN = new Set();
         dListN.forEach((dd) => {
@@ -174,7 +192,7 @@ export function expandFormula(fullNoText) {
                 generatedNums.push(pureDigits.substr(i, 2));
             }
         } else {
-            const numsToProcess = cleanText.split(/[\.,\-\/\s]+/);
+            const numsToProcess = cleanText.split(sepRegex());
             numsToProcess.forEach((nStr) => {
                 nStr = nStr.trim();
                 if (nStr) {
@@ -205,14 +223,14 @@ export function expandReverseFormula(formulaText) {
     const pushRev = (x) => { if (!revSeen.has(x)) { revSeen.add(x); rev.push(x); } };
 
     if (ct.includes('ထိပ်')) {
-        let dList = ct.replace(/ထိပ်/g, '').trim().split(/[\.,\-\/\s]+/).filter((x) => x);
+        let dList = ct.replace(/ထိပ်/g, '').trim().split(sepRegex()).filter((x) => x);
         if (dList.length === 0) dList = ['5'];
         dList.forEach((dd) => {
             const d = dd.replace(/[^\d]/g, '').slice(-1) || '5';
             for (let i = 0; i <= 9; i++) pushRev(`${i}${d}`);
         });
     } else if (ct.includes('နောက်')) {
-        let dList = ct.replace(/နောက်/g, '').trim().split(/[\.,\-\/\s]+/).filter((x) => x);
+        let dList = ct.replace(/နောက်/g, '').trim().split(sepRegex()).filter((x) => x);
         if (dList.length === 0) dList = ['5'];
         dList.forEach((dd) => {
             const d = dd.replace(/[^\d]/g, '').slice(-1) || '5';
@@ -222,7 +240,7 @@ export function expandReverseFormula(formulaText) {
         const sw = ct[1] + ct[0];
         if (sw !== ct) rev.push(sw);
     } else if (/^\d-\d-\d/.test(ct) || /^[\d\.,\-\/\s]+$/.test(ct)) {
-        ct.split(/[\.,\-\/\s]+/).forEach((p) => {
+        ct.split(sepRegex()).forEach((p) => {
             if (/^\d{2}$/.test(p)) {
                 const sw = p[1] + p[0];
                 if (sw !== p && !rev.includes(sw)) rev.push(sw);
