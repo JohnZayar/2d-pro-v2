@@ -1,0 +1,18 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "io.github.johnzayar.pro2dapps.master",
+      "sha256_cert_fingerprints": ["FB:0F:71:2B:B6:6F:93:8E:7B:2D:35:5F:80:8D:EF:DB:CB:CE:3D:E8:E0:3F:F0:FA:F6:6F:7B:6C:BA:04:9C:97"]
+    }
+  },
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "io.github.johnzayar.pro2dapps.agent",
+      "sha256_cert_fingerprints": ["2F:57:68:4A:3F:53:8B:1A:FF:97:60:9E:49:05:B2:5B:E7:24:FA:1B:64:50:DB:88:C6:65:DF:FF:CC:9A:3E:54"]
+    }
+  }
+]
