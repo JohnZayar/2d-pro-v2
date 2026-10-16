@@ -38,7 +38,7 @@ let saveInFlight = false; // double-tap guard
 let pendingEntries = []; // typed but NOT yet saved: [{player_name, number, amount}]
 
 /** Add to pending, skipping exact duplicates (prevents double-add glitches). */
-function addPendingUnique(playerName, number, amount) {
+function addPendingUnique(playerName, number, amount, fromFormula) {
     const num = String(number).padStart(2, '0');
     const amt = Number(amount) || 0;
     const exists = pendingEntries.some((e) =>
@@ -47,10 +47,63 @@ function addPendingUnique(playerName, number, amount) {
         (Number(e.amount) || 0) === amt
     );
     if (!exists) {
-        pendingEntries.push({ player_name: playerName, number: num, amount: amt });
+        pendingEntries.push({ player_name: playerName, number: num, amount: amt, fromFormula: !!fromFormula });
         return true;
     }
     return false;
+}
+
+/** Formula keywords: board lines containing these expand via formula
+ *  — formula-derived numbers are EXCLUDED from hot-number limits.
+ *  Exempt (Pho): ပါ/အပါ, ပူး/အပူး, ခွေ/အခွေ, ပတ်/အပတ်, နက္ခတ်/ထိုင်းနက္ခတ်,
+ *  ပါဝါ, စုံမ, မစုံ, ထိပ်, နောက်. Only pure direct numbers are blocked. */
+const FORMULA_KEYWORDS = ['ပါ', 'ပူး', 'ခွေ', 'ပတ်', 'နက္ခတ်', 'စုံမ', 'မစုံ', 'ထိပ်', 'နောက်'];
+function lineHasFormula(line) {
+    const s = String(line || '');
+    return FORMULA_KEYWORDS.some((kw) => s.includes(kw));
+}
+
+/** Check hot-number limits for this agent: cumulative per (number, session), excluding formula-derived entries. Returns error message or null. */
+async function checkAgentLimits() {
+    let myLimits = {};
+    try {
+        const agents = await db.getAll('agents');
+        const me = (agents || []).find((a) => (a.name || '') === agentName);
+        myLimits = (me && me.limits) || {};
+    } catch (e) { /* ignore */ }
+    const limitNums = Object.keys(myLimits).filter((n) => Number(myLimits[n]) > 0);
+    if (!limitNums.length || !currentSessionId) return null;
+
+    // Pending totals by number (skip formula-derived)
+    const pendTotals = {};
+    pendingEntries.forEach((e) => {
+        if (e.fromFormula) return;
+        const num = String(e.number).padStart(2, '0');
+        if (!limitNums.includes(num)) return;
+        pendTotals[num] = (pendTotals[num] || 0) + (Number(e.amount) || 0);
+    });
+    if (!Object.keys(pendTotals).length) return null;
+
+    // Existing saved records for this agent + session
+    let existing = [];
+    try { existing = await db.query('lottery_records', 'by_session', currentSessionId); } catch (e) { /* ignore */ }
+    const existTotals = {};
+    existing.forEach((r) => {
+        if ((r.agent_name || '') !== agentName) return;
+        if (r.fromFormula) return; // formula-derived excluded
+        const num = String(r.number).padStart(2, '0');
+        if (!limitNums.includes(num)) return;
+        existTotals[num] = (existTotals[num] || 0) + (Number(r.amount) || 0);
+    });
+
+    for (const num of Object.keys(pendTotals)) {
+        const lim = Number(myLimits[num]);
+        const total = (existTotals[num] || 0) + pendTotals[num];
+        if (total > lim) {
+            return `ဟော့ဂဏန်း (${num}) Limite ပြည့်လို့ မရတော့ပါ`;
+        }
+    }
+    return null;
 }
 
 /** Get blocked numbers for a session (synced from Master via PocketBase). */
@@ -792,8 +845,9 @@ window.submitEntry = async function submitEntry() {
     });
     if (!allowedItems.length) { clearInputs(); showToast('🚫 ဒိုင်ပိတ် ဂဏန်းတွေ ချည်း — တင် မရပါ'); return; }
     let addedCount = 0;
+    const isFormulaLine = lineHasFormula(line);
     allowedItems.forEach((it) => {
-        if (addPendingUnique(playerName, it.number, it.amount)) addedCount++;
+        if (addPendingUnique(playerName, it.number, it.amount, isFormulaLine)) addedCount++;
     });
     // Safety net: remove exact duplicates
     {
@@ -829,6 +883,9 @@ window.savePendingBatch = async function savePendingBatch() {
     if (!currentSessionId) { showToast('⚠️ Session မရှိသေးပါ'); return; }
     const lkS = await isAgentSessionLocked(currentSessionId);
     if (lkS.locked) { showToast('🔒 ' + lkS.reason + ' — သိမ်း မရပါ'); return; }
+    // Hot-number limits (cumulative per session; formula-derived excluded)
+    const limitErr = await checkAgentLimits();
+    if (limitErr) { showToast('❌ ' + limitErr); return; }
 
     saveInFlight = true;
     try {
@@ -856,6 +913,7 @@ window.savePendingBatch = async function savePendingBatch() {
                     player_name: e.player_name,
                     record_type: 'pos',
                     batch_no: batchNos[k],
+                    fromFormula: !!e.fromFormula,
                     created: Date.now()
                 });
                 count++;
@@ -1356,7 +1414,8 @@ window.saveBoard = async function saveBoard() {
             if (!boardLineOk(line)) { badLines.push(line); continue; }
             let parsed = [];
             try { parsed = parseLine(line); } catch (e) { parsed = []; }
-            for (const p of parsed) okItems.push(p);
+            const isF = lineHasFormula(line);
+            for (const p of parsed) okItems.push({ ...p, _fromFormula: isF });
         }
         if (!okItems.length) {
             showToast('❌ ဝင်မယ့် လိုင်း မရှိပါ');
@@ -1374,7 +1433,7 @@ window.saveBoard = async function saveBoard() {
         if (!allowedBoard.length) { saveInFlight = false; showToast('🚫 ဒိုင်ပိတ် ဂဏန်းတွေ ချည်း — တင် မရပါ'); return; }
         let addedBoard = 0;
         allowedBoard.forEach((it) => {
-            if (addPendingUnique(playerName, it.number, it.amount)) addedBoard++;
+            if (addPendingUnique(playerName, it.number, it.amount, it._fromFormula)) addedBoard++;
         });
         // Final dedup: remove any exact duplicates from pending (safety net)
         const seen = new Set();
