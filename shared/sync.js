@@ -258,6 +258,14 @@ export async function pullUpdates() {
     return { pulled, skipped: false, error: errors.length ? errors.join('; ') : null };
 }
 
+/** True if this device tombstoned (user-deleted) the given server session id. */
+function _isSessionTombstoned(pbId) {
+    try {
+        const arr = JSON.parse(localStorage.getItem('v2_deleted_sessions') || '[]');
+        return Array.isArray(arr) && arr.includes(pbId);
+    } catch (e) { return false; }
+}
+
 async function _pullCollection(collection) {
     const lastPull = await _getLastPull(collection);
     // PocketBase `updated` is an ISO datetime string.
@@ -269,6 +277,10 @@ async function _pullCollection(collection) {
     let maxUpdated = lastPull || '';
     for (const item of items) {
         if (item.updated && item.updated > maxUpdated) maxUpdated = item.updated;
+        // Skip sessions the user deleted on this device (tombstones). Sessions
+        // are fully re-pulled every cycle, so without this a failed/pending
+        // server-side delete would resurrect the session on the next pull.
+        if (collection === 'sessions' && _isSessionTombstoned(item.id)) continue;
         // Find local record by _pbId.
         const local = await _findLocalByPbId(collection, item.id);
         const serverTime = Date.parse(item.updated) || 0;
