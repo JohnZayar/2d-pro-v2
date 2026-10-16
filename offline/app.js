@@ -205,6 +205,7 @@ function bindUI() {
     $('limitSave').addEventListener('click', saveLimit);
     $('addAgentBtn').addEventListener('click', () => openAgentModal(null));
     $('agSave').addEventListener('click', saveAgent);
+    $('agLimitAdd').addEventListener('click', addAgentLimit);
 
     // Offline: no sync button, no buyer/agent-login management, PIN replaces password.
     const logoutBtn = $('logoutBtn');
@@ -1405,6 +1406,9 @@ window.saveEntryBatch = async function saveEntryBatch() {
     if (!state.activeSessionId) { showToast('⚠️ Session မရှိသေးပါ'); return; }
     const lk = await isSessionLocked(state.activeSessionId);
     if (lk.locked) { showToast('🔒 ' + lk.reason + ' — သိမ်း မရပါ'); return; }
+    // Per-person per-number limit check (cumulative per session)
+    const limitErr = await checkPersonLimits(entryPending, state.activeSessionId);
+    if (limitErr) { showToast('❌ ' + limitErr); return; }
 
     entrySaveInFlight = true;
     try {
@@ -1448,6 +1452,40 @@ window.saveEntryBatch = async function saveEntryBatch() {
         entrySaveInFlight = false;
     }
 };
+
+/** Check per-person per-number limits (cumulative per session).
+ *  Returns an error message if any limit is exceeded, else null. */
+async function checkPersonLimits(pending, sessionId) {
+    const pendTotals = {};
+    pending.forEach((e) => {
+        const name = (e.player_name || '').trim();
+        const num = String(e.number).padStart(2, '0');
+        const k = name + '|' + num;
+        pendTotals[k] = (pendTotals[k] || 0) + (Number(e.amount) || 0);
+    });
+    let existing = [];
+    try { existing = await db.query('lottery_records', 'by_session', sessionId); } catch (e) { /* ignore */ }
+    const existTotals = {};
+    existing.forEach((r) => {
+        const name = (r.player_name || r.agent_name || '').trim();
+        const num = String(r.number).padStart(2, '0');
+        const k = name + '|' + num;
+        existTotals[k] = (existTotals[k] || 0) + (Number(r.amount) || 0);
+    });
+    for (const k of Object.keys(pendTotals)) {
+        const sep = k.lastIndexOf('|');
+        const name = k.slice(0, sep), num = k.slice(sep + 1);
+        const person = (state.agents || []).find((a) => a.name === name);
+        const lim = person && person.limits && Number(person.limits[num]);
+        if (lim > 0) {
+            const total = (existTotals[k] || 0) + pendTotals[k];
+            if (total > lim) {
+                return `${name} — ဟော့ဂဏန်း (${num}) Limite ပြည့်လို့ မရတော့ပါ`;
+            }
+        }
+    }
+    return null;
+}
 
 /** 📋 button in entry screen → open the paste Digital Board modal. */
 window.openEntryBoard = function openEntryBoard() {
@@ -1659,7 +1697,42 @@ function openAgentModal(id) {
     $('agPhone').value = a ? (a.phone || '') : '';
     $('agComm').value = a ? (a.commission || 0) : 0;
     $('agPayout').value = a ? (a.payout_rate || 80) : 80;
+    state.editingLimits = Object.assign({}, (a && a.limits) || {});
+    $('agLimitNum').value = '';
+    $('agLimitAmt').value = '';
+    renderAgentLimitList();
     openModal('modal-agent');
+}
+
+/** Render per-number limits in the person modal. */
+function renderAgentLimitList() {
+    const box = $('agLimitList');
+    const keys = Object.keys(state.editingLimits || {});
+    if (!keys.length) {
+        box.innerHTML = '<div class="small muted">ကန့်သတ် မရှိသေးပါ</div>';
+        return;
+    }
+    box.innerHTML = keys.sort().map((num) =>
+        `<div class="row" style="justify-content:space-between;padding:4px 0;border-bottom:1px dashed #ddd">
+            <span><b>${escHtml(num)}</b> → ${formatMoney(state.editingLimits[num])}</span>
+            <button class="btn small red" data-dellimit="${escHtml(num)}" type="button">×</button>
+        </div>`).join('');
+    box.querySelectorAll('[data-dellimit]').forEach((b) =>
+        b.addEventListener('click', () => {
+            delete state.editingLimits[b.dataset.dellimit];
+            renderAgentLimitList();
+        }));
+}
+
+function addAgentLimit() {
+    const num = $('agLimitNum').value.trim();
+    const amt = Number($('agLimitAmt').value) || 0;
+    if (!/^\d{2}$/.test(num)) { showToast('ဂဏန်း ၂ လုံး ထည့်ပါ'); return; }
+    if (amt <= 0) { showToast('ပမာဏ ထည့်ပါ'); return; }
+    state.editingLimits[num] = amt;
+    $('agLimitNum').value = '';
+    $('agLimitAmt').value = '';
+    renderAgentLimitList();
 }
 
 async function saveAgent() {
@@ -1671,6 +1744,7 @@ async function saveAgent() {
         phone: $('agPhone').value.trim(),
         commission: Number($('agComm').value) || 0,
         payout_rate: Number($('agPayout').value) || 80,
+        limits: Object.assign({}, state.editingLimits || {}),
     };
     if (state.editingAgentId) {
         const a = state.agents.find((x) => x.id === state.editingAgentId);
