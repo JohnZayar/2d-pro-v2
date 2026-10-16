@@ -779,19 +779,49 @@ async function renderEntryTable() {
         tbody.innerHTML = '<tr><td colspan="4" class="empty-cell">စာရင်း မရှိသေးပါ။</td></tr>';
         return;
     }
-    tbody.innerHTML = pendingEntries.map((e, i) =>
-        '<tr>' +
+    // Group by formula_text for compact display
+    const byF = {}; const fOrder = [];
+    pendingEntries.forEach((e, idx) => {
+        const ft = (e.formula_text || '').trim();
+        const key = ft || `__s__${idx}`;
+        if (!byF[key]) { byF[key] = { indices: [], entries: [] }; fOrder.push(key); }
+        byF[key].indices.push(idx);
+        byF[key].entries.push(e);
+    });
+    tbody.innerHTML = fOrder.map((key) => {
+        const g = byF[key];
+        if (g.entries.length > 1) {
+            const e0 = g.entries[0];
+            const ft = (e0.formula_text || '').trim();
+            const gTotal = g.entries.reduce((s, e) => s + (Number(e.amount) || 0), 0);
+            const idxList = g.indices.join(',');
+            return '<tr>' +
+                '<td>' + escHtml(e0.player_name || 'ကိုယ်တိုင်') + '</td>' +
+                '<td class="cell-no">' + escHtml(ft) + ' (' + g.entries.length + ')</td>' +
+                '<td class="cell-amt">' + formatMoney(gTotal) + '</td>' +
+                '<td class="cell-del"><button class="rec-del" onclick="deletePendingGroup(\'' + idxList + '\')" title="ဖျက်မည်">🗑️</button></td>' +
+            '</tr>';
+        }
+        const e = g.entries[0]; const i = g.indices[0];
+        return '<tr>' +
             '<td>' + escHtml(e.player_name || 'ကိုယ်တိုင်') + '</td>' +
             '<td class="cell-no">' + escHtml(e.number) + '</td>' +
             '<td class="cell-amt">' + formatMoney(e.amount) + '</td>' +
             '<td class="cell-del"><button class="rec-del" onclick="deletePendingEntry(' + i + ')" title="ဖျက်မည်">🗑️</button></td>' +
-        '</tr>'
-    ).join('');
+        '</tr>';
+    }).join('');
 }
 
 /** Remove one pending (unsaved) entry. */
 window.deletePendingEntry = function deletePendingEntry(i) {
     pendingEntries.splice(i, 1);
+    renderEntryTable();
+};
+
+/** Remove a group of pending entries (by indices). */
+window.deletePendingGroup = function deletePendingGroup(idxList) {
+    const idxs = idxList.split(',').map((x) => parseInt(x, 10)).sort((a, b) => b - a);
+    idxs.forEach((i) => pendingEntries.splice(i, 1));
     renderEntryTable();
 };
 
