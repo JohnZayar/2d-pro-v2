@@ -312,6 +312,12 @@ if ('serviceWorker' in navigator) {
           <div class="set-row"><span>☁️ Cloud Sync</span><button id="syncNowBtn" class="btn small gray">Sync လုပ်မယ်</button></div>
           <div class="set-row"><span>⏳ ပို့ဖို့ကျန်</span><span id="pendingCount" class="muted">0</span></div>
         </div>
+        <div class="card" id="ruleCard">
+          <div class="set-row"><span>📏 Rule (ဖော်မြူလာ သင်္ကေတ)</span></div>
+          <div class="small muted">ဂဏန်းခွဲတဲ့ သင်္ကေတအသစ် — ဥပမာ $ ထည့်ရင် 45$46$ 2000 ရမယ်</div>
+          <div class="set-row"><input id="ruleSepInput" type="text" placeholder="သင်္ကေတ (ဥပမာ $)" maxlength="3" style="flex:1;min-width:0"><button id="ruleSepAddBtn" class="btn small">+ ထည့်မယ်</button></div>
+          <div id="ruleSepList" class="mt small">—</div>
+        </div>
         <div class="card">
           <div class="set-row"><span>🔑 Password ချိန်းမယ်</span></div>
           <div class="set-row"><input id="pwOld" type="password" placeholder="လက်ရှိ password" autocomplete="current-password" style="flex:1;min-width:0"></div>
@@ -540,6 +546,6 @@ if ('serviceWorker' in navigator) {
 
 
 </div>
-<script type="module" src="app.js?v=129"></script>
+<script type="module" src="app.js?v=130"></script>
 </body>
 </html>
