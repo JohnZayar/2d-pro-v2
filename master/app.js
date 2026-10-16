@@ -1358,7 +1358,8 @@ async function saveBoard() {
         if (!boardLineOk(line)) { badLines.push(line); continue; }
         let parsed = [];
         try { parsed = parseLine(line); } catch (e) { parsed = []; }
-        for (const p of parsed) okItems.push(p);
+        const isF = lineHasFormula(line);
+        for (const p of parsed) okItems.push({...p, _fromFormula: isF, formula_text: line.trim()});
     }
     if (!okItems.length) { showToast('ထည့်တာ မမှန်ပါ — စစ်ပါ'); return; }
     const sessionId = state.boardSessionId;
@@ -1404,7 +1405,7 @@ async function saveBoard() {
     });
     if (blockedHit2.length) showToast('🚫 ဒိုင်ပိတ်: ' + [...new Set(blockedHit2)].join(', ') + ' — တင် မရပါ');
     allowedBoard.forEach((it) => {
-        addEntryUnique(personName || null, it.number, it.amount, 'pos');
+        addEntryUnique(personName || null, it.number, it.amount, 'pos', it.formula_text);
     });
     if (badLines.length) {
         keepBadOpen();
