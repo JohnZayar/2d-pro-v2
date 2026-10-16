@@ -5,7 +5,7 @@
  */
 import * as db from '../shared/db.js?v=2';
 import * as pb from '../shared/pb.js?v=4';
-import * as sync from '../shared/sync.js?v=18';
+import * as sync from '../shared/sync.js?v=19';
 import { parseBoard, parseBoardReport, parseLine } from '../shared/parser.js';
 import {
     formatMoney, formatDateStr, getWeekMondayStr, remainingDigits,
@@ -1186,7 +1186,19 @@ async function saveSession() {
 async function deleteSession(id) {
     const s = state.sessions.find((x) => x.id === id);
     if (!s) return;
-    if (!confirm(`"${sessionLabel(s)}" ကို ဖျက်မှာလား?\nမှတ်တမ်းအားလုံး ပျက်မယ်!`)) return;
+    if (!confirm(`"${sessionLabel(s)}" ကို ဖျက်မှာလား?\nပွဲစဥ်ကဒ်ပဲ ပျက်မယ် — စာရင်း၊ ပေါက်သီး၊ အချုပ်တွေ ကျန်မယ်။`)) return;
+    // Tombstone the server id so a later pull never resurrects this session,
+    // even if the server-side delete failed or is still queued.
+    try {
+        const pbId = s._pbId || s.id;
+        const raw = localStorage.getItem('v2_deleted_sessions');
+        const arr = raw ? JSON.parse(raw) : [];
+        if (!arr.includes(pbId)) {
+            arr.push(pbId);
+            if (arr.length > 500) arr.splice(0, arr.length - 500);
+        }
+        localStorage.setItem('v2_deleted_sessions', JSON.stringify(arr));
+    } catch (e) { /* ignore */ }
     // NOTE: lottery_records are KEPT for Daily/Weekly history (2 weeks)
     // They are auto-deleted when older than 2 weeks (see cleanupOldRecords)
     // NOTE: winning_numbers are KEPT for ကျန်ဂဏန်း (10-week history)
