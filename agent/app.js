@@ -57,7 +57,7 @@ function addPendingUnique(playerName, number, amount, fromFormula) {
  *  — formula-derived numbers are EXCLUDED from hot-number limits.
  *  Exempt (Pho): ပါ/အပါ, ပူး/အပူး, ခွေ/အခွေ, ပတ်/အပတ်, နက္ခတ်/ထိုင်းနက္ခတ်,
  *  ပါဝါ, စုံမ, မစုံ, ထိပ်, နောက်. Only pure direct numbers are blocked. */
-const FORMULA_KEYWORDS = ['ပါ', 'ပူး', 'ခွေ', 'ပတ်', 'နက္ခတ်', 'စုံမ', 'မစုံ', 'ထိပ်', 'နောက်'];
+const FORMULA_KEYWORDS = ['ပါ', 'ပူး', 'ခွေ', 'ပတ်', 'နက္ခတ်', 'ထိုင်းနက္ခတ်', 'ညီအစ်ကို', 'စုံမ', 'မစုံ', 'ထိပ်', 'နောက်'];
 function lineHasFormula(line) {
     const s = String(line || '');
     return FORMULA_KEYWORDS.some((kw) => s.includes(kw));
