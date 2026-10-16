@@ -1316,7 +1316,7 @@ function boardLineOk(line) {
     return parsed.length > 0 && parsed.every((p) => /^\d{2}$/.test(String(p.number)));
 }
 
-/** Per-line formula check: small ✅/❌ per line, subtle styling. Never guesses. */
+/** Per-line formula check: small ✅/❌ per line + (count) total. Never guesses. */
 function renderBoardLineCheck() {
     const ta = $('boardText');
     const box = $('boardLineCheck');
@@ -1329,7 +1329,15 @@ function renderBoardLineCheck() {
         if (!line.trim()) continue;
         const ok = boardLineOk(line);
         if (!ok) bad++;
-        html += `<div class="bline ${ok ? 'ok' : 'bad'}"><span class="mk">${ok ? '✅' : '❌'}</span><span class="tx">${escHtml(line)}</span></div>`;
+        let extra = '';
+        if (ok) {
+            try {
+                const parsed = parseLine(line);
+                const total = parsed.reduce((s, p) => s + (Number(p.amount) || 0), 0);
+                extra = ` <span class="muted">(${parsed.length}) ${formatMoney(total)}</span>`;
+            } catch (e) {}
+        }
+        html += `<div class="bline ${ok ? 'ok' : 'bad'}"><span class="mk">${ok ? '✅' : '❌'}</span><span class="tx">${escHtml(line)}${extra}</span></div>`;
     }
     box.innerHTML = html;
     box.style.display = '';
