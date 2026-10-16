@@ -261,6 +261,46 @@ export function expandReverseFormula(formulaText) {
 }
 
 /**
+ * Split a combined formula line like "5ထိပ်400နောက်100" into ["5ထိပ်400", "နောက်100"].
+ * Each part keeps its own amount.
+ */
+function splitCombinedFormula(line) {
+    const keywords = ['ထိုင်းနက္ခတ်', 'နက္ခတ်', 'ညီအစ်ကို', 'ထိပ်', 'နောက်', 'ပတ်', 'အပါ', 'ပါ', 'အပူး', 'ပူး', 'အခွေ', 'ခွေ', 'စုံမ', 'မစုံ'];
+    // Find all keyword occurrences
+    const positions = [];
+    for (const kw of keywords) {
+        let idx = 0;
+        while ((idx = line.indexOf(kw, idx)) !== -1) {
+            positions.push({ pos: idx, kw });
+            idx += kw.length;
+        }
+    }
+    if (positions.length <= 1) return [line];
+    // Sort by position, remove overlaps (keep longest at same position)
+    positions.sort((a, b) => a.pos - b.pos);
+    const filtered = [];
+    for (const p of positions) {
+        const last = filtered[filtered.length - 1];
+        if (last && p.pos < last.pos + last.kw.length) {
+            // Overlap — keep the longer keyword
+            if (p.kw.length > last.kw.length) filtered[filtered.length - 1] = p;
+        } else {
+            filtered.push(p);
+        }
+    }
+    if (filtered.length <= 1) return [line];
+    // Split into parts
+    const parts = [];
+    for (let i = 0; i < filtered.length; i++) {
+        const start = (i === 0) ? 0 : filtered[i].pos;
+        const end = (i + 1 < filtered.length) ? filtered[i + 1].pos : line.length;
+        const part = line.substring(start, end).trim();
+        if (part) parts.push(part);
+    }
+    return parts.length > 1 ? parts : [line];
+}
+
+/**
  * Parse a single board line into [{ number, amount }, ...].
  * Returns [] when the line cannot be parsed.
  */
@@ -268,6 +308,16 @@ export function parseLine(line) {
     const results = [];
     const cleanLine = applyCustomRules((line || '').trim());
     if (!cleanLine) return results;
+
+    // Handle combined formulas: "5ထိပ်400နောက်100" → parse each part separately
+    const cParts = splitCombinedFormula(cleanLine);
+    if (cParts.length > 1) {
+        for (const part of cParts) {
+            const sub = parseLine(part);
+            results.push(...sub);
+        }
+        return results;
+    }
 
     let convertedLine = _normR(convertMyanmarNumbers(cleanLine));
     // v218.3: / and , as amount separators (12/500 -> 12=500, 12,500 -> 12=500)
