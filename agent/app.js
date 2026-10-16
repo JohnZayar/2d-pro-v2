@@ -1463,7 +1463,7 @@ window.saveBoard = async function saveBoard() {
             let parsed = [];
             try { parsed = parseLine(line); } catch (e) { parsed = []; }
             const isF = lineHasFormula(line);
-            for (const p of parsed) okItems.push({ ...p, _fromFormula: isF });
+            for (const p of parsed) okItems.push({ ...p, _fromFormula: isF, formula_text: line.trim() });
         }
         if (!okItems.length) {
             showToast('❌ ဝင်မယ့် လိုင်း မရှိပါ');
