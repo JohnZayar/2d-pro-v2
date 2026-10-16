@@ -1452,7 +1452,15 @@ const updateBoardPreview = debounce(() => {
     for (const line of text.split('\n')) {
         if (!line.trim()) continue;
         const ok = boardLineOk(line);
-        html += `<div class="bline ${ok ? 'ok' : 'bad'}"><span class="mk">${ok ? '✅' : '❌'}</span><span class="tx">${escHtml(line)}</span></div>`;
+        let extra = '';
+        if (ok) {
+            try {
+                const parsed = parseLine(line);
+                const total = parsed.reduce((s, p) => s + (Number(p.amount) || 0), 0);
+                extra = ` <span class="muted">(${parsed.length}) ${formatMoney(total)}</span>`;
+            } catch (e) {}
+        }
+        html += `<div class="bline ${ok ? 'ok' : 'bad'}"><span class="mk">${ok ? '✅' : '❌'}</span><span class="tx">${escHtml(line)}${extra}</span></div>`;
     }
     box.hidden = false;
     box.innerHTML = html;
