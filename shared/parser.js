@@ -416,6 +416,21 @@ export function parseBoard(text) {
 }
 
 /**
+ * Parse board with source line attached: [{ number, amount, formula_text }, ...].
+ * formula_text is the original input line (e.g. "အပူး 500").
+ */
+export function parseBoardWithSource(text) {
+    const out = [];
+    (text || '').split('\n').forEach((line) => {
+        const trimmed = (line || '').trim();
+        if (!trimmed) return;
+        const parsed = parseLine(line);
+        for (const p of parsed) out.push({ ...p, formula_text: trimmed });
+    });
+    return out;
+}
+
+/**
  * Parse with per-line report: { items, invalidLines: [lineText...] }.
  * Useful for the v218.11-style UX: save valid lines, keep invalid visible.
  */
@@ -426,7 +441,7 @@ export function parseBoardReport(text) {
         if (!line.trim()) return;
         const parsed = parseLine(line);
         if (parsed.length > 0) {
-            for (const p of parsed) items.push(p);
+            for (const p of parsed) items.push({ ...p, formula_text: line.trim() });
         } else {
             invalidLines.push(line);
         }
