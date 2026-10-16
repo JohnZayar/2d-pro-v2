@@ -459,6 +459,9 @@ async function enterApp() {
     // Load local data (now populated from sync)
     await loadSessions();
     await loadAgents();
+    // One-time backfill: denormalize dates onto records/winning numbers so
+    // history views survive session deletion (see backfillDates).
+    await backfillDates().catch((e) => console.warn('backfillDates failed:', e.message));
     await loadSettingsIntoUI();
     renderSessions();
     renderAgents();
@@ -1713,14 +1716,20 @@ async function saveWinning() {
         if (num.length !== 2) { showToast('ဂဏန်း ၂ လုံး ထည့်ပါ'); return; }
         const sessionId = _winSessionId;
         const weekMonday = getWeekMondayStr(new Date());
+        // Denormalize date/timeType so history views survive session deletion.
+        const _ws = state.sessions.find((x) => x.id === sessionId);
+        const _wDate = _ws ? _ws.date : null;
+        const _wTT = _ws ? (_ws.timeType || '') : '';
         // Re-check for existing (another tap may have created one)
         const existing = await _getWins(sessionId);
         if (existing.length) {
             existing[0].number = num;
             existing[0].week_monday = weekMonday;
+            if (_wDate && !existing[0].date) existing[0].date = _wDate;
+            if (_wTT && !existing[0].timeType) existing[0].timeType = _wTT;
             await updateRecord('winning_numbers', existing[0]);
         } else {
-            await createRecord('winning_numbers', { session: sessionId, number: num, week_monday: weekMonday });
+            await createRecord('winning_numbers', { session: sessionId, number: num, week_monday: weekMonday, date: _wDate, timeType: _wTT });
         }
         closeModal('modal-winning');
         showToast('🏆 ပေါက်သီး ' + num + ' သိမ်းပြီးပြီ');
@@ -1966,15 +1975,15 @@ async function renderHomeDaily() {
         return sess && sess.date === ds;
     });
 
-    // Get winning numbers for this date
+    // Get winning numbers for this date (prefer denormalized w.date so
+    // deleted sessions don't hide them)
     const allWins = await db.getAll('winning_numbers');
     const dayWins = {};
     for (const w of allWins) {
         const sess = state.sessions.find((s) => s.id === w.session);
-        const wDate = sess ? sess.date : null;
-        // Also check if winning number record has date info
+        const wDate = w.date || (sess ? sess.date : null);
         if (wDate === ds) {
-            const tt = sess.timeType || '';
+            const tt = w.timeType || (sess ? sess.timeType : '') || '';
             dayWins[tt] = String(w.number).padStart(2, '0');
         }
     }
@@ -2048,21 +2057,23 @@ async function renderWeekly() {
     }
     $('wkLabel').textContent = `${days[0].ds} – ${days[4].ds}`;
     state.weeklyMonday = days[0].ds;
-    const daySet = new Set(days.map((x) => x.ds));
-
-    const weekSessions = state.sessions.filter((s) => s.date && daySet.has(s.date));
+    // NOTE: iterate dates (not sessions) so deleted sessions don't hide history.
+    // Records/winning numbers carry denormalized session_date/date (see backfillDates).
+    const allRecs = await db.getAll('lottery_records');
+    const allWins = await db.getAll('winning_numbers');
 
     // agg key: (akan? 'akan:':'pos:') + pkey
     // perDay[5] -> { am: {bet,win,winDeduct,has}, pm: {...} }
     const agg = {};
     const rowOrder = [];
     const blankCell = () => ({ bet: 0, win: 0, winDeduct: 0, has: false });
-    for (const s of weekSessions) {
-        const dayIdx = days.findIndex((d) => d.ds === s.date);
-        if (dayIdx < 0) continue;
-        const isAM = (s.timeType || '') === 'မနက်ပိုင်း';
-        const recs = await db.query('lottery_records', 'by_session', s.id);
-        const wins = await _getWins(s.id);
+    for (let dayIdx = 0; dayIdx < 5; dayIdx++) {
+        const ds = days[dayIdx].ds;
+        for (const tt of ['မနက်ပိုင်း', 'ညနေပိုင်း']) {
+        const isAM = tt === 'မနက်ပိုင်း';
+        const recs = allRecs.filter((r) => r.session_date === ds && (r.session_timeType || '') === tt);
+        const _w = allWins.find((x) => (x.date || '') === ds && ((x.timeType || '') === tt));
+        const wins = _w ? [_w] : [];
         const winNum = wins.length ? String(wins[0].number).padStart(2, '0') : null;
         for (const r of recs) {
             const isAkan = r.record_type === 'akan';
@@ -2087,7 +2098,8 @@ async function renderWeekly() {
                 d.has = true;
             }
         }
-    }
+        } // end timeType loop
+    } // end day loop
 
     if (!rowOrder.length) {
         box.innerHTML = '<div class="empty">ဒီအပတ် မှတ်တမ်း မရှိသေးပါ</div>';
@@ -2287,6 +2299,50 @@ async function cleanupOldRecords() {
     } catch (e) { console.warn('cleanupOldRecords failed:', e.message); }
 }
 
+/**
+ * One-time backfill: stamp date/timeType directly onto winning_numbers and
+ * session_date/session_timeType onto lottery_records, so Daily/Weekly/ကျန်ဂဏန်း
+ * keep working after their session is deleted. Uses the session when still
+ * present, otherwise falls back to the record's own timestamps.
+ * Local-only (no sync churn); idempotent.
+ */
+async function backfillDates() {
+    const sessById = new Map((state.sessions || []).map((s) => [s.id, s]));
+    const dateOf = (ts) => {
+        if (!ts) return null;
+        const d = new Date(ts);
+        return isNaN(d.getTime()) ? null : dsOf(d);
+    };
+    // winning_numbers
+    const wins = await db.getAll('winning_numbers');
+    for (const w of wins) {
+        if (w.date) continue;
+        const sess = sessById.get(w.session);
+        let d = sess ? sess.date : null;
+        let tt = sess ? (sess.timeType || '') : '';
+        if (!d) d = dateOf(w.created || w._updated);
+        if (d) {
+            w.date = d;
+            if (!w.timeType) w.timeType = tt;
+            await db.put('winning_numbers', w);
+        }
+    }
+    // lottery_records missing session_date (old records)
+    const recs = await db.getAll('lottery_records');
+    for (const r of recs) {
+        if (r.session_date) continue;
+        const sess = sessById.get(r.session);
+        let d = sess ? sess.date : null;
+        let tt = sess ? (sess.timeType || '') : '';
+        if (!d) d = dateOf(r.created || r._updated);
+        if (d) {
+            r.session_date = d;
+            if (!r.session_timeType) r.session_timeType = tt;
+            await db.put('lottery_records', r);
+        }
+    }
+}
+
 // Auto-delete winning numbers older than 10 weeks
 async function cleanupOldWinnings() {
     try {
@@ -2331,14 +2387,16 @@ async function openRemaining() {
         return;
     }
 
-    // Group by date: get session date for each winning number
+    // Group by date: prefer denormalized w.date (survives session deletion),
+    // fall back to session lookup for very old records.
     const byDate = {};
     for (const w of wins) {
         const sess = state.sessions.find((s) => s.id === w.session);
-        if (!sess || !sess.date) continue;
-        const dateKey = sess.date;
+        const dateKey = w.date || (sess && sess.date);
+        if (!dateKey) continue;
         if (!byDate[dateKey]) byDate[dateKey] = { am: null, pm: null };
-        const isAM = (sess.timeType || '') === 'မနက်ပိုင်း';
+        const tt = w.timeType || (sess && sess.timeType) || '';
+        const isAM = tt === 'မနက်ပိုင်း';
         const num = String(w.number).padStart(2, '0');
         if (isAM) byDate[dateKey].am = num;
         else byDate[dateKey].pm = num;
