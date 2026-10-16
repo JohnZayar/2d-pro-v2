@@ -1725,11 +1725,14 @@ function renderAgentLimitList() {
 }
 
 function addAgentLimit() {
-    const num = $('agLimitNum').value.trim();
+    const raw = $('agLimitNum').value.trim();
     const amt = Number($('agLimitAmt').value) || 0;
-    if (!/^\d{2}$/.test(num)) { showToast('ဂဏန်း ၂ လုံး ထည့်ပါ'); return; }
+    // Allow "56" or "56+98+35+69" — each number gets the same limit.
+    const nums = raw.split('+').map((s) => s.trim()).filter(Boolean);
+    if (!nums.length || !nums.every((n) => /^\d{2}$/.test(n))) { showToast('ဂဏန်း ၂ လုံး ထည့်ပါ (56+98 လို့လဲ ရတယ်)'); return; }
     if (amt <= 0) { showToast('ပမာဏ ထည့်ပါ'); return; }
-    state.editingLimits[num] = amt;
+    state.editingLimits = state.editingLimits || {};
+    nums.forEach((n) => { state.editingLimits[n] = amt; });
     $('agLimitNum').value = '';
     $('agLimitAmt').value = '';
     renderAgentLimitList();
