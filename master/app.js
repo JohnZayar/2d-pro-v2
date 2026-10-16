@@ -1358,8 +1358,7 @@ async function saveBoard() {
         if (!boardLineOk(line)) { badLines.push(line); continue; }
         let parsed = [];
         try { parsed = parseLine(line); } catch (e) { parsed = []; }
-        const isF = lineHasFormula(line);
-        for (const p of parsed) okItems.push({...p, _fromFormula: isF, formula_text: line.trim()});
+        for (const p of parsed) okItems.push({...p, formula_text: line.trim()});
     }
     if (!okItems.length) { showToast('ထည့်တာ မမှန်ပါ — စစ်ပါ'); return; }
     const sessionId = state.boardSessionId;
