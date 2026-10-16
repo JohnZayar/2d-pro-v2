@@ -38,21 +38,31 @@ function _normR(s) {
 }
 
 /**
- * Custom separator symbols (admin-defined via Rule settings).
- * e.g. ['$', '-'] lets "45$46$ 2000" or "45-46=2000" parse as 45,46 x 2000.
+ * Custom replacement rules (admin-defined via Rule settings).
+ * e.g. [{from:'$', to:' '}] lets "45$46$ 2000" parse as 45,46 x 2000.
+ * If `to` is blank, the symbol is deleted.
  */
-let customSeps = [];
-export function setCustomSeparators(seps) {
-    customSeps = Array.isArray(seps) ? seps.filter((s) => typeof s === 'string' && s.length > 0) : [];
+let customRules = [];
+export function setCustomRules(rules) {
+    customRules = Array.isArray(rules)
+        ? rules.filter((r) => r && typeof r.from === 'string' && r.from.length > 0)
+              .map((r) => ({ from: r.from, to: typeof r.to === 'string' ? r.to : '' }))
+        : [];
 }
-export function getCustomSeparators() {
-    return [...customSeps];
+export function getCustomRules() {
+    return customRules.map((r) => ({ ...r }));
 }
-/** Build the number-list split regex: base seps + admin custom seps. */
+/** Apply admin replacement rules to input text before parsing. */
+function applyCustomRules(text) {
+    let t = text || '';
+    for (const r of customRules) {
+        if (r.from) t = t.split(r.from).join(r.to);
+    }
+    return t;
+}
+/** Build the number-list split regex: base seps only (custom handled via replacement). */
 function sepRegex() {
-    const base = '\\s,.\\-/';
-    const extra = customSeps.map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('');
-    return new RegExp(`[${base}${extra}]+`);
+    return /[\s,.\-\/]+/;
 }
 
 /**
@@ -256,7 +266,7 @@ export function expandReverseFormula(formulaText) {
  */
 export function parseLine(line) {
     const results = [];
-    const cleanLine = (line || '').trim();
+    const cleanLine = applyCustomRules((line || '').trim());
     if (!cleanLine) return results;
 
     let convertedLine = _normR(convertMyanmarNumbers(cleanLine));
