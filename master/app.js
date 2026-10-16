@@ -6,7 +6,7 @@
 import * as db from '../shared/db.js?v=2';
 import * as pb from '../shared/pb.js?v=4';
 import * as sync from '../shared/sync.js?v=19';
-import { parseBoard, parseBoardReport, parseLine, setCustomRules } from '../shared/parser.js?v=2';
+import { parseBoard, parseBoardReport, parseLine, setCustomRules } from '../shared/parser.js?v=3';
 import {
     formatMoney, formatDateStr, getWeekMondayStr, remainingDigits,
     uid, showToast, escHtml, extractDigits, agentEmailFor, agentPasswordFor,
@@ -1414,7 +1414,7 @@ async function saveBoard() {
 
 let entryPending = [];      // typed but NOT yet saved: [{player_name, number, amount, record_type}]
 /** Add to entryPending, skipping exact duplicates (prevents double-add glitches). */
-function addEntryUnique(playerName, number, amount, recordType) {
+function addEntryUnique(playerName, number, amount, recordType, formulaText) {
     const num = String(number).padStart(2, '0');
     const amt = Number(amount) || 0;
     const exists = entryPending.some((e) =>
@@ -1424,7 +1424,7 @@ function addEntryUnique(playerName, number, amount, recordType) {
         (e.record_type || 'pos') === (recordType || 'pos')
     );
     if (!exists) {
-        entryPending.push({ player_name: playerName, number: num, amount: amt, record_type: recordType || 'pos' });
+        entryPending.push({ player_name: playerName, number: num, amount: amt, record_type: recordType || 'pos', formula_text: formulaText || '' });
         return true;
     }
     return false;
@@ -1614,7 +1614,7 @@ window.submitEntryRow = async function submitEntryRow() {
     });
     if (!allowedItems.length) { entryClearInputs(); showToast('🚫 ဒိုင်ပိတ် ဂဏန်းတွေ ချည်း — တင် မရပါ'); return; }
     allowedItems.forEach((it) => {
-        addEntryUnique(playerName, it.number, it.amount, rType);
+        addEntryUnique(playerName, it.number, it.amount, rType, it.formula_text);
     });
     entryClearInputs();
     renderEntryTable();
@@ -1695,6 +1695,7 @@ window.saveEntryBatch = async function saveEntryBatch() {
                     player_name: e.player_name || '',
                     record_type: e.record_type || 'pos',
                     batch_no: batchNo,
+                    formula_text: e.formula_text || '',
                 });
                 count++;
             }
@@ -2896,22 +2897,44 @@ async function renderVoucherContent() {
             (p.isAkan ? ' <span class="ptype">အထွက်</span>' : '') + '</div>';
         p.batches.forEach((b) => {
             const bTotal = b.items.reduce((s, r) => s + (Number(r.amount) || 0), 0);
-            html += '<div class="v-batch"><div class="v-batch-no">' + escHtml(b.label) + '</div>' +
-                '<table class="v-table"><thead><tr><th>ဂဏန်း</th><th>ပမာဏ</th></tr></thead><tbody>' +
-                b.items.map((r) => {
+            // Group by formula_text for compact display (e.g. "အပူး 500" (10) 5000)
+            const byFormula = {};
+            const formulaOrder = [];
+            b.items.forEach((r) => {
+                const ft = (r.formula_text || '').trim();
+                const key = ft || `__single__${r.id}`;
+                if (!byFormula[key]) { byFormula[key] = []; formulaOrder.push(key); }
+                byFormula[key].push(r);
+            });
+            const rowsHtml = formulaOrder.map((key) => {
+                const grp = byFormula[key];
+                if (grp.length > 1) {
+                    // Compact: formula text + (count) total
+                    const ft = (grp[0].formula_text || '').trim();
+                    const cnt = grp.length;
+                    const total = grp.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+                    return '<tr><td>' + escHtml(ft) + '</td>' +
+                        '<td>(' + cnt + ') ' + formatMoney(total) + '</td></tr>';
+                } else {
+                    const r = grp[0];
                     const numStr = String(r.number).padStart(2, '0');
                     const isWin = winNums.has(numStr);
                     return '<tr data-rid="' + escHtml(r.id) + '"' + (isWin ? ' class="win-row"' : '') + '><td' + (isWin ? ' class="win-cell"' : '') + '>' +
                         escHtml(numStr) + '</td>' +
                         '<td' + (isWin ? ' class="win-cell"' : '') + '>' + formatMoney(r.amount) + '</td></tr>';
-                }).join('') +
+                }
+            }).join('');
+            html += '<div class="v-batch"><div class="v-batch-no">' + escHtml(b.label) + '</div>' +
+                '<table class="v-table"><thead><tr><th>ဂဏန်း</th><th>ပမာဏ</th></tr></thead><tbody>' +
+                rowsHtml +
                 '</tbody><tfoot><tr><td>Total</td><td>' + formatMoney(bTotal) + '</td></tr></tfoot></table></div>';
         });
         html += '</div>';
     });
     box.innerHTML = html;
 
-    // Plain text (Pho's format: name → NO X → "55 500" lines → Total per batch)
+    // Plain text (Pho's format: name → NO X → lines → Total per batch)
+    // Compact: "အပူး 500 (10) 5000" for formula groups
     const lines = [];
     players.forEach((p, pi) => {
         if (pi > 0) lines.push('');
@@ -2920,10 +2943,27 @@ async function renderVoucherContent() {
             if (bi > 0) lines.push('');
             lines.push(b.label);
             let bTotal = 0;
+            const byF = {};
+            const fOrder = [];
             b.items.forEach((r) => {
-                const amt = Number(r.amount) || 0;
-                bTotal += amt;
-                lines.push(String(r.number).padStart(2, '0') + ' ' + amt);
+                const ft = (r.formula_text || '').trim();
+                const key = ft || `__s__${r.id}`;
+                if (!byF[key]) { byF[key] = []; fOrder.push(key); }
+                byF[key].push(r);
+            });
+            fOrder.forEach((key) => {
+                const grp = byF[key];
+                if (grp.length > 1) {
+                    const ft = (grp[0].formula_text || '').trim();
+                    const total = grp.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+                    bTotal += total;
+                    lines.push(`${ft} (${grp.length}) ${total}`);
+                } else {
+                    const r = grp[0];
+                    const amt = Number(r.amount) || 0;
+                    bTotal += amt;
+                    lines.push(String(r.number).padStart(2, '0') + ' ' + amt);
+                }
             });
             lines.push('Total ' + bTotal);
         });
