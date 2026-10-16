@@ -1740,12 +1740,13 @@ async function saveWinning() {
     }
 }
 
-/** Home 🎯 ပေါက်သီး tab: every session with its winning number + ထည့်/ပြင် button. */
+/** Home 🎯 ပေါက်သီး tab: every session with its winning number + ထည့်/ပြင် button.
+ *  Winning numbers of deleted sessions are shown as read-only date rows. */
 async function renderWinningHome() {
     const box = $('winHomeList');
     const sess = (state.sessions || []).slice().sort((a, b) =>
         String(b.created || '').localeCompare(String(a.created || '')));
-    if (!sess.length) { box.innerHTML = '<div class="empty">ပွဲ မရှိသေးပါ</div>'; return; }
+    const sessIds = new Set(sess.map((s) => s.id));
     const rows = [];
     for (const s of sess) {
         const wins = await _getWins(s.id);
@@ -1757,6 +1758,18 @@ async function renderWinningHome() {
             '<div class="acts"><button class="btn small green" onclick="openWinning(\'' + s.id + '\')">' +
             (num ? 'ပြင်မယ်' : 'ထည့်မယ်') + '</button></div></div>');
     }
+    // Orphaned winning numbers (session deleted): date row, read-only.
+    const allWins = await db.getAll('winning_numbers');
+    const orphans = allWins
+        .filter((w) => w && w.number != null && String(w.number) !== '' && !sessIds.has(w.session))
+        .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+    for (const w of orphans) {
+        const label = w.date ? (w.date + (w.timeType ? ' (' + w.timeType + ')' : '')) : '…';
+        const num = String(w.number).padStart(2, '0');
+        rows.push('<div class="agent-row"><div><div class="nm">' + escHtml(label) + '</div>' +
+            '<div class="ph">🏆 ပေါက်သီး <b style="color:var(--green)">' + escHtml(num) + '</b></div></div></div>');
+    }
+    if (!rows.length) { box.innerHTML = '<div class="empty">ပွဲ မရှိသေးပါ</div>'; return; }
     box.innerHTML = rows.join('');
 }
 window.openWinning = openWinning;
