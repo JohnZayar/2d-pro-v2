@@ -314,9 +314,10 @@ if ('serviceWorker' in navigator) {
         </div>
         <div class="card" id="ruleCard">
           <div class="set-row"><span>📏 Rule (ဖော်မြူလာ သင်္ကေတ)</span></div>
-          <div class="small muted">ဂဏန်းခွဲတဲ့ သင်္ကေတအသစ် — ဥပမာ $ ထည့်ရင် 45$46$ 2000 ရမယ်</div>
-          <div class="set-row"><input id="ruleSepInput" type="text" placeholder="သင်္ကေတ (ဥပမာ $)" maxlength="3" style="flex:1;min-width:0"><button id="ruleSepAddBtn" class="btn small">+ ထည့်မယ်</button></div>
-          <div id="ruleSepList" class="mt small">—</div>
+          <div class="small muted">ဥပမာ: $ → (space) ဆို 45$46$ 2000 ရမယ်။ အောက်ကွက် ဗလာထားရင် ဖျက်ပေးမယ်</div>
+          <div class="set-row"><input id="ruleFromInput" type="text" placeholder="မူရင်း သင်္ကေတ (ဥပမာ $)" maxlength="5" style="flex:1;min-width:0"></div>
+          <div class="set-row"><input id="ruleToInput" type="text" placeholder="ပြောင်းမည် (ဥပမာ space; ဗလာဆို ဖျက်)" maxlength="5" style="flex:1;min-width:0"><button id="ruleAddBtn" class="btn small">+ ထည့်မယ်</button></div>
+          <div id="ruleList" class="mt small">—</div>
         </div>
         <div class="card">
           <div class="set-row"><span>🔑 Password ချိန်းမယ်</span></div>
@@ -546,6 +547,6 @@ if ('serviceWorker' in navigator) {
 
 
 </div>
-<script type="module" src="app.js?v=130"></script>
+<script type="module" src="app.js?v=131"></script>
 </body>
 </html>

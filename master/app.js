@@ -6,7 +6,7 @@
 import * as db from '../shared/db.js?v=2';
 import * as pb from '../shared/pb.js?v=4';
 import * as sync from '../shared/sync.js?v=19';
-import { parseBoard, parseBoardReport, parseLine, setCustomSeparators } from '../shared/parser.js?v=2';
+import { parseBoard, parseBoardReport, parseLine, setCustomRules } from '../shared/parser.js?v=2';
 import {
     formatMoney, formatDateStr, getWeekMondayStr, remainingDigits,
     uid, showToast, escHtml, extractDigits, agentEmailFor, agentPasswordFor,
@@ -134,8 +134,8 @@ function bindUI() {
 
     $('syncNowBtn').addEventListener('click', () => fullSync(true));
     $('logoutBtn').addEventListener('click', doLogout);
-    const ruleAddBtn = $('ruleSepAddBtn');
-    if (ruleAddBtn) ruleAddBtn.addEventListener('click', addRuleSeparator);
+    const ruleAddBtn = $('ruleAddBtn');
+    if (ruleAddBtn) ruleAddBtn.addEventListener('click', addRule);
     const resetBtn = $('resetAppBtn');
     if (resetBtn) resetBtn.addEventListener('click', resetApp);
     $('buyerCreateBtn').addEventListener('click', createBuyerAccount);
@@ -954,7 +954,7 @@ async function loadSettingsIntoUI() {
         urlInput.value = cur === def ? '' : cur;
         urlInput.placeholder = def;
     }
-    await renderRuleSeparators();
+    await renderRules();
     // Buyer creation: only Pho (seller) can see it — buyers cannot create sub-buyers
     const buyerCard = $('buyerCard');
     const buyerListCard = $('buyerListCard');
@@ -968,62 +968,64 @@ async function loadSettingsIntoUI() {
     }
 }
 
-/* ================= RULE: custom formula separators ================= */
+/* ================= RULE: custom formula replacement rules ================= */
 
-function ruleSepKey() {
-    return `custom_separators_${state.tenantId || 'default'}`;
+function ruleKey() {
+    return `custom_rules_${state.tenantId || 'default'}`;
 }
 
-async function getRuleSeparators() {
+async function getRules() {
     try {
-        const v = await getSetting(ruleSepKey(), '[]');
+        const v = await getSetting(ruleKey(), '[]');
         const arr = JSON.parse(v);
         return Array.isArray(arr) ? arr : [];
     } catch (e) { return []; }
 }
 
-async function saveRuleSeparators(seps) {
-    await setSetting(ruleSepKey(), JSON.stringify(seps));
-    // Apply locally immediately
-    try { setCustomSeparators(seps); } catch (e) {}
+async function saveRules(rules) {
+    await setSetting(ruleKey(), JSON.stringify(rules));
+    try { setCustomRules(rules); } catch (e) {}
 }
 
-async function renderRuleSeparators() {
-    const box = $('ruleSepList');
+async function renderRules() {
+    const box = $('ruleList');
     if (!box) return;
-    const seps = await getRuleSeparators();
-    try { setCustomSeparators(seps); } catch (e) {}
-    if (!seps.length) {
+    const rules = await getRules();
+    try { setCustomRules(rules); } catch (e) {}
+    if (!rules.length) {
         box.innerHTML = '<span class="muted">မရှိသေးပါ — အပေါ်ကနေ ထည့်ပါ</span>';
         return;
     }
-    box.innerHTML = seps.map((s, i) =>
-        `<span class="rule-sep-chip">${escHtml(s)} <button class="btn small gray" onclick="removeRuleSeparator(${i})">✕</button></span>`
-    ).join(' ');
+    box.innerHTML = rules.map((r, i) => {
+        const to = r.to ? escHtml(r.to) : '<i class="muted">(ဖျက်)</i>';
+        return `<span class="rule-sep-chip">${escHtml(r.from)} → ${to} <button class="btn small gray" onclick="removeRule(${i})">✕</button></span>`;
+    }).join(' ');
 }
 
-async function addRuleSeparator() {
-    const inp = $('ruleSepInput');
-    if (!inp) return;
-    const s = (inp.value || '').trim();
-    if (!s) { showToast('သင်္ကေတ ထည့်ပါ'); return; }
-    if (/[0-9a-zA-Z\u1000-\u109F]/.test(s)) { showToast('ဂဏန်း/စာလုံး မရပါ — သင်္ကေတသီးသန့်ပါ'); return; }
-    const seps = await getRuleSeparators();
-    if (seps.includes(s)) { showToast('ရှိနေပြီးသား'); return; }
-    seps.push(s);
-    await saveRuleSeparators(seps);
-    inp.value = '';
-    await renderRuleSeparators();
-    showToast(`"${s}" ထည့်ပြီးပြီ`);
+async function addRule() {
+    const fromInp = $('ruleFromInput');
+    const toInp = $('ruleToInput');
+    if (!fromInp) return;
+    const from = (fromInp.value || '').trim();
+    const to = (toInp.value || ''); // keep spaces; blank = delete
+    if (!from) { showToast('မူရင်း သင်္ကေတ ထည့်ပါ'); return; }
+    if (/[0-9a-zA-Z\u1000-\u109F]/.test(from)) { showToast('ဂဏန်း/စာလုံး မရပါ — သင်္ကေတသီးသန့်ပါ'); return; }
+    const rules = await getRules();
+    if (rules.some((r) => r.from === from)) { showToast('ရှိနေပြီးသား'); return; }
+    rules.push({ from, to });
+    await saveRules(rules);
+    fromInp.value = ''; toInp.value = '';
+    await renderRules();
+    showToast(`"${from}" ထည့်ပြီးပြီ`);
 }
 
-async function removeRuleSeparator(idx) {
-    const seps = await getRuleSeparators();
-    seps.splice(idx, 1);
-    await saveRuleSeparators(seps);
-    await renderRuleSeparators();
+async function removeRule(idx) {
+    const rules = await getRules();
+    rules.splice(idx, 1);
+    await saveRules(rules);
+    await renderRules();
 }
-window.removeRuleSeparator = removeRuleSeparator;
+window.removeRule = removeRule;
 
 /* ================= TABS & MODALS ================= */
 
