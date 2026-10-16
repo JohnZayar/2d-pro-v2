@@ -1524,15 +1524,45 @@ function renderEntryTable() {
         tbody.innerHTML = '<tr><td colspan="4" class="empty-cell">စာရင်း မရှိသေးပါ။</td></tr>';
         return;
     }
-    tbody.innerHTML = entryPending.map((e, i) =>
-        '<tr>' +
+    // Group by formula_text for compact display
+    const byF = {}; const fOrder = [];
+    entryPending.forEach((e, idx) => {
+        const ft = (e.formula_text || '').trim();
+        const key = ft || `__s__${idx}`;
+        if (!byF[key]) { byF[key] = { indices: [], entries: [] }; fOrder.push(key); }
+        byF[key].indices.push(idx);
+        byF[key].entries.push(e);
+    });
+    tbody.innerHTML = fOrder.map((key) => {
+        const g = byF[key];
+        if (g.entries.length > 1) {
+            const e0 = g.entries[0];
+            const ft = (e0.formula_text || '').trim();
+            const gTotal = g.entries.reduce((s, e) => s + (Number(e.amount) || 0), 0);
+            const idxList = g.indices.join(',');
+            const label = (e0.record_type === 'akan' ? '⬆️ ' : '') + escHtml(e0.player_name || (e0.record_type === 'akan' ? 'ဒိုင် (အကန်)' : 'ကိုယ်တိုင်'));
+            return '<tr>' +
+                '<td>' + label + '</td>' +
+                '<td class="cell-no">' + escHtml(ft) + ' (' + g.entries.length + ')</td>' +
+                '<td class="cell-amt">' + formatMoney(gTotal) + '</td>' +
+                '<td class="cell-del"><button class="rec-del" onclick="entryDeleteGroup(\'' + idxList + '\')" title="ဖျက်မည်">🗑️</button></td>' +
+            '</tr>';
+        }
+        const e = g.entries[0]; const i = g.indices[0];
+        return '<tr>' +
             '<td>' + (e.record_type === 'akan' ? '⬆️ ' : '') + escHtml(e.player_name || (e.record_type === 'akan' ? 'ဒိုင် (အကန်)' : 'ကိုယ်တိုင်')) + '</td>' +
             '<td class="cell-no">' + escHtml(String(e.number)) + '</td>' +
             '<td class="cell-amt">' + formatMoney(e.amount) + '</td>' +
             '<td class="cell-del"><button class="rec-del" onclick="entryDeleteRow(' + i + ')" title="ဖျက်မည်">🗑️</button></td>' +
-        '</tr>'
-    ).join('');
+        '</tr>';
+    }).join('');
 }
+
+window.entryDeleteGroup = function entryDeleteGroup(idxList) {
+    const idxs = idxList.split(',').map((x) => parseInt(x, 10)).sort((a, b) => b - a);
+    idxs.forEach((i) => entryPending.splice(i, 1));
+    renderEntryTable();
+};
 
 window.entryDeleteRow = function entryDeleteRow(i) {
     entryPending.splice(i, 1);
