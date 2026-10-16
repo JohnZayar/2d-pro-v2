@@ -423,6 +423,14 @@ if ('serviceWorker' in navigator) {
       <div class="field"><label>ဖုန်း</label><input id="agPhone" type="tel"></div>
       <div class="field"><label>ကော်မရှင် %</label><input id="agComm" type="number" inputmode="decimal" value="0"></div>
       <div class="field"><label>အလျော်နှုန်း</label><input id="agPayout" type="number" inputmode="numeric" value="80"></div>
+      <div class="field"><label>ကန့်သတ် (ဂဏန်း → တစ်ပွဲစာ အများဆုံး)</label>
+        <div class="row" style="gap:6px">
+          <input id="agLimitNum" type="text" inputmode="numeric" placeholder="ဂဏန်း" style="flex:1" autocomplete="off">
+          <input id="agLimitAmt" type="number" inputmode="numeric" placeholder="ပမာဏ" style="flex:1">
+          <button id="agLimitAdd" class="btn small" type="button">+ ထည့်</button>
+        </div>
+        <div id="agLimitList" class="mt"></div>
+      </div>
       <button id="agSave" class="btn block green">သိမ်းမည်</button>
     </div>
   </div>
@@ -532,6 +540,6 @@ if ('serviceWorker' in navigator) {
 
 
 </div>
-<script type="module" src="app.js?v=128"></script>
+<script type="module" src="app.js?v=129"></script>
 </body>
 </html>
