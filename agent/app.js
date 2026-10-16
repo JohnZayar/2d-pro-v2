@@ -15,7 +15,7 @@
 import * as db from '../shared/db.js?v=2';
 import * as pb from '../shared/pb.js?v=4';
 import * as sync from '../shared/sync.js?v=18';
-import { parseBoardReport, parseLine, setCustomSeparators } from '../shared/parser.js?v=2';
+import { parseBoardReport, parseLine, setCustomRules } from '../shared/parser.js?v=2';
 
 // Global safety net: log unhandled promise rejections instead of failing silently.
 if (typeof window !== 'undefined') {
@@ -222,28 +222,28 @@ async function autoSyncRefresh(res) {
     updateSyncPill();
     const pulled = (res && res.pull && res.pull.pulled) || 0;
     if (pulled > 0) {
-        await applyCustomSeparators();
+        await applyCustomRules();
         await refreshSession();
         refreshActiveScreen();
     }
 }
 
-/** Load admin-defined custom formula separators from app_settings. */
-async function applyCustomSeparators() {
+/** Load admin-defined custom formula replacement rules from app_settings. */
+async function applyCustomRules() {
     try {
-        const key = `custom_separators_${tenantId || 'default'}`;
+        const key = `custom_rules_${tenantId || 'default'}`;
         const all = await db.getAll('app_settings');
         const rec = all.find((r) => r.key === key);
         if (rec && rec.value) {
-            const seps = JSON.parse(rec.value);
-            if (Array.isArray(seps)) setCustomSeparators(seps);
+            const rules = JSON.parse(rec.value);
+            if (Array.isArray(rules)) setCustomRules(rules);
         }
     } catch (e) { /* ignore */ }
 }
 
     if (tenantId && agentName) {
         showApp();
-        await applyCustomSeparators();
+        await applyCustomRules();
         await refreshSession();
         // Background sync (non-blocking) — refreshes UI when new data arrives
         sync.startAutoSync(60000, autoSyncRefresh);
