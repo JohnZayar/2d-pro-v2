@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="theme-color" content="#0b0f17">
 <title>2D Master Pro v2</title>
-<link rel="stylesheet" href="style.css?v=7">
+<link rel="stylesheet" href="style.css?v=8">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon-192.png">
 <script>
@@ -36,7 +36,10 @@ if ('serviceWorker' in navigator) {
         <button class="menu-icon" onclick="toggleDrawer()" aria-label="မီနူး">☰</button>
         <span class="title">🎯 2D Master Pro</span>
       </div>
-      <span id="syncPill" class="off" title="နှိပ်ရင် Sync လုပ်မယ်" onclick="syncNowManual()">⏳</span>
+      <div class="topbar-right">
+        <button id="backBtn" class="hdr-back-btn" onclick="goBack()" aria-label="နောက်ပြန်" style="display:none">←</button>
+        <span id="syncPill" class="off" title="နှိပ်ရင် Sync လုပ်မယ်" onclick="syncNowManual()">⏳</span>
+      </div>
     </header>
     <div class="drawer-backdrop" id="drawerBackdrop" onclick="closeDrawer()"></div>
     <aside class="sidebar" id="sidebar">
@@ -333,7 +336,7 @@ if ('serviceWorker' in navigator) {
         <div class="card">
           <button id="resetAppBtn" class="btn gray block">🔄 App Reset (cache ရှင်း)</button>
         </div>
-        <div class="small muted" style="text-align:center;margin-top:8px"><b>v124</b></div>
+        <div class="small muted" style="text-align:center;margin-top:8px"><b>v125</b></div>
       </section>
     </main>
   </div>
@@ -529,6 +532,6 @@ if ('serviceWorker' in navigator) {
 
 
 </div>
-<script type="module" src="app.js?v=124"></script>
+<script type="module" src="app.js?v=125"></script>
 </body>
 </html>
