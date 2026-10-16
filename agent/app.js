@@ -887,19 +887,7 @@ window.submitEntry = async function submitEntry() {
     allowedItems.forEach((it) => {
         if (addPendingUnique(playerName, it.number, it.amount, isFormulaLine)) addedCount++;
     });
-    // Safety net: remove exact duplicates
-    {
-        const seenK = new Set();
-        pendingEntries = pendingEntries.filter((e) => {
-            const key = (e.player_name || '') + '|' + String(e.number).padStart(2, '0') + '|' + (Number(e.amount) || 0);
-            if (seenK.has(key)) return false;
-            seenK.add(key);
-            return true;
-        });
-    }
-    if (addedCount < allowedItems.length) {
-        showToast('⚠️ ထပ်နေတာ ' + (allowedItems.length - addedCount) + ' ကွက် ကျော်လိုက်တယ်');
-    }
+    // Pho: duplicates allowed — no safety-net dedup
     clearInputs();
     await renderEntryTable();
     const skipped = invalidLines.length + (items.length - validItems.length) + blockedHit.length;
