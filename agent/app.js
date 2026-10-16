@@ -41,16 +41,9 @@ let pendingEntries = []; // typed but NOT yet saved: [{player_name, number, amou
 function addPendingUnique(playerName, number, amount, fromFormula, formulaText) {
     const num = String(number).padStart(2, '0');
     const amt = Number(amount) || 0;
-    const exists = pendingEntries.some((e) =>
-        e.player_name === playerName &&
-        String(e.number).padStart(2, '0') === num &&
-        (Number(e.amount) || 0) === amt
-    );
-    if (!exists) {
-        pendingEntries.push({ player_name: playerName, number: num, amount: amt, fromFormula: !!fromFormula, formula_text: formulaText || '' });
-        return true;
-    }
-    return false;
+    // Pho: duplicates allowed (e.g. 55x500 then 55x2500) — user deletes mistakes manually
+    pendingEntries.push({ player_name: playerName, number: num, amount: amt, fromFormula: !!fromFormula, formula_text: formulaText || '' });
+    return true;
 }
 
 /** Formula keywords: board lines containing these expand via formula
@@ -1483,17 +1476,6 @@ window.saveBoard = async function saveBoard() {
         allowedBoard.forEach((it) => {
             if (addPendingUnique(playerName, it.number, it.amount, it._fromFormula, it.formula_text)) addedBoard++;
         });
-        // Final dedup: remove any exact duplicates from pending (safety net)
-        const seen = new Set();
-        pendingEntries = pendingEntries.filter((e) => {
-            const key = (e.player_name || '') + '|' + String(e.number).padStart(2, '0') + '|' + (Number(e.amount) || 0);
-            if (seen.has(key)) return false;
-            seen.add(key);
-            return true;
-        });
-        if (addedBoard < allowedBoard.length) {
-            showToast('⚠️ ထပ်နေတာ ' + (allowedBoard.length - addedBoard) + ' ကွက် ကျော်လိုက်တယ်');
-        }
         await renderEntryTable();
         const blkMsgB = blockedHitB.length ? ' (🚫 ' + [...new Set(blockedHitB)].join(',') + ' ပိတ်)' : '';
         if (badLines.length) {
