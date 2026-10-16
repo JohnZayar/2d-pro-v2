@@ -100,7 +100,7 @@ async function checkAgentLimits() {
         const lim = Number(myLimits[num]);
         const total = (existTotals[num] || 0) + pendTotals[num];
         if (total > lim) {
-            return `ဟော့ဂဏန်း (${num}) Limite ပြည့်လို့ မရတော့ပါ`;
+            return `ဟော့ဂဏန်း (${num}) Limite ပြည့်လို့ မရတော့ပါ [${existTotals[num] || 0}+${pendTotals[num]}>${lim}]`;
         }
     }
     return null;
