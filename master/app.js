@@ -1417,17 +1417,9 @@ let entryPending = [];      // typed but NOT yet saved: [{player_name, number, a
 function addEntryUnique(playerName, number, amount, recordType, formulaText) {
     const num = String(number).padStart(2, '0');
     const amt = Number(amount) || 0;
-    const exists = entryPending.some((e) =>
-        (e.player_name || '') === (playerName || '') &&
-        String(e.number).padStart(2, '0') === num &&
-        (Number(e.amount) || 0) === amt &&
-        (e.record_type || 'pos') === (recordType || 'pos')
-    );
-    if (!exists) {
-        entryPending.push({ player_name: playerName, number: num, amount: amt, record_type: recordType || 'pos', formula_text: formulaText || '' });
-        return true;
-    }
-    return false;
+    // Pho: duplicates allowed — user deletes mistakes manually
+    entryPending.push({ player_name: playerName, number: num, amount: amt, record_type: recordType || 'pos', formula_text: formulaText || '' });
+    return true;
 }
 let entryActiveBox = 'no';  // 'no' | 'amt' | 'rev'
 let entrySaveInFlight = false;
