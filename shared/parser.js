@@ -81,7 +81,9 @@ export function expandFormula(fullNoText) {
 
     if (cleanText.includes('ခွေ') && cleanText.includes('ပူး')) {
         // ခွေပူး / အခွေအပူး — permutations WITH doubles (25 nums)
-        const allDigits = cleanText.match(/\d+/g);
+        // Digits only from BEFORE the formula keyword (exclude amount)
+        const beforeKw = cleanText.split(/ခွေ/)[0];
+        const allDigits = beforeKw.match(/\d+/g);
         const digits = allDigits ? allDigits.join('') : '123';
         const uniqueDigits = Array.from(new Set(digits.split('')));
         const setNums = new Set();
@@ -196,7 +198,9 @@ export function expandFormula(fullNoText) {
         // Note: no cross-digit dedup — overlaps (56,65,etc.) are intentional double bets
     } else if (cleanText.includes('အခွေ') || cleanText.includes('ခွေ')) {
         // ခွေ — permutations WITHOUT doubles (20 nums)
-        let digits = cleanText.replace(/[^\d]/g, '').trim();
+        // Digits only from BEFORE the formula keyword (exclude amount)
+        const beforeKw = cleanText.split(/အခွေ|ခွေ/)[0];
+        let digits = beforeKw.replace(/[^\d]/g, '').trim();
         if (!digits) digits = '123';
         const uniqueDigits = Array.from(new Set(digits.split('')));
         const setNums = new Set();
@@ -290,7 +294,8 @@ export function expandReverseFormula(formulaText) {
  * Each part keeps its own amount.
  */
 function splitCombinedFormula(line) {
-    const keywords = ['ထိုင်းနက္ခတ်', 'နက္ခတ်', 'ညီအစ်ကို', 'ထိပ်', 'နောက်', 'ပတ်', 'အပါ', 'ပါ', 'အပူး', 'ပူး', 'အခွေ', 'ခွေ', 'စုံမ', 'မစုံ'];
+    // Note: ခွေပူး variants must come FIRST so overlap logic keeps them as single units
+    const keywords = ['ထိုင်းနက္ခတ်', 'နက္ခတ်', 'ညီအစ်ကို', 'အခွေအပူး', 'အခွေပူး', 'ခွေပူး', 'ထိပ်', 'နောက်', 'ပတ်', 'အပါ', 'ပါ', 'အပူး', 'ပူး', 'အခွေ', 'ခွေ', 'စုံမ', 'မစုံ'];
     // Find all keyword occurrences
     const positions = [];
     for (const kw of keywords) {
