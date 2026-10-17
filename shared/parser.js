@@ -79,17 +79,19 @@ export function expandFormula(fullNoText) {
     const generatedNums = [];
     let cleanText = _normR(convertMyanmarNumbers(fullNoText).trim().normalize('NFC'));
 
-    // Pho Oct 17: ဘရိတ်/ပွင့်/Bk — Nဘရိတ် = pairs where (d1+d2)%10 == N (10 numbers)
-    // e.g. 1ဘရိတ် → 01 10 29 92 38 83 47 74 56 65
+    // Pho Oct 17: ဘရိတ်/ပွင့်/Bk — Nဘရိတ် = pairs where (d1+d2)%10 == N (10 numbers per digit)
+    // e.g. 1ဘရိတ် → 01 10 29 92 38 83 47 74 56 65; 123bk → 30 numbers
     if (cleanText.includes('ဘရိတ်') || cleanText.includes('ပွင့်') || /[bB][kK]/.test(cleanText)) {
         const beforeKw = cleanText.split(/ဘရိတ်|ပွင့်|[bB][kK]/)[0];
-        const dMatch = beforeKw.match(/\d/);
-        const target = dMatch ? parseInt(dMatch[0], 10) : 1;
+        const dStr = beforeKw.replace(/[^\d]/g, '');
+        const targets = dStr ? Array.from(new Set(dStr.split(''))).map(Number) : [1];
         const setNums = new Set();
-        for (let d1 = 0; d1 <= 9; d1++) {
-            for (let d2 = 0; d2 <= 9; d2++) {
-                if ((d1 + d2) % 10 === target) {
-                    setNums.add(`${d1}${d2}`);
+        for (const target of targets) {
+            for (let d1 = 0; d1 <= 9; d1++) {
+                for (let d2 = 0; d2 <= 9; d2++) {
+                    if ((d1 + d2) % 10 === target) {
+                        setNums.add(`${d1}${d2}`);
+                    }
                 }
             }
         }
