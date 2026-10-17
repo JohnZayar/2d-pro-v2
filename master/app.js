@@ -2843,14 +2843,8 @@ async function renderVoucherContent() {
             byBatch[b].push(r);
         });
         const batches = batchOrder.map((b, i) => {
-            // Dedup: same number+amount shows only once
-            const seenB = new Set();
-            const items = byBatch[b].filter((r) => {
-                const key = String(r.number).padStart(2, '0') + '|' + (Number(r.amount) || 0);
-                if (seenB.has(key)) return false;
-                seenB.add(key);
-                return true;
-            });
+            // Pho: NO dedup — duplicates are legitimate and must all show
+            const items = byBatch[b];
             return { label: 'NO ' + (i + 1), items };
         });
         const isAkan = pRecs.length > 0 && pRecs.every((r) => r.record_type === 'akan');
