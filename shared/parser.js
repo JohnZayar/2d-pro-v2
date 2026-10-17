@@ -24,10 +24,16 @@
 /** Convert Myanmar digits to ASCII digits. */
 export function convertMyanmarNumbers(str) {
     if (!str) return '';
+    str = str.normalize('NFC');
     const mmNums = ['၀', '၁', '၂', '၃', '၄', '၅', '၆', '၇', '၈', '၉'];
     const enNums = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
     for (let i = 0; i < 10; i++) {
         str = str.replace(new RegExp(mmNums[i], 'g'), enNums[i]);
+    }
+    // Subscript digits (U+2080–U+2089) — sometimes pasted from rich text
+    const subNums = ['₀', '₁', '₂', '₃', '₄', '₅', '₆', '₇', '₈', '₉'];
+    for (let i = 0; i < 10; i++) {
+        str = str.replace(new RegExp(subNums[i], 'g'), enNums[i]);
     }
     return str;
 }
@@ -158,10 +164,18 @@ export function expandFormula(fullNoText) {
             }
         });
     } else if (cleanText.includes('ပတ်')) {
-        const d = cleanText.replace(/အပတ်|ပတ်/g, '').replace(/[^\d]/g, '').slice(-1) || '5';
-        const setNums = new Set();
-        for (let i = 0; i <= 9; i++) { setNums.add(`${d}${i}`); setNums.add(`${i}${d}`); }
-        return Array.from(setNums);
+        // Multi-digit: "567ပတ်" = (5ပတ် 6ပတ် 7ပတ်) → 19×3=57, same as ပါ/အပါ (Pho)
+        const dStr = cleanText.replace(/အပတ်|ပတ်/g, '').replace(/[^\d]/g, '');
+        const digits = dStr ? Array.from(new Set(dStr.split(''))) : ['5'];
+        for (const d of digits) {
+            const seen = new Set();
+            for (let i = 0; i <= 9; i++) {
+                const a = `${d}${i}`, b = `${i}${d}`;
+                if (!seen.has(a)) { seen.add(a); generatedNums.push(a); }
+                if (!seen.has(b)) { seen.add(b); generatedNums.push(b); }
+            }
+        }
+        // Note: no cross-digit dedup — overlaps are intentional double bets
     } else if (cleanText.includes('ပူး')) {
         const dPoo = cleanText.replace(/အပူး|ပူး/g, '').replace(/[^\d]/g, '').slice(-1);
         if (dPoo) return [`${dPoo}${dPoo}`];
@@ -333,6 +347,9 @@ export function parseLine(line) {
     let convertedLine = _normR(convertMyanmarNumbers(cleanLine));
     // v218.3: / and , as amount separators (12/500 -> 12=500, 12,500 -> 12=500)
     convertedLine = convertedLine.replace(/^(.+?)[/,](\d{3,})$/, '$1=$2');
+    // Pho: "=" between digits and formula keyword = space (e.g. "567=ပါ" → "567 ပါ")
+    // Only when = is followed by non-digit (formula keyword, not amount)
+    convertedLine = convertedLine.replace(/=\s*(?=[^\d\s])/g, ' ');
 
     const pushNums = (nums, amt) => {
         nums.forEach((n) => results.push({ number: n, amount: amt }));
