@@ -167,9 +167,13 @@ export function expandFormula(fullNoText) {
         if (dPoo) return [`${dPoo}${dPoo}`];
         return ['00', '11', '22', '33', '44', '55', '66', '77', '88', '99'];
     } else if (cleanText.includes('အပါ') || cleanText.includes('အပတ်') || cleanText.includes('ပါ')) {
-        const d = cleanText.replace(/အပါ|အပတ်|ပါ/g, '').replace(/[^\d]/g, '').slice(-1) || '5';
+        // Multi-digit: "5-6-7ပါ" → numbers containing 5 OR 6 OR 7 (deduplicated)
+        const dStr = cleanText.replace(/အပါ|အပတ်|ပါ/g, '').replace(/[^\d]/g, '');
+        const digits = dStr ? Array.from(new Set(dStr.split(''))) : ['5'];
         const setNums = new Set();
-        for (let i = 0; i <= 9; i++) { setNums.add(`${d}${i}`); setNums.add(`${i}${d}`); }
+        for (const d of digits) {
+            for (let i = 0; i <= 9; i++) { setNums.add(`${d}${i}`); setNums.add(`${i}${d}`); }
+        }
         return Array.from(setNums);
     } else if (cleanText.includes('အခွေ') || cleanText.includes('ခွေ')) {
         // ခွေ — permutations WITHOUT doubles (20 nums)
@@ -218,7 +222,9 @@ export function expandFormula(fullNoText) {
             });
         }
     }
-    return generatedNums;
+    // Deduplicate: a single formula must not emit the same number twice
+    // (e.g. 5-6-7ပါ → 51 unique, not 57 with overlaps)
+    return Array.from(new Set(generatedNums));
 }
 
 /**
