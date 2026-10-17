@@ -79,7 +79,22 @@ export function expandFormula(fullNoText) {
     const generatedNums = [];
     let cleanText = _normR(convertMyanmarNumbers(fullNoText).trim().normalize('NFC'));
 
-    if (cleanText.includes('ခွေ') && cleanText.includes('ပူး')) {
+    // Pho Oct 17: ဘရိတ်/ပွင့်/Bk — Nဘရိတ် = pairs where (d1+d2)%10 == N (10 numbers)
+    // e.g. 1ဘရိတ် → 01 10 29 92 38 83 47 74 56 65
+    if (cleanText.includes('ဘရိတ်') || cleanText.includes('ပွင့်') || /[bB][kK]/.test(cleanText)) {
+        const beforeKw = cleanText.split(/ဘရိတ်|ပွင့်|[bB][kK]/)[0];
+        const dMatch = beforeKw.match(/\d/);
+        const target = dMatch ? parseInt(dMatch[0], 10) : 1;
+        const setNums = new Set();
+        for (let d1 = 0; d1 <= 9; d1++) {
+            for (let d2 = 0; d2 <= 9; d2++) {
+                if ((d1 + d2) % 10 === target) {
+                    setNums.add(`${d1}${d2}`);
+                }
+            }
+        }
+        setNums.forEach((nn) => generatedNums.push(nn));
+    } else if (cleanText.includes('ခွေ') && cleanText.includes('ပူး')) {
         // ခွေပူး / အခွေအပူး — permutations WITH doubles (25 nums)
         // Digits only from BEFORE the formula keyword (exclude amount)
         const beforeKw = cleanText.split(/ခွေ/)[0];
@@ -293,7 +308,7 @@ export function expandReverseFormula(formulaText) {
  */
 function splitCombinedFormula(line) {
     // Note: ခွေပူး variants must come FIRST so overlap logic keeps them as single units
-    const keywords = ['ထိုင်းနက္ခတ်', 'နက္ခတ်', 'ညီအစ်ကို', 'အခွေအပူးပါ', 'အခွေအပူး', 'ခွေပူးပါ', 'ခွေအပူး', 'အခွေပူး', 'ခွေပူး', 'ထိပ်', 'နောက်', 'ပတ်', 'အပါ', 'ပါ', 'အပူး', 'ပူး', 'အခွေ', 'ခွေ', 'စုံမ', 'မစုံ'];
+    const keywords = ['ထိုင်းနက္ခတ်', 'နက္ခတ်', 'ညီအစ်ကို', 'အခွေအပူးပါ', 'အခွေအပူး', 'ခွေပူးပါ', 'ခွေအပူး', 'အခွေပူး', 'ခွေပူး', 'ဘရိတ်', 'ပွင့်', 'Bk', 'bk', 'BK', 'ထိပ်', 'နောက်', 'ပတ်', 'အပါ', 'ပါ', 'အပူး', 'ပူး', 'အခွေ', 'ခွေ', 'စုံမ', 'မစုံ'];
     // Find all keyword occurrences
     const positions = [];
     for (const kw of keywords) {
