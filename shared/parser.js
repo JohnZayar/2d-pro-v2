@@ -358,8 +358,14 @@ function splitCombinedFormula(line) {
  */
 export function parseLine(line) {
     const results = [];
-    const cleanLine = applyCustomRules((line || '').trim());
+    let cleanLine = applyCustomRules((line || '').trim());
     if (!cleanLine) return results;
+
+    // Pho Oct 18: aliases — (ထိပ်=ရှေ့=အရှေ့), (နောက်=ပိတ်=အပိတ်=အနောက်)
+    // Normalize to canonical forms so all writing methods work
+    cleanLine = cleanLine
+        .replace(/အရှေ့/g, 'ထိပ်').replace(/ရှေ့/g, 'ထိပ်')
+        .replace(/အနောက်/g, 'နောက်').replace(/အပိတ်/g, 'နောက်').replace(/ပိတ်/g, 'နောက်');
 
     // Handle combined formulas: "5ထိပ်400နောက်100" → parse each part separately
     const cParts = splitCombinedFormula(cleanLine);
