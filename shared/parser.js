@@ -498,11 +498,11 @@ export function parseBoardWithSource(text) {
 export function parseBoardReport(text) {
     const items = [];
     const invalidLines = [];
-    (text || '').split('\n').forEach((line) => {
+    (text || '').split('\n').forEach((line, lineIdx) => {
         if (!line.trim()) return;
         const parsed = parseLine(line);
         if (parsed.length > 0) {
-            for (const p of parsed) items.push({ ...p, formula_text: line.trim() });
+            for (const p of parsed) items.push({ ...p, formula_text: line.trim(), line_idx: lineIdx });
         } else {
             invalidLines.push(line);
         }
