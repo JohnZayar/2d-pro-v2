@@ -6,7 +6,7 @@
 import * as db from '../shared/db.js?v=2';
 import * as pb from '../shared/pb.js?v=4';
 import * as sync from '../shared/sync.js?v=19';
-import { parseBoard, parseBoardReport, parseLine, setCustomRules } from '../shared/parser.js?v=4';
+import { parseBoard, parseBoardReport, parseLine } from '../shared/parser.js?v=4';
 import {
     formatMoney, formatDateStr, getWeekMondayStr, remainingDigits,
     uid, showToast, escHtml, extractDigits, agentEmailFor, agentPasswordFor,
@@ -134,8 +134,6 @@ function bindUI() {
 
     $('syncNowBtn').addEventListener('click', () => fullSync(true));
     $('logoutBtn').addEventListener('click', doLogout);
-    const ruleAddBtn = $('ruleAddBtn');
-    if (ruleAddBtn) ruleAddBtn.addEventListener('click', addRule);
     const resetBtn = $('resetAppBtn');
     if (resetBtn) resetBtn.addEventListener('click', resetApp);
     $('buyerCreateBtn').addEventListener('click', createBuyerAccount);
@@ -954,7 +952,6 @@ async function loadSettingsIntoUI() {
         urlInput.value = cur === def ? '' : cur;
         urlInput.placeholder = def;
     }
-    await renderRules();
     // Buyer creation: only Pho (seller) can see it — buyers cannot create sub-buyers
     const buyerCard = $('buyerCard');
     const buyerListCard = $('buyerListCard');
@@ -967,65 +964,6 @@ async function loadSettingsIntoUI() {
         if (isSeller) renderBuyerList();
     }
 }
-
-/* ================= RULE: custom formula replacement rules ================= */
-
-function ruleKey() {
-    return `custom_rules_${state.tenantId || 'default'}`;
-}
-
-async function getRules() {
-    try {
-        const v = await getSetting(ruleKey(), '[]');
-        const arr = JSON.parse(v);
-        return Array.isArray(arr) ? arr : [];
-    } catch (e) { return []; }
-}
-
-async function saveRules(rules) {
-    await setSetting(ruleKey(), JSON.stringify(rules));
-    try { setCustomRules(rules); } catch (e) {}
-}
-
-async function renderRules() {
-    const box = $('ruleList');
-    if (!box) return;
-    const rules = await getRules();
-    try { setCustomRules(rules); } catch (e) {}
-    if (!rules.length) {
-        box.innerHTML = '<span class="muted">မရှိသေးပါ — အပေါ်ကနေ ထည့်ပါ</span>';
-        return;
-    }
-    box.innerHTML = rules.map((r, i) => {
-        const to = r.to ? escHtml(r.to) : '<i class="muted">(ဖျက်)</i>';
-        return `<span class="rule-sep-chip">${escHtml(r.from)} → ${to} <button class="btn small gray" onclick="removeRule(${i})">✕</button></span>`;
-    }).join(' ');
-}
-
-async function addRule() {
-    const fromInp = $('ruleFromInput');
-    const toInp = $('ruleToInput');
-    if (!fromInp) return;
-    const from = (fromInp.value || '').trim();
-    const to = (toInp.value || ''); // keep spaces; blank = delete
-    if (!from) { showToast('မူရင်း သင်္ကေတ ထည့်ပါ'); return; }
-    if (/[0-9a-zA-Z\u1000-\u109F]/.test(from)) { showToast('ဂဏန်း/စာလုံး မရပါ — သင်္ကေတသီးသန့်ပါ'); return; }
-    const rules = await getRules();
-    if (rules.some((r) => r.from === from)) { showToast('ရှိနေပြီးသား'); return; }
-    rules.push({ from, to });
-    await saveRules(rules);
-    fromInp.value = ''; toInp.value = '';
-    await renderRules();
-    showToast(`"${from}" ထည့်ပြီးပြီ`);
-}
-
-async function removeRule(idx) {
-    const rules = await getRules();
-    rules.splice(idx, 1);
-    await saveRules(rules);
-    await renderRules();
-}
-window.removeRule = removeRule;
 
 /* ================= TABS & MODALS ================= */
 
