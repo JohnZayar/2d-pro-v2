@@ -15,7 +15,7 @@
 import * as db from '../shared/db.js?v=2';
 import * as pb from '../shared/pb.js?v=4';
 import * as sync from '../shared/sync.js?v=18';
-import { parseBoardReport, parseLine } from '../shared/parser.js?v=7';
+import { parseBoardReport, parseLine } from '../shared/parser.js?v=8';
 
 // Global safety net: log unhandled promise rejections instead of failing silently.
 if (typeof window !== 'undefined') {
