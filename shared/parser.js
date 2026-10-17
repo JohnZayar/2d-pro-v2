@@ -295,7 +295,7 @@ export function expandReverseFormula(formulaText) {
  */
 function splitCombinedFormula(line) {
     // Note: ခွေပူး variants must come FIRST so overlap logic keeps them as single units
-    const keywords = ['ထိုင်းနက္ခတ်', 'နက္ခတ်', 'ညီအစ်ကို', 'အခွေအပူး', 'အခွေပူး', 'ခွေပူး', 'ထိပ်', 'နောက်', 'ပတ်', 'အပါ', 'ပါ', 'အပူး', 'ပူး', 'အခွေ', 'ခွေ', 'စုံမ', 'မစုံ'];
+    const keywords = ['ထိုင်းနက္ခတ်', 'နက္ခတ်', 'ညီအစ်ကို', 'အခွေအပူးပါ', 'အခွေအပူး', 'ခွေပူးပါ', 'ခွေအပူး', 'အခွေပူး', 'ခွေပူး', 'ထိပ်', 'နောက်', 'ပတ်', 'အပါ', 'ပါ', 'အပူး', 'ပူး', 'အခွေ', 'ခွေ', 'စုံမ', 'မစုံ'];
     // Find all keyword occurrences
     const positions = [];
     for (const kw of keywords) {
@@ -349,7 +349,11 @@ export function parseLine(line) {
         return results;
     }
 
-    let convertedLine = _normR(convertMyanmarNumbers(cleanLine));
+    // Pho: ရ before a formula keyword is ignored (e.g. "567ရခွေပူး" → "567ခွေပူး")
+    // (ရ as reverse marker only applies after a complete number, not mid-formula)
+    // Do this BEFORE _normR converts ရ → r
+    let preLine = convertMyanmarNumbers(cleanLine).replace(/ရ(?=\s*ခွေ|ခွေ|ပူး|ပါ|ပတ်|ထိပ်|နောက်|နက္ခတ်|စုံ)/g, '');
+    let convertedLine = _normR(preLine);
     // v218.3: / and , as amount separators (12/500 -> 12=500, 12,500 -> 12=500)
     convertedLine = convertedLine.replace(/^(.+?)[/,](\d{3,})$/, '$1=$2');
     // Pho: "=" between digits and formula keyword = space (e.g. "567=ပါ" → "567 ပါ")
