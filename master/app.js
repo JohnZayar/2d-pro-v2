@@ -6,7 +6,7 @@
 import * as db from '../shared/db.js?v=2';
 import * as pb from '../shared/pb.js?v=4';
 import * as sync from '../shared/sync.js?v=19';
-import { parseBoard, parseBoardReport, parseLine } from '../shared/parser.js?v=6';
+import { parseBoard, parseBoardReport, parseLine } from '../shared/parser.js?v=7';
 import {
     formatMoney, formatDateStr, getWeekMondayStr, remainingDigits,
     uid, showToast, escHtml, extractDigits, agentEmailFor, agentPasswordFor,
@@ -1360,11 +1360,11 @@ async function saveBoard() {
 
 let entryPending = [];      // typed but NOT yet saved: [{player_name, number, amount, record_type}]
 /** Add to entryPending, skipping exact duplicates (prevents double-add glitches). */
-function addEntryUnique(playerName, number, amount, recordType, formulaText) {
+function addEntryUnique(playerName, number, amount, recordType, formulaText, lineIdx) {
     const num = String(number).padStart(2, '0');
     const amt = Number(amount) || 0;
     // Pho: duplicates allowed — user deletes mistakes manually
-    entryPending.push({ player_name: playerName, number: num, amount: amt, record_type: recordType || 'pos', formula_text: formulaText || '' });
+    entryPending.push({ player_name: playerName, number: num, amount: amt, record_type: recordType || 'pos', formula_text: formulaText || '', line_idx: lineIdx ?? -1 });
     return true;
 }
 let entryActiveBox = 'no';  // 'no' | 'amt' | 'rev'
@@ -1470,11 +1470,11 @@ function renderEntryTable() {
         tbody.innerHTML = '<tr><td colspan="4" class="empty-cell">စာရင်း မရှိသေးပါ။</td></tr>';
         return;
     }
-    // Group by formula_text for compact display
+    // Group by (formula_text, line_idx) for compact display — each input line is its own row (Pho)
     const byF = {}; const fOrder = [];
     entryPending.forEach((e, idx) => {
         const ft = (e.formula_text || '').trim();
-        const key = ft || `__s__${idx}`;
+        const key = ft ? ft + '‖' + (e.line_idx ?? -1) : `__s__${idx}`;
         if (!byF[key]) { byF[key] = { indices: [], entries: [] }; fOrder.push(key); }
         byF[key].indices.push(idx);
         byF[key].entries.push(e);
@@ -1582,7 +1582,7 @@ window.submitEntryRow = async function submitEntryRow() {
     });
     if (!allowedItems.length) { entryClearInputs(); showToast('🚫 ဒိုင်ပိတ် ဂဏန်းတွေ ချည်း — တင် မရပါ'); return; }
     allowedItems.forEach((it) => {
-        addEntryUnique(playerName, it.number, it.amount, rType, it.formula_text);
+        addEntryUnique(playerName, it.number, it.amount, rType, it.formula_text, it.line_idx);
     });
     entryClearInputs();
     renderEntryTable();
