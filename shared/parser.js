@@ -141,25 +141,24 @@ export function expandFormula(fullNoText) {
             generatedNums.push(cleanNo);
         }
     } else if (cleanText.includes('ထိပ်')) {
-        // Multi-digit: 6.4.5ထိပ် -> 6ထိပ် + 4ထိပ် + 5ထိပ်
+        // Multi-digit: 758ထိပ် -> 7ထိပ် + 5ထိပ် + 8ထိပ် (each digit separate, Pho Oct 17)
         const dPartH = cleanText.replace(/ထိပ်/g, '').trim();
-        let dListH = dPartH.split(sepRegex()).filter((x) => x);
-        if (dListH.length === 0) dListH = [dPartH.replace(/[^\d]/g, '') || '5'];
+        const dStrH = dPartH.replace(/[^\d]/g, '');
+        const dListH = dStrH ? Array.from(new Set(dStrH.split(''))) : ['5'];
         const seenH = new Set();
-        dListH.forEach((dd) => {
-            const d = dd.replace(/[^\d]/g, '').slice(-1) || '5';
+        dListH.forEach((d) => {
             for (let i = 0; i <= 9; i++) {
                 const nn = `${d}${i}`;
                 if (!seenH.has(nn)) { seenH.add(nn); generatedNums.push(nn); }
             }
         });
     } else if (cleanText.includes('နောက်')) {
+        // Multi-digit: 758နောက် -> 7နောက် + 5နောက် + 8နောက် (each digit separate, Pho Oct 17)
         const dPartN = cleanText.replace(/နောက်/g, '').trim();
-        let dListN = dPartN.split(sepRegex()).filter((x) => x);
-        if (dListN.length === 0) dListN = [dPartN.replace(/[^\d]/g, '') || '5'];
+        const dStrN = dPartN.replace(/[^\d]/g, '');
+        const dListN = dStrN ? Array.from(new Set(dStrN.split(''))) : ['5'];
         const seenN = new Set();
-        dListN.forEach((dd) => {
-            const d = dd.replace(/[^\d]/g, '').slice(-1) || '5';
+        dListN.forEach((d) => {
             for (let i = 0; i <= 9; i++) {
                 const nn = `${i}${d}`;
                 if (!seenN.has(nn)) { seenN.add(nn); generatedNums.push(nn); }
@@ -262,17 +261,16 @@ export function expandReverseFormula(formulaText) {
     const pushRev = (x) => { if (!revSeen.has(x)) { revSeen.add(x); rev.push(x); } };
 
     if (ct.includes('ထိပ်')) {
-        let dList = ct.replace(/ထိပ်/g, '').trim().split(sepRegex()).filter((x) => x);
-        if (dList.length === 0) dList = ['5'];
-        dList.forEach((dd) => {
-            const d = dd.replace(/[^\d]/g, '').slice(-1) || '5';
+        // Multi-digit: each digit separate (Pho Oct 17)
+        const dStr = ct.replace(/ထိပ်/g, '').replace(/[^\d]/g, '');
+        const dList = dStr ? Array.from(new Set(dStr.split(''))) : ['5'];
+        dList.forEach((d) => {
             for (let i = 0; i <= 9; i++) pushRev(`${i}${d}`);
         });
     } else if (ct.includes('နောက်')) {
-        let dList = ct.replace(/နောက်/g, '').trim().split(sepRegex()).filter((x) => x);
-        if (dList.length === 0) dList = ['5'];
-        dList.forEach((dd) => {
-            const d = dd.replace(/[^\d]/g, '').slice(-1) || '5';
+        const dStr = ct.replace(/နောက်/g, '').replace(/[^\d]/g, '');
+        const dList = dStr ? Array.from(new Set(dStr.split(''))) : ['5'];
+        dList.forEach((d) => {
             for (let i = 0; i <= 9; i++) pushRev(`${d}${i}`);
         });
     } else if (/^\d{2}$/.test(ct)) {
@@ -321,10 +319,17 @@ function splitCombinedFormula(line) {
     if (filtered.length <= 1) return [line];
     // Split into parts
     const parts = [];
+    // Pho Oct 17: leading digits (e.g. "8,6,9" in "8,6,9ထိပ်600နောက်400") apply to ALL parts.
+    // Parts after the first (e.g. "နောက်400") get the leading digits prepended.
+    const firstKwPos = filtered[0].pos;
+    const leadingDigits = line.substring(0, firstKwPos).trim();
     for (let i = 0; i < filtered.length; i++) {
         const start = (i === 0) ? 0 : filtered[i].pos;
         const end = (i + 1 < filtered.length) ? filtered[i + 1].pos : line.length;
-        const part = line.substring(start, end).trim();
+        let part = line.substring(start, end).trim();
+        if (i > 0 && leadingDigits && part.startsWith(filtered[i].kw)) {
+            part = leadingDigits + part;
+        }
         if (part) parts.push(part);
     }
     return parts.length > 1 ? parts : [line];
