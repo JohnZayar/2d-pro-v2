@@ -734,3 +734,7 @@ tr.win-row td { background: rgba(250,204,21,.15); }
 .reminder-bar.win { background: #ffd54a; color: #5d3a00; }
 .rule-sep-chip { display: inline-block; background: #1e293b; border: 1px solid #334155; border-radius: 6px; padding: 4px 8px; margin: 2px; font-size: 16px; }
 .rule-sep-chip button { margin-left: 4px; }
+
+/* Entry table: formula + count stacked neatly (Pho Oct 18) */
+.pos-table .f-formula { font-weight: 800; }
+.pos-table .f-count { font-size: 12px; color: var(--muted); font-weight: 600; margin-top: 2px; }
