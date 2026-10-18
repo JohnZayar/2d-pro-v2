@@ -120,6 +120,11 @@ function bindUI() {
         } catch (e) { showToast('Paste မရပါ — ကိုယ်တိုင်ထည့်ပါ'); }
     });
     $('boardText').addEventListener('input', () => renderBoardLineCheck());
+    $('boardText').addEventListener('scroll', () => {
+        const bd = $('boardBackdrop');
+        const ta = $('boardText');
+        if (bd && ta) { bd.scrollTop = ta.scrollTop; bd.scrollLeft = ta.scrollLeft; }
+    });
     $('boardBack').addEventListener('click', () => closeModal('modal-board'));
     $('boardSave').addEventListener('click', saveBoard);
     document.querySelectorAll('[data-close]').forEach((b) => {
@@ -1256,29 +1261,24 @@ function boardLineOk(line) {
 
 /** Per-line formula check: small ✅/❌ per line + (count) total. Never guesses. */
 function renderBoardLineCheck() {
+    // Pho Oct 18: per-line TEXT color on the board itself (green=valid, red=invalid).
     const ta = $('boardText');
-    const box = $('boardLineCheck');
-    if (!ta || !box) return 0;
+    const bd = $('boardBackdrop');
+    if (!ta || !bd) return 0;
     const text = ta.value;
-    if (!text.trim()) { box.innerHTML = ''; box.style.display = 'none'; return 0; }
+    if (!text.trim()) { bd.innerHTML = ''; return 0; }
     let html = '';
     let bad = 0;
     for (const line of text.split('\n')) {
-        if (!line.trim()) continue;
+        if (!line.trim()) { html += '<span class="bl">&nbsp;</span>'; continue; }
         const ok = boardLineOk(line);
         if (!ok) bad++;
-        let extra = '';
-        if (ok) {
-            try {
-                const parsed = parseLine(line);
-                const total = parsed.reduce((s, p) => s + (Number(p.amount) || 0), 0);
-                extra = ` <span class="muted">(${parsed.length}) ${formatMoney(total)}</span>`;
-            } catch (e) {}
-        }
-        html += `<div class="bline ${ok ? 'ok' : 'bad'}"><span class="mk">${ok ? '✅' : '❌'}</span><span class="tx">${escHtml(line)}${extra}</span></div>`;
+        const esc = escHtml(line).replace(/ /g, '&nbsp;');
+        html += `<span class="bl ${ok ? 'ok' : 'bad'}">${esc || '&nbsp;'}</span>`;
     }
-    box.innerHTML = html;
-    box.style.display = '';
+    bd.innerHTML = html;
+    bd.scrollTop = ta.scrollTop;
+    bd.scrollLeft = ta.scrollLeft;
     return bad;
 }
 
