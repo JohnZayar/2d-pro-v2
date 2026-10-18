@@ -493,16 +493,19 @@ export async function repushAll(collections) {    const cols = collections || ['
         }
     }
     // Push everything now (queueOp's opportunistic pushes skip while _syncing).
-    let pushed = 0, failed = 0;
+    let pushed = 0, failed = 0, skipped = false, skipReason = '';
     try {
         const res = await pushPending();
         pushed = res.pushed || 0;
         failed = res.failed || 0;
+        skipped = !!res.skipped;
+        skipReason = res.reason || '';
     } catch (e) {
         errors.push(`push failed: ${e.message}`);
     }
     const lastErr = lastPushError();
     if (lastErr) errors.push(`last push error: ${lastErr}`);
+    if (skipped && skipReason === 'not-logged-in') errors.push('❌ Login မဝင်ထားပါ — Link Code ပြန်ချိတ်ပါ');
     return { queued, pushed, failed, errors };
 }
 
