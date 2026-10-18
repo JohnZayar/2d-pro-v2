@@ -734,3 +734,11 @@ tr.win-row td { background: rgba(250,204,21,.15); }
 .reminder-bar.win { background: #ffd54a; color: #5d3a00; }
 .rule-sep-chip { display: inline-block; background: #1e293b; border: 1px solid #334155; border-radius: 6px; padding: 4px 8px; margin: 2px; font-size: 16px; }
 .rule-sep-chip button { margin-left: 4px; }
+
+/* Visual polish (Pho Oct 18): borders, text size, colors — content untouched */
+.pos-table tbody td { border-bottom: 1px solid rgba(255,255,255,.06); }
+.pos-table tbody tr:last-child td { border-bottom: none; }
+.pos-table .cell-no { font-size: 15px; }
+.pos-table thead th { font-size: 12px; letter-spacing: .5px; }
+.v-table tbody td { border-bottom: 1px solid rgba(255,255,255,.05); }
+.v-table tbody tr:last-child td { border-bottom: none; }
