@@ -1539,23 +1539,14 @@ window.repushAllManual = async function repushAllManual() {
     updateSyncPill('working');
     try {
         const res = await sync.repushAll();
-        let msg = '📤 ' + (res.queued || 0) + ' ခု ပြန် တင်မည်';
+        // Show the ACTUAL push result from repushAll (not a second skipped syncNow)
+        let msg = '📤 ' + (res.queued || 0) + ' ခု queue';
+        msg += '\n✅ ' + (res.pushed || 0) + ' တင်';
+        if (res.failed) msg += ' ❌ ' + res.failed + ' မရ';
         if (res.errors && res.errors.length) {
-            msg += '\n❌ ' + res.errors.slice(0, 3).join('\n');
+            msg += '\n' + res.errors.slice(0, 5).join('\n');
         }
         showToast(msg);
-        // Now push them
-        const pushRes = await sync.syncNow();
-        const pushed = (pushRes.push && pushRes.push.pushed) || 0;
-        const failed = (pushRes.push && pushRes.push.failed) || 0;
-        let msg2 = '✅ ' + pushed + ' ခု တင်ပြီးပြီ';
-        if (failed) msg2 += ' ❌ ' + failed + '�ု မရ';
-        // Show last push error if any
-        try {
-            const lastErr = sync.lastPushError();
-            if (lastErr) msg2 += '\n' + lastErr;
-        } catch (e) {}
-        showToast(msg2);
         await refreshSession();
         refreshActiveScreen();
     } catch (e) {
