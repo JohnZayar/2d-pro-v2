@@ -28,7 +28,8 @@ const SYNC_COLLECTIONS = [
     'lottery_records',
     'winning_numbers',
     'agents',
-    'players',
+    // 'players' REMOVED Pho Oct 18: server 500 'Something went wrong' on push;
+    // Agent player list stays local (not needed by Master). Prevents sync block.
     'app_settings'
 ];
 
@@ -462,7 +463,7 @@ export function startAutoSync(intervalMs = 60000, onSync = null) {
  * @param {string[]} collections default: data collections (not tenants/users)
  * @returns {Promise<{queued:number, pushed:number, failed:number, errors:string[]}>}
  */
-export async function repushAll(collections) {    const cols = collections || ['sessions', 'lottery_records', 'winning_numbers', 'agents', 'players'];
+export async function repushAll(collections) {    const cols = collections || ['sessions', 'lottery_records', 'winning_numbers', 'agents'];
     let queued = 0;
     const errors = [];
     for (const col of cols) {
