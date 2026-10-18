@@ -797,24 +797,3 @@ tr.win-row td { background: rgba(250,204,21,.15); }
 }
 .reminder-bar.warn { background: #e8590c; color: #fff; }
 .reminder-bar.win { background: #ffd54a; color: #5d3a00; }
-
-/* ===== Digital board: inline per-line validation (Pho Oct 18) ===== */
-.board-wrap { position: relative; }
-.board-backdrop, .board-text {
-    font-family: ui-monospace, Menlo, monospace;
-    font-size: 16px; line-height: 1.7;
-    white-space: pre-wrap; word-wrap: break-word;
-}
-.board-backdrop {
-    position: absolute; top: 14px; left: 14px; right: 14px; bottom: 14px;
-    overflow: hidden; pointer-events: none;
-    color: #fff;
-}
-.board-backdrop .bl { display: block; border-radius: 4px; padding: 0 2px; margin: 0 -2px; }
-.board-backdrop .bl.ok { background: rgba(46, 160, 67, 0.20); }
-.board-backdrop .bl.bad { background: rgba(220, 60, 60, 0.22); }
-.board-textarea.board-text {
-    position: relative; z-index: 1;
-    background: transparent; color: transparent; caret-color: #fff;
-}
-.board-textarea.board-text::placeholder { color: #475569; }
