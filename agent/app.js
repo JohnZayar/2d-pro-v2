@@ -1534,6 +1534,25 @@ window.syncNowManual = async function syncNowManual() {
     updateSyncPill();
 };
 
+/** Pho Oct 18: Re-queue ALL local records for push (fixes records saved but never queued). */
+window.repushAllManual = async function repushAllManual() {
+    updateSyncPill('working');
+    try {
+        const res = await sync.repushAll();
+        const msg = '📤 ' + (res.queued || 0) + ' ခု ပြန် တင်မည်';
+        showToast(msg);
+        // Now push them
+        const pushRes = await sync.syncNow();
+        const pushed = (pushRes.push && pushRes.push.pushed) || 0;
+        showToast('✅ ' + pushed + ' ခု တင်ပြီးပြီ');
+        await refreshSession();
+        refreshActiveScreen();
+    } catch (e) {
+        showToast('❌ မရပါ: ' + e.message);
+    }
+    updateSyncPill();
+};
+
 /** Diagnose: try pushing ONE queued item and show the exact error. */
 window.diagnosePush = async function diagnosePush() {
     const q = await db.getAll('sync_queue').catch(() => []);
