@@ -14,7 +14,7 @@
 
 import * as db from '../shared/db.js?v=2';
 import * as pb from '../shared/pb.js?v=4';
-import * as sync from '../shared/sync.js?v=18';
+import * as sync from '../shared/sync.js?v=20';
 import { parseBoardReport, parseLine } from '../shared/parser.js?v=14';
 
 // Global safety net: log unhandled promise rejections instead of failing silently.
@@ -887,18 +887,20 @@ window.submitEntry = async function submitEntry() {
  */
 window.savePendingBatch = async function savePendingBatch() {
     if (saveInFlight) return;
-    if (await checkAgentDisabled()) return;
-    if (!pendingEntries.length) { showToast('စာရင်း မရှိသေးပါ'); return; }
+    // Pho Oct 18: set the guard SYNCHRONOUSLY before any await —
+    // two rapid taps must not both pass.
+    saveInFlight = true;
+    if (await checkAgentDisabled()) { saveInFlight = false; return; }
+    if (!pendingEntries.length) { saveInFlight = false; showToast('စာရင်း မရှိသေးပါ'); return; }
     // Block if any pending entry has no player name
-    if (pendingEntries.some((e) => !(e.player_name || '').trim())) { showToast('❌ အမည် မပါ တဲ့ စာရင်း ရှိ — ဖျက် ပြီး ပြန် ထည့်'); return; }
-    if (!currentSessionId) { showToast('⚠️ Session မရှိသေးပါ'); return; }
+    if (pendingEntries.some((e) => !(e.player_name || '').trim())) { saveInFlight = false; showToast('❌ အမည် မပါ တဲ့ စာရင်း ရှိ — ဖျက် ပြီး ပြန် ထည့်'); return; }
+    if (!currentSessionId) { saveInFlight = false; showToast('⚠️ Session မရှိသေးပါ'); return; }
     const lkS = await isAgentSessionLocked(currentSessionId);
-    if (lkS.locked) { showToast('🔒 ' + lkS.reason + ' — သိမ်း မရပါ'); return; }
+    if (lkS.locked) { saveInFlight = false; showToast('🔒 ' + lkS.reason + ' — သိမ်း မရပါ'); return; }
     // Hot-number limits (cumulative per session; formula-derived excluded)
     const limitErr = await checkAgentLimits();
-    if (limitErr) { showToast('❌ ' + limitErr); return; }
+    if (limitErr) { saveInFlight = false; showToast('❌ ' + limitErr); return; }
 
-    saveInFlight = true;
     try {
         // Group pending by player, preserving first-appearance order
         const order = [];
@@ -1439,14 +1441,15 @@ document.addEventListener('input', (e) => {
 /** Board save → one new batch for the selected player. */
 window.saveBoard = async function saveBoard() {
     if (saveInFlight) return;
+    // Pho Oct 18: set the guard SYNCHRONOUSLY before any await.
+    saveInFlight = true;
     const lkB = await isAgentSessionLocked(currentSessionId);
-    if (lkB.locked) { showToast('🔒 ' + lkB.reason + ' — တင် မရပါ'); return; }
+    if (lkB.locked) { saveInFlight = false; showToast('🔒 ' + lkB.reason + ' — တင် မရပါ'); return; }
     const ta = $('boardTextarea');
     const text = ta.value;
-    if (!text.trim()) { showToast('စာရွက် လွတ်နေတယ်'); return; }
-    if (!currentSessionId) { showToast('⚠️ Session မရှိသေးပါ'); return; }
+    if (!text.trim()) { saveInFlight = false; showToast('စာရွက် လွတ်နေတယ်'); return; }
+    if (!currentSessionId) { saveInFlight = false; showToast('⚠️ Session မရှိသေးပါ'); return; }
 
-    saveInFlight = true;
     try {
         const playerName = $('boardPlayer').value || null;
         if (!playerName) { saveInFlight = false; showToast('❌ အမည် ရွေးပါ (မရွေးရင် တင်မရ)'); return; }
