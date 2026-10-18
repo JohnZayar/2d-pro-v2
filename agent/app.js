@@ -279,7 +279,8 @@ function showApp() {
     document.getElementById('appScreen').hidden = false;
     document.getElementById('headerAgentName').textContent = agentName;
     document.getElementById('headerTenantName').textContent = '🔗 ' + tenantId;
-    document.getElementById('settingsTenantCode').textContent = tenantId;
+    // Pho Oct 18: show FULL link code (with -N-SECRET), not just tenantId
+    document.getElementById('settingsTenantCode').textContent = localStorage.getItem(LS_TENANT) || tenantId;
     document.getElementById('settingsAgentName').textContent = agentName;
 }
 
