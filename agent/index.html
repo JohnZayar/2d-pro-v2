@@ -289,10 +289,11 @@
             <select id="boardPlayer" class="field-input"></select>
         </div>
 
-        <div class="board-textarea-wrap board-wrap">
-            <div id="boardBackdrop" class="board-backdrop" aria-hidden="true"></div>
-            <textarea id="boardTextarea" class="board-textarea board-text" placeholder="ဥပမာ:&#10;12=500&#10;34r 1000&#10;6ထိပ် 7000&#10;ဒါမှမဟုတ် paste လုပ်ပါ…"></textarea>
+        <div class="board-textarea-wrap">
+            <textarea id="boardTextarea" class="board-textarea" placeholder="ဥပမာ:&#10;12=500&#10;34r 1000&#10;6ထိပ် 7000&#10;ဒါမှမဟုတ် paste လုပ်ပါ…"></textarea>
         </div>
+
+        <div id="boardPreview" class="board-preview" hidden></div>
 
         <div class="board-btns">
             <button class="btn-back" onclick="closeBoard()">Back</button>
@@ -380,7 +381,7 @@
         </div>
         <div class="settings-row">
             <span>App Version</span>
-            <b>v105</b>
+            <b>v106</b>
         </div>
         <button class="btn-danger-outline" onclick="syncNowManual()">🔄 အခု Sync လုပ်မည်</button>
         <button class="btn-danger-outline" onclick="disconnectAgent()">🚪 ထွက်မည် (unlink)</button>
@@ -388,7 +389,7 @@
     </div>
 </div>
 
-<script type="module" src="app.js?v=105"></script>
+<script type="module" src="app.js?v=106"></script>
 
 <!-- Floating scroll-to-top button -->
 <button id="scrollTopBtn" class="scroll-top" onclick="scrollToTop()" hidden aria-label="အပေါ်တက်">⬆️</button>

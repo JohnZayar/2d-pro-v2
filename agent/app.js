@@ -1413,33 +1413,31 @@ function boardLineOk(line) {
 }
 
 const updateBoardPreview = debounce(() => {
-    // Pho Oct 18: per-line TEXT color on the board itself (green=valid, red=invalid).
-    const ta = $('boardTextarea');
-    const bd = $('boardBackdrop');
-    if (!ta || !bd) return;
-    const text = ta.value;
-    if (!text.trim()) { bd.innerHTML = ''; return; }
+    const text = $('boardTextarea').value;
+    const box = $('boardPreview');
+    if (!text.trim()) { box.hidden = true; return; }
     let html = '';
     for (const line of text.split('\n')) {
-        if (!line.trim()) { html += '<span class="bl">&nbsp;</span>'; continue; }
+        if (!line.trim()) continue;
         const ok = boardLineOk(line);
-        const esc = escHtml(line).replace(/ /g, '&nbsp;');
-        html += `<span class="bl ${ok ? 'ok' : 'bad'}">${esc || '&nbsp;'}</span>`;
+        let extra = '';
+        if (ok) {
+            try {
+                const parsed = parseLine(line);
+                const total = parsed.reduce((s, p) => s + (Number(p.amount) || 0), 0);
+                extra = ` <span class="muted">(${parsed.length}) ${formatMoney(total)}</span>`;
+            } catch (e) {}
+        }
+        html += `<div class="bline ${ok ? 'ok' : 'bad'}"><span class="mk">${ok ? '✅' : '❌'}</span><span class="tx">${escHtml(line)}${extra}</span></div>`;
     }
-    bd.innerHTML = html;
-    bd.scrollTop = ta.scrollTop;
-    bd.scrollLeft = ta.scrollLeft;
+    box.hidden = false;
+    box.innerHTML = html;
 }, 400);
 
 document.addEventListener('input', (e) => {
     if (e.target && e.target.id === 'boardTextarea') updateBoardPreview();
 });
-document.addEventListener('scroll', (e) => {
-    if (e.target && e.target.id === 'boardTextarea') {
-        const bd = document.getElementById('boardBackdrop');
-        if (bd) { bd.scrollTop = e.target.scrollTop; bd.scrollLeft = e.target.scrollLeft; }
-    }
-}, true);
+
 
 
 /** Board save → one new batch for the selected player. */
