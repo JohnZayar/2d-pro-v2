@@ -1330,6 +1330,7 @@ async function saveBoard() {
     const target = $('boardTarget').value;
     const agent = state.agents.find((a) => a.id === target);
     const personName = agent ? agent.name : '';
+    const boardPersonId = agent ? agent.id : '';
     if (!personName) { showToast('❌ အမည် ရွေးပါ (မရွေးရင် တင်မရ)'); return; }
 
     // 🚫 ဒိုင်ပိတ်: blocked numbers cannot be bet (incoming only)
@@ -1342,7 +1343,7 @@ async function saveBoard() {
     });
     if (blockedHit2.length) showToast('🚫 ဒိုင်ပိတ်: ' + [...new Set(blockedHit2)].join(', ') + ' — တင် မရပါ');
     allowedBoard.forEach((it) => {
-        addEntryUnique(personName || null, it.number, it.amount, 'pos', it.formula_text);
+        addEntryUnique(personName || null, it.number, it.amount, 'pos', it.formula_text, undefined, boardPersonId);
     });
     if (badLines.length) {
         keepBadOpen();
@@ -1359,12 +1360,12 @@ async function saveBoard() {
 /* ================= ENTRY SCREEN (ထိုးကွက် — Agent-style) ================= */
 
 let entryPending = [];      // typed but NOT yet saved: [{player_name, number, amount, record_type}]
-/** Add to entryPending, skipping exact duplicates (prevents double-add glitches). */
-function addEntryUnique(playerName, number, amount, recordType, formulaText, lineIdx) {
+/** Add to entryPending. Pho: duplicates allowed — user deletes mistakes manually.
+ *  Pho Oct 18: personId links records to the exact person (same-name safe). */
+function addEntryUnique(playerName, number, amount, recordType, formulaText, lineIdx, personId) {
     const num = String(number).padStart(2, '0');
     const amt = Number(amount) || 0;
-    // Pho: duplicates allowed — user deletes mistakes manually
-    entryPending.push({ player_name: playerName, number: num, amount: amt, record_type: recordType || 'pos', formula_text: formulaText || '', line_idx: lineIdx ?? -1 });
+    entryPending.push({ player_name: playerName, number: num, amount: amt, record_type: recordType || 'pos', formula_text: formulaText || '', line_idx: lineIdx ?? -1, person_id: personId || '' });
     return true;
 }
 let entryActiveBox = 'no';  // 'no' | 'amt' | 'rev'
@@ -1447,17 +1448,25 @@ async function renderEntry() {
 async function renderEntryPersonOptions() {
     const pSel = $('entryPlayerSelect');
     const prev = pSel.value;
-    const order = [];
-    const seen = new Set();
-    const add = (k) => { k = (k || '').trim(); if (k && !seen.has(k)) { seen.add(k); order.push(k); } };
-
-    // ONLY registered people — unregistered names are BLOCKED entirely
-    // ထိုးသား + Agent only — အကန်ဒိုင် never mixes in here
-    (state.agents || []).forEach((a) => { if ((a.person_type || 'agent') !== 'akan') add(a.name); });
+    // Pho Oct 18: options keyed by agent ID (not name) so same-name persons stay separate.
+    // If duplicate names exist, show phone to distinguish.
+    const nameCount = {};
+    (state.agents || []).forEach((a) => {
+        if ((a.person_type || 'agent') === 'akan') return;
+        const n = (a.name || '').trim();
+        if (n) nameCount[n] = (nameCount[n] || 0) + 1;
+    });
+    let opts = '';
+    (state.agents || []).forEach((a) => {
+        if ((a.person_type || 'agent') === 'akan') return;
+        const n = (a.name || '').trim();
+        if (!n) return;
+        const label = (nameCount[n] > 1 && a.phone) ? `${n} (${a.phone})` : n;
+        opts += `<option value="${escHtml(a.id)}">${escHtml(voucherPersonLabel(label))}</option>`;
+    });
     const ph = '-- ထိုးသား ရွေးပါ --';
-    pSel.innerHTML = '<option value="">' + escHtml(ph) + '</option>' +
-        order.map((k) => '<option value="' + escHtml(k) + '">' + escHtml(voucherPersonLabel(k)) + '</option>').join('');
-    if (prev && order.includes(prev)) pSel.value = prev;
+    pSel.innerHTML = '<option value="">' + escHtml(ph) + '</option>' + opts;
+    if (prev && pSel.querySelector(`option[value="${CSS.escape(prev)}"]`)) pSel.value = prev;
 }
 
 /** Pending entries table + totals. */
@@ -1546,7 +1555,11 @@ async function isSessionLocked(sessionId) {
 window.submitEntryRow = async function submitEntryRow() {
     const lk = await isSessionLocked(state.activeSessionId);
     if (lk.locked) { showToast('🔒 ' + lk.reason + ' — ပြင်/ထည့် မရပါ'); return; }
-    const playerName = $('entryPlayerSelect').value || null;
+    // Pho Oct 18: dropdown value is now the agent ID (same-name persons stay separate).
+    const selId = $('entryPlayerSelect').value || null;
+    const selAgent = selId ? (state.agents || []).find((a) => a.id === selId) : null;
+    const playerName = selAgent ? selAgent.name : null;
+    const personId = selAgent ? selAgent.id : null;
     if (!playerName) { showToast('❌ အမည် စာရင်း သွင်းထားမှ ရမယ် — အရင် လူ စာရင်း သွင်းပါ'); return; }
     const rType = 'pos'; // ထိုးကွက် is incoming-only; outgoing goes through 🔄 အကန်ဒိုင်
     const noText = $('boxNo').value.trim();
@@ -1582,7 +1595,7 @@ window.submitEntryRow = async function submitEntryRow() {
     });
     if (!allowedItems.length) { entryClearInputs(); showToast('🚫 ဒိုင်ပိတ် ဂဏန်းတွေ ချည်း — တင် မရပါ'); return; }
     allowedItems.forEach((it) => {
-        addEntryUnique(playerName, it.number, it.amount, rType, it.formula_text, it.line_idx);
+        addEntryUnique(playerName, it.number, it.amount, rType, it.formula_text, it.line_idx, personId);
     });
     entryClearInputs();
     renderEntryTable();
@@ -1663,6 +1676,7 @@ window.saveEntryBatch = async function saveEntryBatch() {
                     amount: Number(e.amount) || 0,
                     agent_name: e.player_name || '',
                     player_name: e.player_name || '',
+                    person_id: e.person_id || '',
                     record_type: e.record_type || 'pos',
                     batch_no: batchNo,
                     formula_text: e.formula_text || '',
@@ -2760,11 +2774,18 @@ async function sessionRecordsOrdered(sessionId) {
 }
 
 function voucherPersonKey(r) {
-    // Agent-synced: group under agent_name only (hide individual player names in Master)
+    // Pho Oct 18: group by person_id when present (same-name persons stay separate).
+    // Agent-synced: group under agent_name only (hide individual player names in Master).
+    if (r.person_id) return 'id:' + r.person_id;
     if (r.agent_name && r.player_name && r.agent_name !== r.player_name) return r.agent_name;
     return r.player_name || r.agent_name || '';
 }
 function voucherPersonLabel(k) {
+    // Pho Oct 18: 'id:xxx' keys resolve to the agent's name for display.
+    if (k && k.startsWith('id:')) {
+        const a = (state.agents || []).find((x) => x.id === k.slice(3));
+        return (a && a.name) || 'ကိုယ်တိုင်';
+    }
     return k || 'ကိုယ်တိုင်';
 }
 
