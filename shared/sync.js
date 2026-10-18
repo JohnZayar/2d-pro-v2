@@ -183,6 +183,17 @@ async function _pushOne(entry) {
     const { op, collection, localId, data } = entry;
     const local = await db.get(collection, localId);
 
+    // Pho Oct 18: Drop lottery_records/winning_numbers with blank session
+    // — server returns 400 "Cannot be blank", and retrying forever blocks the queue.
+    // (Root cause of Oct 18 sync failure; found via direct API reproduction.)
+    if ((collection === 'lottery_records' || collection === 'winning_numbers') && op === 'create') {
+        const sessVal = (data && data.session) || (local && local.session);
+        if (!(sessVal && String(sessVal).trim())) {
+            await db.del('sync_queue', entry.id).catch(() => {});
+            return 'dropped';
+        }
+    }
+
     // Resolve local session ID → server session ID for relations.
     // (Server expects PB IDs, not local UIDs.)
     let payloadData = data || local;
