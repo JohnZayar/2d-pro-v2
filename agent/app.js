@@ -1539,12 +1539,23 @@ window.repushAllManual = async function repushAllManual() {
     updateSyncPill('working');
     try {
         const res = await sync.repushAll();
-        const msg = '📤 ' + (res.queued || 0) + ' ခု ပြန် တင်မည်';
+        let msg = '📤 ' + (res.queued || 0) + ' ခု ပြန် တင်မည်';
+        if (res.errors && res.errors.length) {
+            msg += '\n❌ ' + res.errors.slice(0, 3).join('\n');
+        }
         showToast(msg);
         // Now push them
         const pushRes = await sync.syncNow();
         const pushed = (pushRes.push && pushRes.push.pushed) || 0;
-        showToast('✅ ' + pushed + ' ခု တင်ပြီးပြီ');
+        const failed = (pushRes.push && pushRes.push.failed) || 0;
+        let msg2 = '✅ ' + pushed + ' ခု တင်ပြီးပြီ';
+        if (failed) msg2 += ' ❌ ' + failed + '�ု မရ';
+        // Show last push error if any
+        try {
+            const lastErr = sync.lastPushError();
+            if (lastErr) msg2 += '\n' + lastErr;
+        } catch (e) {}
+        showToast(msg2);
         await refreshSession();
         refreshActiveScreen();
     } catch (e) {
