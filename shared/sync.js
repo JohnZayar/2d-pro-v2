@@ -185,9 +185,40 @@ async function _pushOne(entry) {
     }
 
     if (op === 'create') {
-        // Don't send local-only bookkeeping fields to the server.
+        // Pho Oct 18: IDEMPOTENT create — send the local id as the server record id.
+        // If a previous attempt reached the server but the response was lost
+        // (tunnel blip / timeout), the retry gets 400 (id exists) instead of
+        // creating a duplicate. We then fetch and adopt the existing record.
         const payload = _toServerPayload(payloadData);
-        const created = await pb.create(collection, payload);
+        if (localId) payload.id = localId;
+        let created;
+        try {
+            created = await pb.create(collection, payload);
+        } catch (err) {
+            if (localId && err && (err.code === 400 || err.status === 400)) {
+                // May already exist from a lost-response attempt — verify.
+                try {
+                    const existing = await pb.getOne(collection, localId);
+                    if (existing && existing.id) {
+                        const updatedLocal = Object.assign({}, (local || data || {}), {
+                            _pbId: existing.id,
+                            _updated: Date.now()
+                        });
+                        await db.put(collection, updatedLocal);
+                        return; // adopted — no duplicate created
+                    }
+                } catch (e2) {
+                    // 404 = truly not on server → original 400 was real bad data.
+                    // Network/timeout on the verify → rethrow e2 so the op is
+                    // RETRIED, never dropped as poison (Pho: records must not be lost).
+                    if (e2 && (e2.code === 'NETWORK_ERROR' || e2.code === 'TIMEOUT' || (typeof e2.code === 'number' && e2.code >= 500))) {
+                        throw e2;
+                    }
+                    // else: 404 → fall through and rethrow original 400
+                }
+            }
+            throw err;
+        }
         // Remember the server id on the local record.
         const updatedLocal = Object.assign({}, (local || data || {}), {
             _pbId: created.id,
