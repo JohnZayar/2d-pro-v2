@@ -1498,7 +1498,7 @@ function renderEntryTable() {
             const label = (e0.record_type === 'akan' ? '⬆️ ' : '') + escHtml(e0.player_name || (e0.record_type === 'akan' ? 'ဒိုင် (အကန်)' : 'ကိုယ်တိုင်'));
             return '<tr>' +
                 '<td>' + label + '</td>' +
-                '<td class="cell-no"><div class="f-formula">' + escHtml(ft) + '</div><div class="f-count">(' + g.entries.length + ' ကွက်)</div></td>' +
+                '<td class="cell-no">' + escHtml(ft) + ' (' + g.entries.length + ')</td>' +
                 '<td class="cell-amt">' + formatMoney(gTotal) + '</td>' +
                 '<td class="cell-del"><button class="rec-del" onclick="entryDeleteGroup(\'' + idxList + '\')" title="ဖျက်မည်">🗑️</button></td>' +
             '</tr>';
