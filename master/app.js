@@ -778,10 +778,11 @@ async function resolvePendingRelations() {
 }
 
 /** Auto-ack batches for Agent "Ok" display. Runs after sync. Writes to batch_acks. */
+/* Pho Oct 18: ANY Master user writes acks for their own tenant's batches
+   (was restricted to johnzyt7@gmail.com only — broke for Mkl etc.) */
 async function writeBatchAcks() {
-    // Only Pho (seller) writes acks - check via state.user
     try {
-        if (!state.user || state.user.email !== 'johnzyt7@gmail.com') return;
+        if (!pb.isLoggedIn()) return;
     } catch (e) { return; }
     try {
         const res = await pb.list('lottery_records', { perPage: 100, sort: '-created' });
