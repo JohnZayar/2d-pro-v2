@@ -97,6 +97,14 @@ export async function pushPending() {
     _syncing = true;
     let pushed = 0, failed = 0;
     try {
+        // Pho Oct 18: purge stale 'players' ops from queue (server 500s on players;
+        // players removed from sync in v21 — old queued entries would block forever)
+        try {
+            const q = await db.getAll('sync_queue');
+            for (const e of q) {
+                if (e.collection === 'players') await db.del('sync_queue', e.id).catch(() => {});
+            }
+        } catch (e) { /* ignore */ }
         do {
             _pushAgain = false;
             const queue = (await db.getAll('sync_queue'))
