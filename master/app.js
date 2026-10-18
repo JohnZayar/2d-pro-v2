@@ -120,36 +120,6 @@ function bindUI() {
         } catch (e) { showToast('Paste မရပါ — ကိုယ်တိုင်ထည့်ပါ'); }
     });
     $('boardText').addEventListener('input', () => renderBoardLineCheck());
-    $('boardText').addEventListener('scroll', () => {
-        const bd = $('boardBackdrop');
-        const ta = $('boardText');
-        if (bd && ta) { bd.scrollTop = ta.scrollTop; bd.scrollLeft = ta.scrollLeft; }
-    });
-    // Pho Oct 18: custom board keyboard (no formulas) — phone keyboard stays hidden.
-    document.querySelectorAll('#boardKb .bkb').forEach((btn) => {
-        btn.addEventListener('click', () => {
-            const ta = $('boardText');
-            if (!ta) return;
-            const k = btn.dataset.k;
-            const s = ta.selectionStart ?? ta.value.length;
-            const e = ta.selectionEnd ?? ta.value.length;
-            const v = ta.value;
-            if (k === 'BKSP') {
-                if (s === e && s > 0) ta.value = v.slice(0, s - 1) + v.slice(e);
-                else ta.value = v.slice(0, s) + v.slice(e);
-                const np = s === e ? Math.max(0, s - 1) : s;
-                ta.setSelectionRange(np, np);
-            } else if (k === 'ENTER') {
-                ta.value = v.slice(0, s) + '\n' + v.slice(e);
-                ta.setSelectionRange(s + 1, s + 1);
-            } else {
-                ta.value = v.slice(0, s) + k + v.slice(e);
-                ta.setSelectionRange(s + k.length, s + k.length);
-            }
-            renderBoardLineCheck();
-            ta.focus({ preventScroll: true });
-        });
-    });
     $('boardBack').addEventListener('click', () => closeModal('modal-board'));
     $('boardSave').addEventListener('click', saveBoard);
     document.querySelectorAll('[data-close]').forEach((b) => {
@@ -1286,25 +1256,29 @@ function boardLineOk(line) {
 
 /** Per-line formula check: small ✅/❌ per line + (count) total. Never guesses. */
 function renderBoardLineCheck() {
-    // Pho Oct 18: validation renders ON the board (backdrop highlight),
-    // not in a separate box below. Green = valid, red = invalid.
     const ta = $('boardText');
-    const bd = $('boardBackdrop');
-    if (!ta || !bd) return 0;
+    const box = $('boardLineCheck');
+    if (!ta || !box) return 0;
     const text = ta.value;
-    if (!text.trim()) { bd.innerHTML = ''; return 0; }
+    if (!text.trim()) { box.innerHTML = ''; box.style.display = 'none'; return 0; }
     let html = '';
     let bad = 0;
     for (const line of text.split('\n')) {
-        if (!line.trim()) { html += '<span class="bl">&nbsp;</span>'; continue; }
+        if (!line.trim()) continue;
         const ok = boardLineOk(line);
         if (!ok) bad++;
-        const esc = escHtml(line).replace(/ /g, '&nbsp;');
-        html += `<span class="bl ${ok ? 'ok' : 'bad'}">${esc || '&nbsp;'}</span>`;
+        let extra = '';
+        if (ok) {
+            try {
+                const parsed = parseLine(line);
+                const total = parsed.reduce((s, p) => s + (Number(p.amount) || 0), 0);
+                extra = ` <span class="muted">(${parsed.length}) ${formatMoney(total)}</span>`;
+            } catch (e) {}
+        }
+        html += `<div class="bline ${ok ? 'ok' : 'bad'}"><span class="mk">${ok ? '✅' : '❌'}</span><span class="tx">${escHtml(line)}${extra}</span></div>`;
     }
-    bd.innerHTML = html;
-    bd.scrollTop = ta.scrollTop;
-    bd.scrollLeft = ta.scrollLeft;
+    box.innerHTML = html;
+    box.style.display = '';
     return bad;
 }
 

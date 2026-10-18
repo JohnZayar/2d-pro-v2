@@ -336,7 +336,7 @@ if ('serviceWorker' in navigator) {
         <div class="card">
           <button id="resetAppBtn" class="btn gray block">🔄 App Reset (cache ရှင်း)</button>
         </div>
-        <div class="small muted" style="text-align:center;margin-top:8px"><b>v154</b></div>
+        <div class="small muted" style="text-align:center;margin-top:8px"><b>v155</b></div>
       </section>
     </main>
   </div>
@@ -365,45 +365,8 @@ if ('serviceWorker' in navigator) {
       <button class="close-x" data-close>×</button>
       <h2 id="boardTitle">ထိုးကွက်</h2>
       <div class="field" id="boardTargetWrap"><label>ထိုးသား</label><select id="boardTarget"></select></div>
-      <div class="field">
-        <div class="board-wrap">
-          <div id="boardBackdrop" class="board-backdrop" aria-hidden="true"></div>
-          <textarea id="boardText" class="board-text" placeholder="ဥပမာ:&#10;12=500&#10;6ထိပ်7000&#10;34567ခွေ" readonly></textarea>
-        </div>
-      </div>
-      <div class="board-kb" id="boardKb">
-        <div class="bkb-row">
-          <button class="bkb" type="button" data-k="1">1</button>
-          <button class="bkb" type="button" data-k="2">2</button>
-          <button class="bkb" type="button" data-k="3">3</button>
-          <button class="bkb" type="button" data-k="=">=</button>
-          <button class="bkb" type="button" data-k="-">-</button>
-        </div>
-        <div class="bkb-row">
-          <button class="bkb" type="button" data-k="4">4</button>
-          <button class="bkb" type="button" data-k="5">5</button>
-          <button class="bkb" type="button" data-k="6">6</button>
-          <button class="bkb" type="button" data-k="/">/</button>
-          <button class="bkb" type="button" data-k=".">.</button>
-        </div>
-        <div class="bkb-row">
-          <button class="bkb" type="button" data-k="7">7</button>
-          <button class="bkb" type="button" data-k="8">8</button>
-          <button class="bkb" type="button" data-k="9">9</button>
-          <button class="bkb" type="button" data-k=",">,</button>
-          <button class="bkb" type="button" data-k="r">r</button>
-        </div>
-        <div class="bkb-row">
-          <button class="bkb" type="button" data-k="00">00</button>
-          <button class="bkb" type="button" data-k="0">0</button>
-          <button class="bkb" type="button" data-k=" ">space</button>
-          <button class="bkb" type="button" data-k="@">@</button>
-          <button class="bkb danger" type="button" data-k="BKSP">⌫</button>
-        </div>
-        <div class="bkb-row">
-          <button class="bkb wide" type="button" data-k="ENTER">⏎ စာကြောင်းသစ်</button>
-        </div>
-      </div>
+      <div class="field"><textarea id="boardText" placeholder="ဥပမာ:&#10;12=500&#10;6ထိပ်7000&#10;34567ခွေ"></textarea></div>
+      <div id="boardLineCheck" class="board-check" style="display:none"></div>
       <div class="btn-grid">
         <button id="boardBack" class="btn gray">Back</button>
         <button id="boardPaste" class="btn gray">Paste</button>
@@ -577,6 +540,6 @@ if ('serviceWorker' in navigator) {
 
 
 </div>
-<script type="module" src="app.js?v=154"></script>
+<script type="module" src="app.js?v=155"></script>
 </body>
 </html>
