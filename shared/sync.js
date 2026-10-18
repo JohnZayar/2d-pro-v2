@@ -472,7 +472,7 @@ export function startAutoSync(intervalMs = 60000, onSync = null) {
  * @returns {Promise<{queued:number, pushed:number, failed:number, errors:string[]}>}
  */
 export async function repushAll(collections) {    const cols = collections || ['sessions', 'lottery_records', 'winning_numbers', 'agents'];
-    let queued = 0;
+    let queued = 0, skippedBlankSession = 0;
     const errors = [];
     for (const col of cols) {
         let records = [];
@@ -484,6 +484,12 @@ export async function repushAll(collections) {    const cols = collections || ['
         }
         for (const rec of records) {
             try {
+                // Pho Oct 18: skip lottery_records with blank session (server 400 "Cannot be blank")
+                // — these are poison and would block the queue forever
+                if (col === 'lottery_records' && !(rec.session && String(rec.session).trim())) {
+                    skippedBlankSession++;
+                    continue;
+                }
                 // queueOp strips server metadata on push; fresh IDs assigned by server.
                 await queueOp({ op: 'create', collection: col, localId: rec.id, data: rec });
                 queued++;
@@ -506,6 +512,7 @@ export async function repushAll(collections) {    const cols = collections || ['
     const lastErr = lastPushError();
     if (lastErr) errors.push(`last push error: ${lastErr}`);
     if (skipped && skipReason === 'not-logged-in') errors.push('❌ Login မဝင်ထားပါ — Link Code ပြန်ချိတ်ပါ');
+    if (skippedBlankSession) errors.push(`⚠️ session မပါတဲ့ ${skippedBlankSession} ခု ကျော်လိုက်တယ်`);
     return { queued, pushed, failed, errors };
 }
 
