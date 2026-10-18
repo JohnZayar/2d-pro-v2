@@ -5,7 +5,7 @@
  */
 import * as db from '../shared/db.js?v=2';
 import * as pb from '../shared/pb.js?v=4';
-import * as sync from '../shared/sync.js?v=19';
+import * as sync from '../shared/sync.js?v=20';
 import { parseBoard, parseBoardReport, parseLine } from '../shared/parser.js?v=14';
 import {
     formatMoney, formatDateStr, getWeekMondayStr, remainingDigits,
@@ -1627,17 +1627,19 @@ async function checkPersonLimits(pending, sessionId) {
 
 window.saveEntryBatch = async function saveEntryBatch() {
     if (entrySaveInFlight) return;
-    if (!entryPending.length) { showToast('စာရင်း မရှိသေးပါ'); return; }
+    // Pho Oct 18: set the guard SYNCHRONOUSLY before any await —
+    // two rapid taps must not both pass (same class as Oct 13 winning-number fix).
+    entrySaveInFlight = true;
+    if (!entryPending.length) { entrySaveInFlight = false; showToast('စာရင်း မရှိသေးပါ'); return; }
     // Block if any entry has no player name
-    if (entryPending.some((e) => !(e.player_name || '').trim())) { showToast('❌ အမည် မပါ တဲ့ စာရင်း ရှိ — ဖျက် ပြီး ပြန် ထည့်'); return; }
-    if (!state.activeSessionId) { showToast('⚠️ Session မရှိသေးပါ'); return; }
+    if (entryPending.some((e) => !(e.player_name || '').trim())) { entrySaveInFlight = false; showToast('❌ အမည် မပါ တဲ့ စာရင်း ရှိ — ဖျက် ပြီး ပြန် ထည့်'); return; }
+    if (!state.activeSessionId) { entrySaveInFlight = false; showToast('⚠️ Session မရှိသေးပါ'); return; }
     const lk = await isSessionLocked(state.activeSessionId);
-    if (lk.locked) { showToast('🔒 ' + lk.reason + ' — သိမ်း မရပါ'); return; }
+    if (lk.locked) { entrySaveInFlight = false; showToast('🔒 ' + lk.reason + ' — သိမ်း မရပါ'); return; }
     // Per-person hot-number limits (cumulative per session)
     const limitErr = await checkPersonLimits(entryPending, state.activeSessionId);
-    if (limitErr) { showToast('❌ ' + limitErr); return; }
+    if (limitErr) { entrySaveInFlight = false; showToast('❌ ' + limitErr); return; }
 
-    entrySaveInFlight = true;
     try {
         // Group by (person, record_type), preserving first-appearance order
         const order = [];
