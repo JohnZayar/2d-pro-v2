@@ -374,8 +374,12 @@ table.data tr.total td { font-weight: 700; color: var(--accent); border-top: 2px
     font-size: 14px; background: rgba(0,0,0,.15); border-radius: 8px; overflow: hidden;
 }
 .v-table th, .v-table td {
-    border: 1px solid var(--border); padding: 7px 10px; text-align: center;
+    border: 1px solid var(--border); padding: 8px 10px; text-align: left;
+    vertical-align: middle;
 }
+.v-table th:last-child, .v-table td:last-child { text-align: right; }
+.v-table thead th { text-align: left; }
+.v-table thead th:last-child { text-align: right; }
 .v-table thead th {
     background: rgba(56,189,248,.12); color: var(--accent);
     font-size: 13px; font-weight: 700;
@@ -525,8 +529,10 @@ table.data tr.over-row td:first-child { font-weight: 800; font-size: 15px; }
 }
 .pos-table tbody td {
     padding: 10px 8px; border-top: 1px solid var(--border);
-    color: var(--text);
+    color: var(--text); text-align: left; vertical-align: middle;
 }
+.pos-table .cell-amt { text-align: right; white-space: nowrap; }
+.pos-table thead th:nth-child(3) { text-align: right; }
 .pos-table .cell-no { color: var(--yellow); font-weight: 800; font-size: 16px; letter-spacing: 1px; }
 .pos-table .cell-amt { color: var(--green); font-weight: 700; }
 .pos-table .cell-del { text-align: center; }
