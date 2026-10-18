@@ -7,8 +7,33 @@
 <link rel="manifest" href="manifest.json">
 <title>2D Agent Pro v2</title>
 <link rel="stylesheet" href="style.css?v=7">
+<script>
+// Pho Oct 18: if app.js fails to load (bad connection), show offline screen instead of white page
+window.addEventListener('load', () => {
+    setTimeout(() => {
+        if (!window.appReady) {
+            document.getElementById('linkScreen').style.display = 'none';
+            document.getElementById('page-offline').style.display = 'flex';
+        }
+    }, 8000);
+});
+</script>
 </head>
 <body>
+
+<!-- ============ OFFLINE (Pho Oct 18: simple, not cluttered) ============ -->
+<div id="page-offline" class="screen" style="display:none">
+    <div class="offline-card">
+      <img src="icon-192.png" alt="2D" class="offline-logo">
+      <h1>2D Agent Pro</h1>
+      <p class="offline-msg">လိုင်းမကောင်းပါ — ထပ်ကြိုးစားပါ</p>
+      <div class="offline-contact">
+        <a href="tel:09895985198" class="offline-btn">📞 09895985198</a>
+        <a href="https://t.me/johnZt123" class="offline-btn">✈️ @johnZt123</a>
+      </div>
+      <button class="btn block" onclick="location.reload()">ထပ်ကြိုးစားမည်</button>
+    </div>
+</div>
 
 <!-- ============ LINK SCREEN (first run) ============ -->
 <div id="linkScreen" class="screen">
@@ -381,7 +406,7 @@
         </div>
         <div class="settings-row">
             <span>App Version</span>
-            <b>v107</b>
+            <b>v108</b>
         </div>
         <button class="btn-danger-outline" onclick="syncNowManual()">🔄 အခု Sync လုပ်မည်</button>
         <button class="btn-danger-outline" onclick="disconnectAgent()">🚪 ထွက်မည် (unlink)</button>
@@ -389,7 +414,7 @@
     </div>
 </div>
 
-<script type="module" src="app.js?v=107"></script>
+<script type="module" src="app.js?v=108"></script>
 
 <!-- Floating scroll-to-top button -->
 <button id="scrollTopBtn" class="scroll-top" onclick="scrollToTop()" hidden aria-label="အပေါ်တက်">⬆️</button>

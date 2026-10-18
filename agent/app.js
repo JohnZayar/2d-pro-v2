@@ -189,6 +189,7 @@ async function checkAgentDisabled() {
 }
 
 async function init() {
+    window.appReady = true; // Pho Oct 18: signals app.js loaded (for offline screen)
     pb.loadBaseUrl(); // custom server URL override (if Pho set one)
     pb.loadAuth();
     // Auto-login as the tenant-specific agent account (if link code is saved)
