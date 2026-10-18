@@ -57,6 +57,7 @@ async function _getWins(sessionId) {
 }
 
 async function init() {
+    window.appReady = true; // Pho Oct 18: signals app.js loaded (for offline screen)
     bindUI();
     pb.loadBaseUrl(); // custom server URL override (if Pho set one)
     pb.loadAuth();

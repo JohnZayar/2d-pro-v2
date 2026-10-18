@@ -12,10 +12,33 @@
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
 }
+// Pho Oct 18: if app.js fails to load (bad connection), show offline screen instead of white page
+window.addEventListener('load', () => {
+    setTimeout(() => {
+        if (!window.appReady) {
+            document.getElementById('page-login').style.display = 'none';
+            document.getElementById('page-offline').style.display = 'flex';
+        }
+    }, 8000);
+});
 </script>
 </head>
 <body>
 <div id="app">
+
+  <!-- ============ OFFLINE (Pho Oct 18: simple, not cluttered) ============ -->
+  <div id="page-offline" class="page" style="display:none">
+    <div class="offline-card">
+      <img src="icon-192.png" alt="2D" class="offline-logo">
+      <h1>2D Master Pro</h1>
+      <p class="offline-msg">လိုင်းမကောင်းပါ — ထပ်ကြိုးစားပါ</p>
+      <div class="offline-contact">
+        <a href="tel:09895985198" class="offline-btn">📞 09895985198</a>
+        <a href="https://t.me/johnZt123" class="offline-btn">✈️ @johnZt123</a>
+      </div>
+      <button class="btn block" onclick="location.reload()">ထပ်ကြိုးစားမည်</button>
+    </div>
+  </div>
 
   <!-- ============ LOGIN ============ -->
   <div id="page-login" class="page active">
@@ -336,7 +359,7 @@ if ('serviceWorker' in navigator) {
         <div class="card">
           <button id="resetAppBtn" class="btn gray block">🔄 App Reset (cache ရှင်း)</button>
         </div>
-        <div class="small muted" style="text-align:center;margin-top:8px"><b>v162</b></div>
+        <div class="small muted" style="text-align:center;margin-top:8px"><b>v163</b></div>
       </section>
     </main>
   </div>
@@ -540,6 +563,6 @@ if ('serviceWorker' in navigator) {
 
 
 </div>
-<script type="module" src="app.js?v=162"></script>
+<script type="module" src="app.js?v=163"></script>
 </body>
 </html>

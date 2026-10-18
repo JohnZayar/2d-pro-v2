@@ -742,3 +742,13 @@ tr.win-row td { background: rgba(250,204,21,.15); }
 .pos-table thead th { font-size: 12px; letter-spacing: .5px; }
 .v-table tbody td { border-bottom: 1px solid rgba(255,255,255,.05); }
 .v-table tbody tr:last-child td { border-bottom: none; }
+
+/* Offline screen (Pho Oct 18): simple, logo + phone + telegram */
+#page-offline { display: flex; align-items: center; justify-content: center; min-height: 100vh; background: #0b0f17; }
+.offline-card { text-align: center; padding: 32px 24px; max-width: 320px; }
+.offline-logo { width: 96px; height: 96px; border-radius: 24px; margin-bottom: 16px; }
+.offline-card h1 { color: var(--text); font-size: 22px; margin: 0 0 8px; }
+.offline-msg { color: var(--muted); font-size: 14px; margin: 0 0 20px; }
+.offline-contact { display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px; }
+.offline-btn { display: block; padding: 12px; background: var(--card); border: 1px solid var(--border); border-radius: 10px; color: var(--text); text-decoration: none; font-size: 16px; font-weight: 600; }
+.offline-btn:active { background: var(--accent); color: #fff; }
