@@ -125,6 +125,31 @@ function bindUI() {
         const ta = $('boardText');
         if (bd && ta) { bd.scrollTop = ta.scrollTop; bd.scrollLeft = ta.scrollLeft; }
     });
+    // Pho Oct 18: custom board keyboard (no formulas) — phone keyboard stays hidden.
+    document.querySelectorAll('#boardKb .bkb').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const ta = $('boardText');
+            if (!ta) return;
+            const k = btn.dataset.k;
+            const s = ta.selectionStart ?? ta.value.length;
+            const e = ta.selectionEnd ?? ta.value.length;
+            const v = ta.value;
+            if (k === 'BKSP') {
+                if (s === e && s > 0) ta.value = v.slice(0, s - 1) + v.slice(e);
+                else ta.value = v.slice(0, s) + v.slice(e);
+                const np = s === e ? Math.max(0, s - 1) : s;
+                ta.setSelectionRange(np, np);
+            } else if (k === 'ENTER') {
+                ta.value = v.slice(0, s) + '\n' + v.slice(e);
+                ta.setSelectionRange(s + 1, s + 1);
+            } else {
+                ta.value = v.slice(0, s) + k + v.slice(e);
+                ta.setSelectionRange(s + k.length, s + k.length);
+            }
+            renderBoardLineCheck();
+            ta.focus({ preventScroll: true });
+        });
+    });
     $('boardBack').addEventListener('click', () => closeModal('modal-board'));
     $('boardSave').addEventListener('click', saveBoard);
     document.querySelectorAll('[data-close]').forEach((b) => {

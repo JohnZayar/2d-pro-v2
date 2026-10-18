@@ -756,3 +756,16 @@ tr.win-row td { background: rgba(250,204,21,.15); }
 }
 .board-text:focus { border-color: var(--accent); }
 .board-text::placeholder { color: var(--muted); }
+
+/* ===== Digital board custom keyboard (Pho Oct 18, no formulas) ===== */
+.board-kb { margin: 8px 0 4px; }
+.bkb-row { display: flex; gap: 6px; margin-bottom: 6px; }
+.bkb {
+    flex: 1; padding: 12px 0; font-size: 17px; font-weight: 600;
+    background: var(--card); color: var(--text);
+    border: 1px solid var(--border); border-radius: 10px;
+    cursor: pointer; font-family: ui-monospace, Menlo, monospace;
+}
+.bkb:active { background: var(--accent); color: #fff; }
+.bkb.danger { color: #e06565; }
+.bkb.wide { flex: 1; font-size: 15px; }
