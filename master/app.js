@@ -5,7 +5,7 @@
  */
 import * as db from '../shared/db.js?v=3';
 import * as pb from '../shared/pb.js?v=4';
-import * as sync from '../shared/sync.js?v=26';
+import * as sync from '../shared/sync-simple.js?v=1';
 import { parseBoard, parseBoardReport, parseLine } from '../shared/parser.js?v=14';
 import {
     formatMoney, formatDateStr, getWeekMondayStr, remainingDigits,
@@ -3578,16 +3578,17 @@ window.editAgentLimit = async function editAgentLimit(tenantId, currentLimit) {
 async function resetApp() {
     if (!confirm('App data အကုန် ရှင်း မလား? (login ပြန် ဝင် ရ မယ်)')) return;
     try { db.closeDB(); } catch (e) { /* ignore */ }
-    // Pho Oct 19: Simplified reset — delete known DB directly, don't rely on
-    // indexedDB.databases() (not supported everywhere). Force reload after 2s
-    // even if delete hangs.
+    // Pho Oct 19: Wait for delete to complete BEFORE reload.
+    // (v176 bug: reload happened before delete finished, DB not cleared.)
     try {
-        const req = indexedDB.deleteDatabase('2dProV2');
-        req.onsuccess = req.onerror = req.onblocked = () => {};
+        await new Promise((resolve) => {
+            const req = indexedDB.deleteDatabase('2dProV2');
+            req.onsuccess = req.onerror = req.onblocked = () => resolve();
+            // Safety: resolve after 3s even if blocked
+            setTimeout(resolve, 3000);
+        });
     } catch (e) { /* ignore */ }
     try { localStorage.clear(); } catch (e) { /* ignore */ }
-    setTimeout(() => location.reload(), 500);
-    // Immediate reload as well (in case setTimeout is throttled)
     location.reload();
 }
 
