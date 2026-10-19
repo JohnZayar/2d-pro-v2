@@ -2001,15 +2001,13 @@ window.renderWeekly = async function renderWeekly() {
 window.resetAgentApp = async function resetAgentApp() {
     if (!confirm('App data အကုန် ရှင်း မလား? (code ပြန် ထည့် ရ မယ်)')) return;
     try { db.closeDB(); } catch (e) { /* ignore */ }
+    // Pho Oct 19: Simplified reset — delete known DB directly.
     try {
-        const dbs = await indexedDB.databases();
-        await Promise.all(dbs.map((d) => new Promise((resolve) => {
-            if (!d.name) return resolve();
-            const req = indexedDB.deleteDatabase(d.name);
-            req.onsuccess = req.onerror = req.onblocked = () => resolve();
-        })));
+        const req = indexedDB.deleteDatabase('2dProV2');
+        req.onsuccess = req.onerror = req.onblocked = () => {};
     } catch (e) { /* ignore */ }
-    localStorage.clear();
+    try { localStorage.clear(); } catch (e) { /* ignore */ }
+    setTimeout(() => location.reload(), 500);
     location.reload();
 };
 
