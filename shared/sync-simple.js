@@ -31,8 +31,26 @@ export function getLastPushError() { return _lastPushError; }
 export function getLastPullError() { return _lastPullError; }
 // Aliases for old sync.js API compatibility
 export function lastPushError() { return _lastPushError; }
+export function isSyncing() { return _syncing; }
 export async function repairMissingCreated() { return { repaired: 0 }; }
 export async function testPushOne(entry) { await _pushOne(entry); return 'ok'; }
+let _onlineHandlerAttached = false;
+export function startAutoSync(intervalMs = 60000, onSync = null) {
+    if (typeof window !== 'undefined' && !_onlineHandlerAttached) {
+        window.addEventListener('online', () => { syncNow(); });
+        _onlineHandlerAttached = true;
+    }
+    if (typeof setInterval !== 'undefined') {
+        setInterval(async () => {
+            if (isOnline() && pb.isLoggedIn()) {
+                const res = await syncNow().catch(() => null);
+                if (res && typeof onSync === 'function') {
+                    try { await onSync(res); } catch (e) {}
+                }
+            }
+        }, intervalMs);
+    }
+}
 export function isOnline() {
     return typeof navigator !== 'undefined' ? navigator.onLine !== false : true;
 }
