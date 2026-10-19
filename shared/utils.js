@@ -86,7 +86,13 @@ export function debounce(fn, ms) {
 
 /** Generate a local unique id (timestamp + random). */
 export function uid() {
-    return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    // Pho Oct 19: PocketBase requires id >= 15 chars. Generate 20-char alphanumeric.
+    const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+    let s = Date.now().toString(36);
+    while (s.length < 20) {
+        s += chars[Math.floor(Math.random() * chars.length)];
+    }
+    return s.slice(0, 20);
 }
 
 /**
