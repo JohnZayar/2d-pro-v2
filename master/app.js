@@ -11,7 +11,7 @@ import {
     formatMoney, formatDateStr, getWeekMondayStr, remainingDigits,
     uid, showToast, escHtml, extractDigits, agentEmailFor, agentPasswordFor,
     agentEmailForNum, agentPasswordForNum, agentCodeFor, parseAgentCode, generateAgentSecret
-} from '../shared/utils.js?v=5';
+} from '../shared/utils.js?v=6';
 
 // Global safety net: log unhandled promise rejections instead of failing silently.
 if (typeof window !== 'undefined') {
