@@ -14,7 +14,7 @@
 
 import * as db from '../shared/db.js?v=3';
 import * as pb from '../shared/pb.js?v=4';
-import * as sync from '../shared/sync.js?v=32';
+import * as sync from '../shared/sync-simple.js?v=1';
 import { parseBoardReport, parseLine } from '../shared/parser.js?v=14';
 
 // Global safety net: log unhandled promise rejections instead of failing silently.
@@ -2001,13 +2001,15 @@ window.renderWeekly = async function renderWeekly() {
 window.resetAgentApp = async function resetAgentApp() {
     if (!confirm('App data အကုန် ရှင်း မလား? (code ပြန် ထည့် ရ မယ်)')) return;
     try { db.closeDB(); } catch (e) { /* ignore */ }
-    // Pho Oct 19: Simplified reset — delete known DB directly.
+    // Pho Oct 19: Wait for delete to complete BEFORE reload.
     try {
-        const req = indexedDB.deleteDatabase('2dProV2');
-        req.onsuccess = req.onerror = req.onblocked = () => {};
+        await new Promise((resolve) => {
+            const req = indexedDB.deleteDatabase('2dProV2');
+            req.onsuccess = req.onerror = req.onblocked = () => resolve();
+            setTimeout(resolve, 3000);
+        });
     } catch (e) { /* ignore */ }
     try { localStorage.clear(); } catch (e) { /* ignore */ }
-    setTimeout(() => location.reload(), 500);
     location.reload();
 };
 
