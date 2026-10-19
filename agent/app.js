@@ -1627,15 +1627,23 @@ function updateSyncPill(force) {
         el.textContent = txt;
         el.title = title;
     };
+    // Pho Oct 19: Show last push error in title (for debugging)
+    const lastErr = (sync.lastPushError && sync.lastPushError()) || null;
     if (force === 'working' || sync.isSyncing()) {
-        setPill(pill, 'working', '🟡', 'Syncing…');
-        setPill(entryPill, 'working', '🟡 REST ပုံစံဖြင့် အလုပ်လုပ်နေသည်', 'Syncing…');
+        setPill(pill, 'working', '🟡', 'Syncing…' + (lastErr ? ' | Err: ' + lastErr : ''));
+        setPill(entryPill, 'working', '🟡 REST ပုံစံဖြင့် အလုပ်လုပ်နေသည်', 'Syncing…' + (lastErr ? ' | Err: ' + lastErr : ''));
     } else if (!sync.isOnline()) {
         setPill(pill, 'offline', '🔴', 'Offline — local only');
         setPill(entryPill, 'offline', '🔴', 'Offline');
     } else if (pb.isLoggedIn()) {
-        setPill(pill, 'online', '🟢', 'Online & synced');
-        setPill(entryPill, 'online', '🟢', 'Online');
+        // If there's a push error, show red instead of green
+        if (lastErr) {
+            setPill(pill, 'offline', '🔴', 'Push failed: ' + lastErr);
+            setPill(entryPill, 'offline', '🔴 Push failed: ' + lastErr, 'Push failed');
+        } else {
+            setPill(pill, 'online', '🟢', 'Online & synced');
+            setPill(entryPill, 'online', '🟢', 'Online');
+        }
     } else {
         setPill(pill, 'offline', '⚪', 'Local only (no sync account)');
         setPill(entryPill, 'offline', '⚪', 'Local only');
