@@ -137,6 +137,8 @@ function bindUI() {
     $('logoutBtn').addEventListener('click', doLogout);
     const resetBtn = $('resetAppBtn');
     if (resetBtn) resetBtn.addEventListener('click', resetApp);
+    const wipeBtn = $('nuclearWipeBtn');
+    if (wipeBtn) wipeBtn.addEventListener('click', nuclearWipe);
     $('buyerCreateBtn').addEventListener('click', createBuyerAccount);
     const agentCreateBtn = $('agentCreateBtn');
     if (agentCreateBtn) agentCreateBtn.addEventListener('click', () => window.createAgentAccount());
@@ -3579,6 +3581,46 @@ async function resetApp() {
     if (!confirm('App data အကုန် ရှင်း မလား? (login ပြန် ဝင် ရ မယ်)')) return;
     // Pho Oct 19: Nuclear reset — clear each store directly (more reliable than deleteDatabase).
     // App Reset = အထဲမှာ ဘာမှမရှိရတော့ဘူး, အကုန် clear.
+    try {
+        const stores = ['tenants', 'sessions', 'lottery_records', 'winning_numbers', 'agents', 'app_settings', 'players', 'sync_queue'];
+        for (const s of stores) {
+            try { await db.clear(s); } catch (e) { /* ignore */ }
+        }
+    } catch (e) { /* ignore */ }
+    try { localStorage.clear(); } catch (e) { /* ignore */ }
+    try { sessionStorage.clear(); } catch (e) { /* ignore */ }
+    location.reload();
+}
+
+/* 🗑️ Nuclear Wipe: delete ALL server data for tenant + clear local */
+async function nuclearWipe() {
+    if (!confirm('⚠️ Server + App data အကုန် ဖျက်မလား?\nပွဲစဥ်၊ စာရင်း၊ ပေါက်သီး အကုန် ပျက်မယ် — ပြန်မရဘူး!')) return;
+    if (!confirm('သေချာလား? အကုန် ပျက်မယ်!')) return;
+    const tid = state.tenantPbId;
+    if (!tid) { showToast('❌ Tenant မရှိ'); return; }
+    showToast('🗑️ Server ရှင်းနေတယ်...');
+    try {
+        // Delete all lottery_records for tenant
+        const recs = await pb.listAll('lottery_records', { filter: `tenant="${tid}"` });
+        for (const r of recs) {
+            try { await pb.del('lottery_records', r.id); } catch (e) { /* ignore */ }
+        }
+        // Delete all winning_numbers for tenant
+        const wns = await pb.listAll('winning_numbers', { filter: `tenant="${tid}"` });
+        for (const w of wns) {
+            try { await pb.del('winning_numbers', w.id); } catch (e) { /* ignore */ }
+        }
+        // Delete all sessions for tenant
+        const sess = await pb.listAll('sessions', { filter: `tenant="${tid}"` });
+        for (const s of sess) {
+            try { await pb.del('sessions', s.id); } catch (e) { /* ignore */ }
+        }
+        showToast(`✅ Server ရှင်းပြီးပြီ (${recs.length + wns.length + sess.length} ခု)`);
+    } catch (e) {
+        showToast('❌ Server ရှင်းမရဘူး: ' + e.message);
+        return;
+    }
+    // Clear local
     try {
         const stores = ['tenants', 'sessions', 'lottery_records', 'winning_numbers', 'agents', 'app_settings', 'players', 'sync_queue'];
         for (const s of stores) {
