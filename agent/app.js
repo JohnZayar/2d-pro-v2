@@ -23,7 +23,7 @@ if (typeof window !== 'undefined') {
         console.error('[agent] Unhandled rejection:', e.reason);
     });
 }
-import { uid, formatMoney, formatDateStr, getWeekMonday, showToast, escHtml, debounce, agentEmailFor, agentPasswordFor, agentEmailForNum, agentPasswordForNum, parseAgentCode } from '../shared/utils.js?v=6';
+import { uid, formatMoney, formatDateStr, getWeekMonday, showToast, escHtml, debounce, agentEmailFor, agentPasswordFor, agentEmailForNum, agentPasswordForNum, parseAgentCode } from '../shared/utils.js?v=7';
 
 const LS_TENANT = 'v2_agent_tenant';
 const LS_AGENT_NAME = 'v2_agent_name';
