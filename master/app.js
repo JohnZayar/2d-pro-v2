@@ -1181,6 +1181,19 @@ async function saveSession() {
     const dateStr = `${d}.${m}.${y}`;
     const dt = new Date(Number(y), Number(m) - 1, Number(d));
     const name = `${dateStr} ${MM_DAYS[dt.getDay()]} (${timeType})`;
+    // Pho Oct 19: Session uniqueness — 1 tenant, 1 date, 1 timeType = max 1 session.
+    // Prevents duplicate sessions (the 121-duplicate bug).
+    const existing = (await db.getAll('sessions')).find((s) =>
+        s.tenant === state.tenantPbId && s.date === dateStr && s.timeType === timeType
+    );
+    if (existing) {
+        closeModal('modal-session');
+        setActiveSession(existing.id);
+        await loadSessions();
+        renderSessions();
+        showToast('⚠️ ရှိပြီးသား ပွဲ — အသစ် မလုပ်');
+        return;
+    }
     const s = await createRecord('sessions', {
         name, date: dateStr, timeType, is_open: true, limit: 50000,
     });
