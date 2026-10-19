@@ -941,6 +941,10 @@ window.savePendingBatch = async function savePendingBatch() {
     // Block if any pending entry has no player name
     if (pendingEntries.some((e) => !(e.player_name || '').trim())) { saveInFlight = false; showToast('❌ အမည် မပါ တဲ့ စာရင်း ရှိ — ဖျက် ပြီး ပြန် ထည့်'); return; }
     if (!currentSessionId) { saveInFlight = false; showToast('⚠️ Session မရှိသေးပါ'); return; }
+    // Pho Oct 19 Option B: Verify session actually exists in local DB (not just ID truthy).
+    // Prevents blank/invalid session 400 errors.
+    const sessCheck = await db.get('sessions', currentSessionId);
+    if (!sessCheck) { saveInFlight = false; showToast('⚠️ Session မတွေ့ပါ — ပြန်ရွေးပါ'); currentSessionId = null; localStorage.removeItem(LS_SESSION); await refreshSession(); return; }
     const lkS = await isAgentSessionLocked(currentSessionId);
     if (lkS.locked) { saveInFlight = false; showToast('🔒 ' + lkS.reason + ' — သိမ်း မရပါ'); return; }
     // Hot-number limits (cumulative per session; formula-derived excluded)
@@ -1497,6 +1501,9 @@ window.saveBoard = async function saveBoard() {
     const text = ta.value;
     if (!text.trim()) { saveInFlight = false; showToast('စာရွက် လွတ်နေတယ်'); return; }
     if (!currentSessionId) { saveInFlight = false; showToast('⚠️ Session မရှိသေးပါ'); return; }
+    // Pho Oct 19 Option B: Verify session actually exists in local DB.
+    const sessCheckB = await db.get('sessions', currentSessionId);
+    if (!sessCheckB) { saveInFlight = false; showToast('⚠️ Session မတွေ့ပါ — ပြန်ရွေးပါ'); currentSessionId = null; localStorage.removeItem(LS_SESSION); await refreshSession(); return; }
 
     try {
         const playerName = $('boardPlayer').value || null;
