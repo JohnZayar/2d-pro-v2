@@ -191,15 +191,33 @@ export async function pullUpdates() {
     let pulled = 0;
     const errors = [];
     try {
+        // Pho Oct 19: Get pending IDs from queue — don't delete unsynced local records.
+        let pendingIds = new Set();
+        try {
+            const queue = await db.getAll('sync_queue');
+            pendingIds = new Set(queue.map(e => e.localId).filter(Boolean));
+        } catch (e) { /* ignore */ }
+        
         const collections = ['sessions', 'lottery_records', 'winning_numbers', 'agents', 'app_settings'];
         for (const coll of collections) {
             try {
                 const items = await pb.listAll(coll, { sort: '-updated' });
+                const serverIds = new Set(items.map(i => i.id));
                 for (const item of items) {
                     const rec = _fromServer(item);
                     await db.put(coll, rec);
                     pulled++;
                 }
+                // Pho Oct 19: Delete local orphans not on server (cleans duplicates).
+                // Skip pending (unsynced) records — they're waiting to push.
+                try {
+                    const locals = await db.getAll(coll);
+                    for (const local of locals) {
+                        if (!serverIds.has(local.id) && !pendingIds.has(local.id)) {
+                            await db.del(coll, local.id).catch(() => {});
+                        }
+                    }
+                } catch (e) { /* ignore */ }
             } catch (err) {
                 errors.push(coll + ': ' + err.message);
             }
