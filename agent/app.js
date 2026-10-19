@@ -12,9 +12,9 @@
  * Batches keep entry order — never re-sorted — so they match what was sent.
  */
 
-import * as db from '../shared/db.js?v=2';
+import * as db from '../shared/db.js?v=3';
 import * as pb from '../shared/pb.js?v=4';
-import * as sync from '../shared/sync.js?v=25';
+import * as sync from '../shared/sync.js?v=26';
 import { parseBoardReport, parseLine } from '../shared/parser.js?v=14';
 
 // Global safety net: log unhandled promise rejections instead of failing silently.
@@ -1956,11 +1956,14 @@ window.renderWeekly = async function renderWeekly() {
 /* 🔄 App Reset: clear all local data and reload */
 window.resetAgentApp = async function resetAgentApp() {
     if (!confirm('App data အကုန် ရှင်း မလား? (code ပြန် ထည့် ရ မယ်)')) return;
+    try { db.closeDB(); } catch (e) { /* ignore */ }
     try {
         const dbs = await indexedDB.databases();
-        for (const d of dbs) {
-            if (d.name) indexedDB.deleteDatabase(d.name);
-        }
+        await Promise.all(dbs.map((d) => new Promise((resolve) => {
+            if (!d.name) return resolve();
+            const req = indexedDB.deleteDatabase(d.name);
+            req.onsuccess = req.onerror = req.onblocked = () => resolve();
+        })));
     } catch (e) { /* ignore */ }
     localStorage.clear();
     location.reload();
