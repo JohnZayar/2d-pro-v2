@@ -2000,16 +2000,15 @@ window.renderWeekly = async function renderWeekly() {
 /* 🔄 App Reset: clear all local data and reload */
 window.resetAgentApp = async function resetAgentApp() {
     if (!confirm('App data အကုန် ရှင်း မလား? (code ပြန် ထည့် ရ မယ်)')) return;
-    try { db.closeDB(); } catch (e) { /* ignore */ }
-    // Pho Oct 19: Wait for delete to complete BEFORE reload.
+    // Pho Oct 19: Nuclear reset — clear each store directly.
     try {
-        await new Promise((resolve) => {
-            const req = indexedDB.deleteDatabase('2dProV2');
-            req.onsuccess = req.onerror = req.onblocked = () => resolve();
-            setTimeout(resolve, 3000);
-        });
+        const stores = ['tenants', 'sessions', 'lottery_records', 'winning_numbers', 'agents', 'app_settings', 'players', 'sync_queue'];
+        for (const s of stores) {
+            try { await db.clear(s); } catch (e) { /* ignore */ }
+        }
     } catch (e) { /* ignore */ }
     try { localStorage.clear(); } catch (e) { /* ignore */ }
+    try { sessionStorage.clear(); } catch (e) { /* ignore */ }
     location.reload();
 };
 
