@@ -14,7 +14,7 @@
 
 import * as db from '../shared/db.js?v=3';
 import * as pb from '../shared/pb.js?v=4';
-import * as sync from '../shared/sync.js?v=26';
+import * as sync from '../shared/sync.js?v=27';
 import { parseBoardReport, parseLine } from '../shared/parser.js?v=14';
 
 // Global safety net: log unhandled promise rejections instead of failing silently.
@@ -194,9 +194,17 @@ async function init() {
     pb.loadAuth();
     // Auto-login as the tenant-specific agent account (if link code is saved)
     // Each buyer has their own agent account for tenant isolation.
-    await loginAsTenantAgent().catch(() => {
-        // Sync will work offline; login failure is non-fatal
-    });
+    // Pho Oct 19: If a code is saved but login fails, warn the user (don't silently go "Local only").
+    try {
+        await loginAsTenantAgent();
+    } catch (e) {
+        const code = localStorage.getItem(LS_TENANT);
+        if (code) {
+            console.warn('Auto-login failed:', e.message);
+            // Will show link error on the connect screen
+            setTimeout(() => showLinkError('Auto-login မရပါ: ' + (e.message || e) + ' — Code ပြန်စစ်ပါ'), 500);
+        }
+    }
     try {
         await db.openDB();
     } catch (e) {
@@ -323,10 +331,20 @@ window.connectAgent = async function connectAgent() {
         localStorage.setItem(LS_AGENT_NAME, name);
 
         // Login as this tenant's agent account for isolated sync
+        // Pho Oct 19: MUST succeed — if login fails, show the error and stop.
+        // (Previously the failure was swallowed and app lied "ချိတ်ပြီးပြီ".)
         try {
             await loginAsTenantAgent();
         } catch (e) {
-            console.warn('Tenant agent login failed:', e.message);
+            btn.disabled = false;
+            btn.textContent = 'ချိတ်မယ်';
+            return showLinkError('Login မရပါ: ' + (e.message || e));
+        }
+        // Verify login actually worked
+        if (!pb.isLoggedIn()) {
+            btn.disabled = false;
+            btn.textContent = 'ချိတ်မယ်';
+            return showLinkError('Login မဝင်ပါ — Code မှားနေနိုင်တယ်');
         }
 
         showApp();
