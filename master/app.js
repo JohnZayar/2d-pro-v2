@@ -3407,7 +3407,7 @@ async function renderAgentList() {
             const disabled = !!agent.disabled;
             html += '<tr>' +
                 '<td>' + escHtml(agent.name || `Agent ${n}`) + '</td>' +
-                '<td><button class="btn small" style="padding:4px 8px;font-size:12px;background:#1e3a5f;color:#7dd3fc;border:1px solid #2d5a8f" onclick="regenerateAgentCode(\'' + agent.id + '\',' + n + ',\'' + tenantId + '\')">🔑 Code အသစ်</button></td>' +
+                '<td><button class="btn small" style="padding:4px 8px;font-size:12px;background:#1e3a5f;color:#7dd3fc;border:1px solid #2d5a8f" onclick="regenerateAgentCode(\'' + agent.id + '\',' + n + ',\'' + tenantId + '\',\'' + escHtml(agent.name || `Agent ${n}`).replace(/'/g, "\\'") + '\')">🔑 Code အသစ်</button></td>' +
                 '<td>' + (disabled ? '<span style="color:#ef4444">🔴 ပိတ်</span>' : '<span style="color:#4ade80">🟢 ဖွင့်</span>') + '</td>' +
                 '<td style="white-space:nowrap"><button class="btn small ' + (disabled ? 'gray' : 'red') + '" style="padding:4px 8px;font-size:12px" onclick="toggleAgentDisabled(\'' + agent.id + '\',' + (!disabled) + ')">' + (disabled ? 'ဖွင့်' : 'ပိတ်') + '</button>' +
                 '<button class="btn small" style="padding:4px 8px;font-size:12px;background:#374151;color:#fca5a5;border:1px solid #4b5563;margin-left:4px" onclick="deleteAgentAccount(\'' + agent.id + '\',\'' + escHtml(agent.name || `Agent ${n}`).replace(/'/g, "\\'") + '\')">🗑️</button></td>' +
@@ -3523,20 +3523,36 @@ window.createAgentAccount = async function createAgentAccount() {
 };
 
 /** Pho Oct 19: Regenerate an agent's link code (new secret).
+ *  PocketBase does not allow users to update another user's password via client API,
+ *  so we delete and recreate the agent account with the same number but new secret.
  *  Old codes stop working immediately. Shows the new code once. */
-window.regenerateAgentCode = async function regenerateAgentCode(agentId, agentNum, tenantId) {
+window.regenerateAgentCode = async function regenerateAgentCode(agentId, agentNum, tenantId, agentName) {
     if (!confirm(`Agent ${agentNum} ရဲ့ Code အသစ်ထုတ်မလား?\n(အဟောင်း code တွေ သုံးမရတော့ဘူး)`)) return;
     try {
+        // Delete the old account
+        await pb.delete('users', agentId);
+        // Recreate with same number, new secret
         const secret = generateAgentSecret();
         const pass = agentPasswordForNum(tenantId, agentNum, secret);
-        await pb.update('users', agentId, {
+        const email = agentEmailForNum(tenantId, agentNum);
+        await pb.create('users', {
+            email: email,
             password: pass,
-            passwordConfirm: pass
+            passwordConfirm: pass,
+            name: agentName || `Agent ${agentNum}`,
+            tenant: tenantId
         });
         const code = agentCodeFor(tenantId, agentNum, secret);
+        renderAgentList();
         prompt(`✅ Code အသစ်ရပြီ\n(ကူးယူပါ — ဒီတစ်ခါပဲ ပြမယ်):`, code);
     } catch (e) {
-        showToast('❌ ' + (e.message || 'error'));
+        let msg = e.message || 'error';
+        try {
+            const respData = e.response && e.response.data;
+            if (respData && respData.message) msg = respData.message;
+        } catch (_) {}
+        showToast('❌ ' + msg);
+        renderAgentList();
     }
 };
 
