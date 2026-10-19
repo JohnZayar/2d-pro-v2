@@ -369,7 +369,7 @@ window.connectAgent = async function connectAgent() {
         showApp();
         await refreshSession();
         sync.startAutoSync(60000, autoSyncRefresh);
-        sync.syncNow().catch(() => {});
+        sync.syncNow().then((res) => autoSyncRefresh(res)).catch(() => {});
         showToast('✅ ချိတ်ဆက်ပြီးပြီ');
     } catch (e) {
         showLinkError('ချိတ်မရပါ: ' + e.message);
