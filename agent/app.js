@@ -14,7 +14,7 @@
 
 import * as db from '../shared/db.js?v=3';
 import * as pb from '../shared/pb.js?v=4';
-import * as sync from '../shared/sync.js?v=28';
+import * as sync from '../shared/sync.js?v=29';
 import { parseBoardReport, parseLine } from '../shared/parser.js?v=14';
 
 // Global safety net: log unhandled promise rejections instead of failing silently.
@@ -194,15 +194,17 @@ async function init() {
     pb.loadAuth();
     // Auto-login as the tenant-specific agent account (if link code is saved)
     // Each buyer has their own agent account for tenant isolation.
-    // Pho Oct 19: If a code is saved but login fails, warn the user (don't silently go "Local only").
+    // Pho Oct 19: If a code is saved but login fails, show the link screen
+    // with the error (not the app with silent "Local only").
+    let autoLoginFailed = false;
+    let autoLoginError = '';
     try {
         await loginAsTenantAgent();
     } catch (e) {
         const code = localStorage.getItem(LS_TENANT);
         if (code) {
-            console.warn('Auto-login failed:', e.message);
-            // Will show link error on the connect screen
-            setTimeout(() => showLinkError('Auto-login မရပါ: ' + (e.message || e) + ' — Code ပြန်စစ်ပါ'), 500);
+            autoLoginFailed = true;
+            autoLoginError = e.message || String(e);
         }
     }
     try {
@@ -229,7 +231,7 @@ async function autoSyncRefresh(res) {
     }
 }
 
-    if (tenantId && agentName) {
+    if (tenantId && agentName && !autoLoginFailed) {
         showApp();
         await refreshSession();
         // Background sync (non-blocking) — refreshes UI when new data arrives
@@ -263,6 +265,16 @@ async function autoSyncRefresh(res) {
         }).catch(() => updateSyncPill());
     } else {
         showLinkScreen();
+        // Pho Oct 19: If auto-login failed, pre-fill the dead code and show the error
+        if (autoLoginFailed) {
+            const deadCode = localStorage.getItem(LS_TENANT) || '';
+            const deadName = localStorage.getItem(LS_AGENT_NAME) || '';
+            try {
+                document.getElementById('tenantCodeInput').value = deadCode;
+                document.getElementById('agentNameInput').value = deadName;
+            } catch (e) {}
+            setTimeout(() => showLinkError('Auto-login မရပါ: ' + autoLoginError + ' — Code ပြန်စစ်ပါ'), 300);
+        }
     }
     updateSyncPill();
     window.addEventListener('online', updateSyncPill);
@@ -327,25 +339,32 @@ window.connectAgent = async function connectAgent() {
 
         tenantId = tid;
         agentName = name;
-        localStorage.setItem(LS_TENANT, code);
-        localStorage.setItem(LS_AGENT_NAME, name);
+        // Pho Oct 19: Save code optimistically for loginAsTenantAgent() to read,
+        // but REMOVE it if login fails (don't leave bad code saved).
 
         // Login as this tenant's agent account for isolated sync
         // Pho Oct 19: MUST succeed — if login fails, show the error and stop.
         // (Previously the failure was swallowed and app lied "ချိတ်ပြီးပြီ".)
+        localStorage.setItem(LS_TENANT, code);
+        localStorage.setItem(LS_AGENT_NAME, name);
         try {
             await loginAsTenantAgent();
         } catch (e) {
+            localStorage.removeItem(LS_TENANT);
+            localStorage.removeItem(LS_AGENT_NAME);
             btn.disabled = false;
             btn.textContent = 'ချိတ်မယ်';
             return showLinkError('Login မရပါ: ' + (e.message || e));
         }
         // Verify login actually worked
         if (!pb.isLoggedIn()) {
+            localStorage.removeItem(LS_TENANT);
+            localStorage.removeItem(LS_AGENT_NAME);
             btn.disabled = false;
             btn.textContent = 'ချိတ်မယ်';
             return showLinkError('Login မဝင်ပါ — Code မှားနေနိုင်တယ်');
         }
+        // Login succeeded — code stays saved
 
         showApp();
         await refreshSession();
@@ -366,13 +385,20 @@ function showLinkError(msg) {
     errEl.hidden = false;
 }
 
-window.disconnectAgent = function disconnectAgent() {
+window.disconnectAgent = async function disconnectAgent() {
     if (!confirm('ထွက်မှာလား?')) return;
     localStorage.removeItem(LS_TENANT);
     localStorage.removeItem(LS_AGENT_NAME);
     localStorage.removeItem(LS_SESSION);
     // Clear IndexedDB so the next tenant doesn't see previous tenant's data.
-    try { indexedDB.deleteDatabase('2dProV2'); } catch (e) { /* ignore */ }
+    // Pho Oct 19: Close DB + await deletion (same race fix as resetApp).
+    try { db.closeDB(); } catch (e) { /* ignore */ }
+    try {
+        await new Promise((resolve) => {
+            const req = indexedDB.deleteDatabase('2dProV2');
+            req.onsuccess = req.onerror = req.onblocked = () => resolve();
+        });
+    } catch (e) { /* ignore */ }
     location.reload();
 };
 
