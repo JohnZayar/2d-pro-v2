@@ -3381,10 +3381,14 @@ async function renderAgentList() {
             const res = await pb.list('users', { perPage: 100 });
             const allUsers = (res.items || res);
             agents = allUsers.filter((u) => {
-                const name = (u.name || '').trim();
-                if (!name.toLowerCase().startsWith('agent ')) return false;
                 const uTenant = typeof u.tenant === 'string' ? u.tenant : (u.tenant && u.tenant.id);
-                return uTenant === tenantId;
+                if (uTenant !== tenantId) return false;
+                // Match by name prefix "Agent N" OR by email pattern agent_<tenantId>_<n>@2dpro.local
+                // (Pho Oct 19: some agent accounts have custom display names like Bb/Ss/Ld)
+                const name = (u.name || '').trim();
+                if (name.toLowerCase().startsWith('agent ')) return true;
+                const email = (u.email || '').toLowerCase();
+                return email.startsWith(`agent_${tenantId.toLowerCase()}_`) && email.endsWith('@2dpro.local');
             });
             // Sort by agent number extracted from name
             agents.sort((a, b) => {
@@ -3403,7 +3407,7 @@ async function renderAgentList() {
             const disabled = !!agent.disabled;
             html += '<tr>' +
                 '<td>' + escHtml(agent.name || `Agent ${n}`) + '</td>' +
-                '<td><span style="color:#64748b;font-size:11px">ဖန်တီးတုန်းက ပြပြီး</span></td>' +
+                '<td><button class="btn small" style="padding:4px 8px;font-size:12px;background:#1e3a5f;color:#7dd3fc;border:1px solid #2d5a8f" onclick="regenerateAgentCode(\'' + agent.id + '\',' + n + ',\'' + tenantId + '\')">🔑 Code အသစ်</button></td>' +
                 '<td>' + (disabled ? '<span style="color:#ef4444">🔴 ပိတ်</span>' : '<span style="color:#4ade80">🟢 ဖွင့်</span>') + '</td>' +
                 '<td style="white-space:nowrap"><button class="btn small ' + (disabled ? 'gray' : 'red') + '" style="padding:4px 8px;font-size:12px" onclick="toggleAgentDisabled(\'' + agent.id + '\',' + (!disabled) + ')">' + (disabled ? 'ဖွင့်' : 'ပိတ်') + '</button>' +
                 '<button class="btn small" style="padding:4px 8px;font-size:12px;background:#374151;color:#fca5a5;border:1px solid #4b5563;margin-left:4px" onclick="deleteAgentAccount(\'' + agent.id + '\',\'' + escHtml(agent.name || `Agent ${n}`).replace(/'/g, "\\'") + '\')">🗑️</button></td>' +
@@ -3515,6 +3519,24 @@ window.createAgentAccount = async function createAgentAccount() {
         } catch (_) {}
         showToast('❌ ' + msg);
         console.error('createAgentAccount failed:', e);
+    }
+};
+
+/** Pho Oct 19: Regenerate an agent's link code (new secret).
+ *  Old codes stop working immediately. Shows the new code once. */
+window.regenerateAgentCode = async function regenerateAgentCode(agentId, agentNum, tenantId) {
+    if (!confirm(`Agent ${agentNum} ရဲ့ Code အသစ်ထုတ်မလား?\n(အဟောင်း code တွေ သုံးမရတော့ဘူး)`)) return;
+    try {
+        const secret = generateAgentSecret();
+        const pass = agentPasswordForNum(tenantId, agentNum, secret);
+        await pb.update('users', agentId, {
+            password: pass,
+            passwordConfirm: pass
+        });
+        const code = agentCodeFor(tenantId, agentNum, secret);
+        prompt(`✅ Code အသစ်ရပြီ\n(ကူးယူပါ — ဒီတစ်ခါပဲ ပြမယ်):`, code);
+    } catch (e) {
+        showToast('❌ ' + (e.message || 'error'));
     }
 };
 
