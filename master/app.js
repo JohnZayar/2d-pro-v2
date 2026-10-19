@@ -3578,15 +3578,16 @@ window.editAgentLimit = async function editAgentLimit(tenantId, currentLimit) {
 async function resetApp() {
     if (!confirm('App data အကုန် ရှင်း မလား? (login ပြန် ဝင် ရ မယ်)')) return;
     try { db.closeDB(); } catch (e) { /* ignore */ }
+    // Pho Oct 19: Simplified reset — delete known DB directly, don't rely on
+    // indexedDB.databases() (not supported everywhere). Force reload after 2s
+    // even if delete hangs.
     try {
-        const dbs = await indexedDB.databases();
-        await Promise.all(dbs.map((d) => new Promise((resolve) => {
-            if (!d.name) return resolve();
-            const req = indexedDB.deleteDatabase(d.name);
-            req.onsuccess = req.onerror = req.onblocked = () => resolve();
-        })));
+        const req = indexedDB.deleteDatabase('2dProV2');
+        req.onsuccess = req.onerror = req.onblocked = () => {};
     } catch (e) { /* ignore */ }
-    localStorage.clear();
+    try { localStorage.clear(); } catch (e) { /* ignore */ }
+    setTimeout(() => location.reload(), 500);
+    // Immediate reload as well (in case setTimeout is throttled)
     location.reload();
 }
 
