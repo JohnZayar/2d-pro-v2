@@ -55,6 +55,13 @@ const INDEXES = {
 
 let _db = null;
 
+/** Close the database connection (for App Reset). */
+export function closeDB() {
+    try {
+        if (_db) { _db.close(); _db = null; }
+    } catch (e) { /* ignore */ }
+}
+
 /** Open (or create) the database. Resolves with the IDBDatabase. */
 export function openDB() {
     if (_db) return Promise.resolve(_db);
