@@ -1618,6 +1618,16 @@ window.diagnosePush = async function diagnosePush() {
 function updateSyncPill(force) {
     const pill = $('syncPill');
     if (!pill) return;
+    // Pho Oct 19: Tap pill to see last error (mobile has no hover)
+    if (!pill._errHandler) {
+        pill._errHandler = true;
+        pill.style.cursor = 'pointer';
+        pill.addEventListener('click', () => {
+            const e = (sync.lastPushError && sync.lastPushError()) || (sync.getLastPushError && sync.getLastPushError());
+            if (e) alert('Sync Error:\n' + e);
+            else showToast('✅ Sync OK — error မရှိ');
+        });
+    }
     pill.classList.remove('online', 'offline', 'working');
     const entryPill = $('entrySyncPill');
     const setPill = (el, cls, txt, title) => {
