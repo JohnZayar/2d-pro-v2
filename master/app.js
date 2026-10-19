@@ -3,9 +3,9 @@
  * Local-first: IndexedDB is the source of truth for the UI;
  * PocketBase syncs in the background.
  */
-import * as db from '../shared/db.js?v=2';
+import * as db from '../shared/db.js?v=3';
 import * as pb from '../shared/pb.js?v=4';
-import * as sync from '../shared/sync.js?v=25';
+import * as sync from '../shared/sync.js?v=26';
 import { parseBoard, parseBoardReport, parseLine } from '../shared/parser.js?v=14';
 import {
     formatMoney, formatDateStr, getWeekMondayStr, remainingDigits,
@@ -3539,16 +3539,16 @@ window.editAgentLimit = async function editAgentLimit(tenantId, currentLimit) {
 /* 🔄 App Reset: clear all local data and reload */
 async function resetApp() {
     if (!confirm('App data အကုန် ရှင်း မလား? (login ပြန် ဝင် ရ မယ်)')) return;
+    try { db.closeDB(); } catch (e) { /* ignore */ }
     try {
-        // Clear IndexedDB
         const dbs = await indexedDB.databases();
-        for (const d of dbs) {
-            if (d.name) indexedDB.deleteDatabase(d.name);
-        }
+        await Promise.all(dbs.map((d) => new Promise((resolve) => {
+            if (!d.name) return resolve();
+            const req = indexedDB.deleteDatabase(d.name);
+            req.onsuccess = req.onerror = req.onblocked = () => resolve();
+        })));
     } catch (e) { /* ignore */ }
-    // Clear localStorage
     localStorage.clear();
-    // Reload
     location.reload();
 }
 
