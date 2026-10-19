@@ -117,11 +117,33 @@ export async function pushPending() {
         const creates = queue.filter((e) => e.op === 'create');
         const others = queue.filter((e) => e.op !== 'create');
 
-        const createOutcomes = await _mapConcurrent(creates, 6, _pushEntrySettled);
-        for (const o of createOutcomes) {
-            if (o === 'pushed') pushed++;
-            else if (o === 'failed') failed++;
-            // 'dropped' (poison data): removed from queue, counts as neither
+        // Pho Oct 19: Push in DEPENDENCY ORDER — sessions BEFORE lottery_records/winning_numbers.
+        // (Parallel push of all creates broke this: records were sent with local session IDs
+        //  before the session got its server _pbId → server 400.)
+        const createsByColl = {};
+        for (const e of creates) {
+            (createsByColl[e.collection] = createsByColl[e.collection] || []).push(e);
+        }
+        // Order: tenants → sessions → lottery_records → winning_numbers → agents → app_settings
+        const createOrder = ['tenants', 'sessions', 'lottery_records', 'winning_numbers', 'agents', 'app_settings'];
+        for (const coll of createOrder) {
+            const list = createsByColl[coll] || [];
+            if (!list.length) continue;
+            const outcomes = await _mapConcurrent(list, 6, _pushEntrySettled);
+            for (const o of outcomes) {
+                if (o === 'pushed') pushed++;
+                else if (o === 'failed') failed++;
+                // 'dropped' (poison data): removed from queue, counts as neither
+            }
+        }
+        // Any creates for unknown collections (shouldn't happen, but be safe)
+        for (const coll of Object.keys(createsByColl)) {
+            if (createOrder.includes(coll)) continue;
+            const outcomes = await _mapConcurrent(createsByColl[coll], 6, _pushEntrySettled);
+            for (const o of outcomes) {
+                if (o === 'pushed') pushed++;
+                else if (o === 'failed') failed++;
+            }
         }
 
         for (const entry of others) {
