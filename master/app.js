@@ -3577,18 +3577,16 @@ window.editAgentLimit = async function editAgentLimit(tenantId, currentLimit) {
 /* 🔄 App Reset: clear all local data and reload */
 async function resetApp() {
     if (!confirm('App data အကုန် ရှင်း မလား? (login ပြန် ဝင် ရ မယ်)')) return;
-    try { db.closeDB(); } catch (e) { /* ignore */ }
-    // Pho Oct 19: Wait for delete to complete BEFORE reload.
-    // (v176 bug: reload happened before delete finished, DB not cleared.)
+    // Pho Oct 19: Nuclear reset — clear each store directly (more reliable than deleteDatabase).
+    // App Reset = အထဲမှာ ဘာမှမရှိရတော့ဘူး, အကုန် clear.
     try {
-        await new Promise((resolve) => {
-            const req = indexedDB.deleteDatabase('2dProV2');
-            req.onsuccess = req.onerror = req.onblocked = () => resolve();
-            // Safety: resolve after 3s even if blocked
-            setTimeout(resolve, 3000);
-        });
+        const stores = ['tenants', 'sessions', 'lottery_records', 'winning_numbers', 'agents', 'app_settings', 'players', 'sync_queue'];
+        for (const s of stores) {
+            try { await db.clear(s); } catch (e) { /* ignore */ }
+        }
     } catch (e) { /* ignore */ }
     try { localStorage.clear(); } catch (e) { /* ignore */ }
+    try { sessionStorage.clear(); } catch (e) { /* ignore */ }
     location.reload();
 }
 
