@@ -229,14 +229,13 @@ async function _pushOne(entry) {
         const sess = await db.get('sessions', payloadData.session);
         if (sess && sess._pbId) {
             payloadData = Object.assign({}, payloadData, { session: sess._pbId });
-        } else if (sess && !sess._pbId) {
-            // Session exists locally but not on server yet — wait for it.
+        } else {
+            // Pho Oct 19: Session not in local DB (null) OR exists but no _pbId —
+            // do NOT push with local ID (server 400). Retry later.
             const e = new Error('Session not yet synced, retry later');
             e.code = 'SESSION_NOT_SYNCED';
             throw e;
         }
-        // If sess is null (session deleted?), let the push attempt proceed —
-        // server will return 400 and it will be dropped as poison (correct).
     }
 
     if (op === 'create') {
