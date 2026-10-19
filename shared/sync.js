@@ -174,15 +174,12 @@ async function _pushEntrySettled(entry) {
             _lastPushError = 'Session not yet synced, will retry';
             return 'failed';
         }
-        // Drop unrecoverable client errors (bad data); keep the rest for retry.
-        // 403 (Forbidden) is NOT dropped — it's usually an API rule config issue
-        // that may be fixed server-side; keep queued for retry.
-        if (err && err.code >= 400 && err.code < 500 && err.code !== 429 && err.code !== 403) {
-            console.warn('[sync] dropping poison op', entry.op, entry.collection, err.message);
-            _lastPushError = 'DROPPED ' + (err.code + ': ' + err.message) + ' (' + entry.collection + ')';
-            await db.del('sync_queue', entry.id).catch(() => {});
-            return 'dropped';
-        }
+        // Pho Oct 19: DO NOT auto-drop 4xx errors. Pho's rule: "whatever is added
+        // or deleted must keep working" — dropped records are lost forever.
+        // Only the explicit blank-session poison (handled in _pushOne) is dropped.
+        // All other failures stay queued for retry. User can manually clear via
+        // Settings → App Reset if truly stuck.
+        // 429 (rate limit) also stays queued.
         _lastPushError = (err && (err.code + ': ' + err.message)) || String(err);
         return 'failed';
     }
