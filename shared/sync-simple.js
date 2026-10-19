@@ -27,6 +27,21 @@ let _syncing = false;
 let _lastPushError = null;
 let _lastPullError = null;
 
+/** Format push error with PocketBase field details */
+function _fmtErr(err) {
+    if (!err) return 'Unknown error';
+    let msg = (err.code || '') + ': ' + (err.message || String(err));
+    // Include PocketBase field validation details
+    if (err.data && err.data.data) {
+        const fields = [];
+        for (const [k, v] of Object.entries(err.data.data)) {
+            fields.push(k + '=' + (v.message || v.code || JSON.stringify(v)));
+        }
+        if (fields.length) msg += ' [' + fields.join(', ') + ']';
+    }
+    return msg;
+}
+
 export function getLastPushError() { return _lastPushError; }
 export function getLastPullError() { return _lastPullError; }
 // Aliases for old sync.js API compatibility
@@ -95,7 +110,7 @@ export async function pushPending() {
             } catch (err) {
                 // Keep in queue for retry. Never auto-drop (Pho: records must not be lost).
                 // Continue with next (don't break) — one bad entry shouldn't block others.
-                _lastPushError = (err && (err.code + ': ' + err.message)) || String(err);
+                _lastPushError = _fmtErr(err);
                 failed++;
             }
         }
