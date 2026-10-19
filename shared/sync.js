@@ -168,6 +168,12 @@ async function _pushEntrySettled(entry) {
     try {
         await _pushOne(entry);
     } catch (err) {
+        // Pho Oct 19: SESSION_NOT_SYNCED is retryable (session will be pushed first
+        // due to dependency order) — never drop it.
+        if (err && err.code === 'SESSION_NOT_SYNCED') {
+            _lastPushError = 'Session not yet synced, will retry';
+            return 'failed';
+        }
         // Drop unrecoverable client errors (bad data); keep the rest for retry.
         // 403 (Forbidden) is NOT dropped — it's usually an API rule config issue
         // that may be fixed server-side; keep queued for retry.
@@ -218,12 +224,22 @@ async function _pushOne(entry) {
 
     // Resolve local session ID → server session ID for relations.
     // (Server expects PB IDs, not local UIDs.)
+    // Pho Oct 19: If the session has no _pbId yet (not pushed), DO NOT attempt the push.
+    // Attempting with a local ID → server 400 → _pushEntrySettled DROPS it (lost forever).
+    // Instead, throw a retryable error so it stays queued until the session is pushed.
     let payloadData = data || local;
     if (payloadData && payloadData.session && (collection === 'winning_numbers' || collection === 'lottery_records')) {
         const sess = await db.get('sessions', payloadData.session);
         if (sess && sess._pbId) {
             payloadData = Object.assign({}, payloadData, { session: sess._pbId });
+        } else if (sess && !sess._pbId) {
+            // Session exists locally but not on server yet — wait for it.
+            const e = new Error('Session not yet synced, retry later');
+            e.code = 'SESSION_NOT_SYNCED';
+            throw e;
         }
+        // If sess is null (session deleted?), let the push attempt proceed —
+        // server will return 400 and it will be dropped as poison (correct).
     }
 
     if (op === 'create') {
