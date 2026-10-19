@@ -76,9 +76,9 @@ export async function pushPending() {
                 pushed++;
             } catch (err) {
                 // Keep in queue for retry. Never auto-drop (Pho: records must not be lost).
+                // Continue with next (don't break) — one bad entry shouldn't block others.
                 _lastPushError = (err && (err.code + ': ' + err.message)) || String(err);
                 failed++;
-                break; // Stop on first failure, retry next cycle (preserves order)
             }
         }
     } finally {
