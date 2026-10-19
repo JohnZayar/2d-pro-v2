@@ -3530,7 +3530,7 @@ window.regenerateAgentCode = async function regenerateAgentCode(agentId, agentNu
     if (!confirm(`Agent ${agentNum} ရဲ့ Code အသစ်ထုတ်မလား?\n(အဟောင်း code တွေ သုံးမရတော့ဘူး)`)) return;
     try {
         // Delete the old account
-        await pb.delete('users', agentId);
+        await pb.del('users', agentId);
         // Recreate with same number, new secret
         const secret = generateAgentSecret();
         const pass = agentPasswordForNum(tenantId, agentNum, secret);
