@@ -1194,6 +1194,31 @@ async function saveSession() {
         showToast('⚠️ ရှိပြီးသား ပွဲ — အသစ် မလုပ်');
         return;
     }
+    // Pho Oct 19 22:00: Check SERVER for existing (prevents duplicate after App Reset).
+    // Local DB is empty after Reset, but server may already have the session.
+    if (pb.isLoggedIn() && sync.isOnline()) {
+        try {
+            const srv = await pb.list('sessions', {
+                filter: `tenant="${state.tenantPbId}" && date="${dateStr}" && timeType="${timeType}"`,
+                perPage: 1
+            });
+            const list = srv && srv.items ? srv.items : (Array.isArray(srv) ? srv : []);
+            if (list.length > 0) {
+                const se = list[0];
+                await db.put('sessions', {
+                    id: se.id, tenant: se.tenant, name: se.name, date: se.date,
+                    timeType: se.timeType, is_open: se.is_open, limit: se.limit,
+                    closed: se.closed, _updated: Date.now()
+                });
+                closeModal('modal-session');
+                setActiveSession(se.id);
+                await loadSessions();
+                renderSessions();
+                showToast('⚠️ Server မှာ ရှိပြီးသား — ပြန်ယူလိုက်ပြီ');
+                return;
+            }
+        } catch (e) { /* fall through to create */ }
+    }
     const s = await createRecord('sessions', {
         name, date: dateStr, timeType, is_open: true, limit: 50000,
     });
