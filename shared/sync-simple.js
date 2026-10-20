@@ -122,7 +122,33 @@ export async function pushPending() {
 
 /** Push one queue entry. Local ID = Server ID. */
 async function _pushOne(entry) {
+    // Re-read the queue entry: an adoption earlier in this same run may have
+    // re-pointed it (session refs / localId) — never push stale data.
+    try {
+        const fresh = await db.get('sync_queue', entry.id);
+        if (fresh) entry = fresh;
+    } catch (e) {}
     const { op, collection, localId, data } = entry;
+
+    // Pho Oct 21: ONE GATE for session creates — (tenant, date, timeType) is
+    // unique, like a winning number: enter once, never twice. If the server
+    // already has that day-part under a different ID, adopt it instead of
+    // minting a twin. (Sync lag / lost responses made twins before.)
+    if (op === 'create' && collection === 'sessions' && data && data.tenant && data.date && data.timeType) {
+        try {
+            const res = await pb.list('sessions', {
+                filter: `tenant="${data.tenant}" && date="${data.date}" && timeType="${data.timeType}"`,
+                perPage: 5
+            });
+            const items = res && res.items ? res.items : (Array.isArray(res) ? res : []);
+            if (items.length) {
+                if (items[0].id === localId) return; // already ours on the server
+                await _adoptSession(localId, items[0]);
+                return; // adopted — never create a second one
+            }
+        } catch (e) { /* gate unreachable (offline): the normal create below also fails safe and stays queued */ }
+    }
+
     const local = await db.get(collection, localId);
     
     if (op === 'create' || op === 'update') {
@@ -169,6 +195,42 @@ async function _pushOne(entry) {
             throw err;
         }
     }
+}
+
+/** Re-key a local session to the server's existing session for the same
+ *  day-part: the local session row, its records, winning numbers and any
+ *  queued ops all move to the adopted ID, so nothing keeps pointing at the
+ *  abandoned local ID. */
+async function _adoptSession(localId, srv) {
+    const sid = srv.id;
+    try { await db.del('sessions', localId); } catch (e) {}
+    await db.put('sessions', _fromServer(srv));
+    for (const coll of ['lottery_records', 'winning_numbers']) {
+        try {
+            const all = await db.getAll(coll);
+            for (const k of all) {
+                if (k.session === localId) { k.session = sid; k._updated = Date.now(); await db.put(coll, k); }
+            }
+        } catch (e) {}
+    }
+    try {
+        const q = await db.getAll('sync_queue');
+        for (const qop of q) {
+            let changed = false;
+            if (qop.data && qop.data.session === localId) { qop.data.session = sid; changed = true; }
+            if (qop.collection === 'sessions' && qop.localId === localId) {
+                qop.localId = sid;
+                if (qop.data) qop.data.id = sid;
+                changed = true;
+            }
+            if (changed) await db.put('sync_queue', qop);
+        }
+    } catch (e) {}
+    try {
+        if (typeof localStorage !== 'undefined' && localStorage.getItem('v2_active_session') === localId) {
+            localStorage.setItem('v2_active_session', sid);
+        }
+    } catch (e) {}
 }
 
 /** Strip local-only fields. Keep `id` (used as server ID). */
