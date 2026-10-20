@@ -5,7 +5,7 @@
  */
 import * as db from '../shared/db.js?v=3';
 import * as pb from '../shared/pb.js?v=4';
-import * as sync from '../shared/sync-simple.js?v=5';
+import * as sync from '../shared/sync-simple.js?v=6';
 import { parseBoard, parseBoardReport, parseLine } from '../shared/parser.js?v=14';
 import {
     formatMoney, formatDateStr, getWeekMondayStr, remainingDigits,
@@ -661,32 +661,15 @@ function serverPayload(obj) {
     return out;
 }
 
-/** Create: save locally + queue. Immediate server sync ONLY for sessions (need server ID for refs).
- *  Records save instantly to phone — background sync pushes to server without blocking. */
+/** Create: save locally + queue. Pho Oct 21: EVERYTHING is local-first
+ *  (the first design) — sessions too. The local UID is the final server ID,
+ *  so a new session appears instantly and syncs in the background like a
+ *  record. (The old blocking server-create made sessions wait on the
+ *  network, and its lost-response queue fall-through minted duplicates.) */
 async function createRecord(collection, data) {
     const obj = Object.assign({ id: uid(), _updated: Date.now() }, data);
     obj.tenant = state.tenantPbId;
     await db.put(collection, obj);
-
-    // Sessions need immediate server ID (records reference it) — keep blocking sync here.
-    // All other collections (lottery_records etc.) go through background queue only → instant save.
-    if (collection === 'sessions' && pb.isLoggedIn() && sync.isOnline()) {
-        try {
-            const created = await pb.create(collection, serverPayload(obj));
-            const oldId = obj.id;
-            obj.id = created.id;
-            obj._pbId = created.id;
-            obj._updated = Date.now();
-            await db.del(collection, oldId);
-            await db.put(collection, obj);
-            await remapSessionRefs(oldId, created.id);
-            updateSyncPill();
-            return obj;
-        } catch (e) {
-            if (e.code !== 'NETWORK_ERROR' && !(e.code >= 400 && e.code < 500)) throw e;
-            // fall through → queue
-        }
-    }
     await sync.queueOp({ op: 'create', collection, localId: obj.id, data: obj });
     updateSyncPill();
     return obj;
