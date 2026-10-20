@@ -1197,7 +1197,8 @@ window.renderRecordsView = async function renderRecordsView() {
                         if (grp.length > 1) {
                             const ft = (grp[0].formula_text || '').trim();
                             const total = grp.reduce((s, r) => s + (Number(r.amount) || 0), 0);
-                            return '<tr><td>' + escHtml(ft) + '</td><td>(' + grp.length + ') ' + formatMoney(total) + '</td></tr>';
+                            const ids = grp.map((r) => r.id).join(',');
+                            return '<tr data-rids="' + escHtml(ids) + '" style="user-select:none;-webkit-user-select:none;"><td>' + escHtml(ft) + '</td><td>(' + grp.length + ') ' + formatMoney(total) + '</td></tr>';
                         }
                         const r = grp[0];
                         const numStr = String(r.number).padStart(2, '0');
@@ -2053,6 +2054,17 @@ window.resetAgentApp = async function resetAgentApp() {
         // Handle text nodes
         if (tgt && tgt.nodeType === 3) tgt = tgt.parentElement;
         if (!tgt || !tgt.closest) return;
+        const trG = tgt.closest('tr[data-rids]');
+        if (trG) {
+            pressTarget = trG;
+            const tg = e.touches ? e.touches[0] : e;
+            startX = tg.clientX || 0; startY = tg.clientY || 0;
+            pressTimer = setTimeout(() => {
+                showGroupMenu(pressTarget.getAttribute('data-rids'), e);
+                clearPress();
+            }, 600);
+            return;
+        }
         const tr = tgt.closest('tr[data-rid]');
         if (!tr) return;
         pressTarget = tr;
@@ -2079,6 +2091,13 @@ window.resetAgentApp = async function resetAgentApp() {
         let tgt = e.target;
         if (tgt && tgt.nodeType === 3) tgt = tgt.parentElement;
         if (tgt && tgt.closest) {
+            const trG = tgt.closest('tr[data-rids]');
+            if (trG) {
+                e.preventDefault();
+                clearPress();
+                showGroupMenu(trG.getAttribute('data-rids'), e);
+                return;
+            }
             const tr = tgt.closest('tr[data-rid]');
             if (tr) {
                 e.preventDefault();
@@ -2162,6 +2181,115 @@ window.resetAgentApp = async function resetAgentApp() {
             await db.delete('lottery_records', rid);
             await sync.mutate('delete', 'lottery_records', { id: rid });
             if (window.renderRecordsView) await window.renderRecordsView();
+        } catch (e) { alert('Error: ' + e.message); }
+    };
+
+    // Pho Oct 20: Long-press on GROUPED formula rows — edit/delete the whole group.
+    // Grouped rows carry data-rids (all record IDs in the formula group).
+    let _grpIds = [];
+    const _grpRefresh = async () => {
+        if (window.renderRecordsView) await window.renderRecordsView();
+    };
+    window.showGroupMenu = function(ridsStr, e) {
+        closeEditDeleteMenu();
+        const menu = document.createElement('div');
+        menu.id = 'editDeleteMenu';
+        menu.style.cssText = 'position:fixed;z-index:9999;background:#1e293b;border:1px solid #3b82f6;border-radius:8px;padding:8px;box-shadow:0 4px 12px rgba(0,0,0,0.5);';
+        const x = (e.changedTouches ? e.changedTouches[0].clientX : e.clientX) || window.innerWidth/2;
+        const y = (e.changedTouches ? e.changedTouches[0].clientY : e.clientY) || window.innerHeight/2;
+        menu.style.left = Math.min(x, window.innerWidth - 140) + 'px';
+        menu.style.top = Math.min(y, window.innerHeight - 100) + 'px';
+        menu.innerHTML =
+            '<button onclick="openEditGroup(\'' + ridsStr + '\')" style="display:block;width:100%;padding:8px 16px;margin:4px 0;background:#3b82f6;color:white;border:none;border-radius:4px;">✏️ ပြင်</button>' +
+            '<button onclick="deleteRecordGroup(\'' + ridsStr + '\')" style="display:block;width:100%;padding:8px 16px;margin:4px 0;background:#ef4444;color:white;border:none;border-radius:4px;">🗑️ အကုန် ဖျက်</button>';
+        document.body.appendChild(menu);
+        setTimeout(() => {
+            document.addEventListener('click', closeEditDeleteMenu, { once: true });
+        }, 100);
+    };
+    window.openEditGroup = async function(ridsStr) {
+        closeEditDeleteMenu();
+        _grpIds = ridsStr.split(',').filter(Boolean);
+        await renderGroupModal();
+    };
+    async function renderGroupModal() {
+        const old = document.getElementById('editRecordModal');
+        if (old) old.remove();
+        const recs = [];
+        for (const id of _grpIds) {
+            const r = await db.get('lottery_records', id);
+            if (r) recs.push(r);
+        }
+        _grpIds = recs.map((r) => r.id);
+        if (!recs.length) { closeEditDeleteMenu(); await _grpRefresh(); return; }
+        const ft = (recs[0].formula_text || '').trim();
+        let rows = '';
+        for (const r of recs) {
+            rows += '<div style="display:flex;gap:6px;align-items:center;margin-bottom:6px;">' +
+                '<input id="gNum_' + r.id + '" type="text" value="' + escHtml(r.number) + '" style="width:56px;padding:6px;background:#0f172a;color:white;border:1px solid #334155;border-radius:4px;">' +
+                '<input id="gAmt_' + r.id + '" type="number" value="' + r.amount + '" style="flex:1;padding:6px;background:#0f172a;color:white;border:1px solid #334155;border-radius:4px;">' +
+                '<button onclick="deleteOneInGroup(\'' + r.id + '\')" style="padding:6px 10px;background:#ef4444;color:white;border:none;border-radius:4px;">ဖျက်</button></div>';
+        }
+        const modal = document.createElement('div');
+        modal.id = 'editRecordModal';
+        modal.style.cssText = 'position:fixed;z-index:9999;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;';
+        modal.innerHTML =
+            '<div style="background:#1e293b;border:1px solid #3b82f6;border-radius:12px;padding:20px;min-width:300px;max-width:92vw;max-height:84vh;display:flex;flex-direction:column;">' +
+            '<h3 style="color:white;margin:0 0 6px;">ပြင် — ' + escHtml(ft) + '</h3>' +
+            '<div style="color:#94a3b8;margin-bottom:12px;">' + recs.length + ' ကွက်</div>' +
+            '<div style="overflow-y:auto;">' + rows + '</div>' +
+            '<div style="display:flex;gap:8px;margin-top:12px;">' +
+            '<button onclick="saveEditGroup()" style="flex:1;padding:10px;background:#3b82f6;color:white;border:none;border-radius:4px;">သိမ်း</button>' +
+            '<button onclick="closeEditDeleteMenu()" style="flex:1;padding:10px;background:#475569;color:white;border:none;border-radius:4px;">ပိတ်</button>' +
+            '</div></div>';
+        document.body.appendChild(modal);
+    }
+    window.saveEditGroup = async function() {
+        try {
+            for (const id of _grpIds) {
+                const numEl = document.getElementById('gNum_' + id);
+                const amtEl = document.getElementById('gAmt_' + id);
+                if (!numEl || !amtEl) continue;
+                const num = numEl.value.trim();
+                const amt = Number(amtEl.value);
+                if (!num || !(amt > 0)) { alert('မှန်ကန်စွာ ဖြည့်ပါ'); return; }
+                const r = await db.get('lottery_records', id);
+                if (!r) continue;
+                if (String(r.number) !== num || Number(r.amount) !== amt) {
+                    r.number = num; r.amount = amt;
+                    await db.put('lottery_records', r);
+                    await sync.mutate('update', 'lottery_records', { id, number: num, amount: amt });
+                }
+            }
+            closeEditDeleteMenu();
+            await _grpRefresh();
+        } catch (e) { alert('Error: ' + e.message); }
+    };
+    window.deleteOneInGroup = async function(rid) {
+        if (!confirm('ဒီ ၁ ကွက် ဖျက်မလား?')) return;
+        try {
+            await db.delete('lottery_records', rid);
+            await sync.mutate('delete', 'lottery_records', { id: rid });
+            _grpIds = _grpIds.filter((x) => x !== rid);
+            if (!_grpIds.length) { closeEditDeleteMenu(); await _grpRefresh(); }
+            else await renderGroupModal();
+        } catch (e) { alert('Error: ' + e.message); }
+    };
+    window.deleteRecordGroup = async function(ridsStr) {
+        closeEditDeleteMenu();
+        const ids = ridsStr.split(',').filter(Boolean);
+        let total = 0;
+        for (const id of ids) {
+            const r = await db.get('lottery_records', id);
+            if (r) total += Number(r.amount) || 0;
+        }
+        if (!confirm(ids.length + ' ကွက် လုံး ဖျက်မလား? (စုစုပေါင်း ' + total + ')')) return;
+        try {
+            for (const id of ids) {
+                await db.delete('lottery_records', id);
+                await sync.mutate('delete', 'lottery_records', { id });
+            }
+            await _grpRefresh();
         } catch (e) { alert('Error: ' + e.message); }
     };
 })();
