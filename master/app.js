@@ -714,54 +714,6 @@ async function remapSessionRefs(oldId, newId) {
     if (state.boardSessionId === oldId) state.boardSessionId = newId;
 }
 
-/**
- * Before pushing, resolve queued child ops whose session has since
- * received a server id (offline-created sessions). Prevents 400 poison-drops.
- */
-async function resolvePendingRelations() {
-    if (!pb.isLoggedIn() || !sync.isOnline()) return false;
-    let fixed = false;
-    const queue = await db.getAll('sync_queue');
-    for (const e of queue) {
-        if (e.op !== 'create') continue;
-        if (e.collection !== 'lottery_records' && e.collection !== 'winning_numbers') continue;
-        const sessId = e.data && e.data.session;
-        if (!sessId) continue;
-        const s = await db.get('sessions', sessId);
-        if (!s) continue;
-        if (!s._pbId) {
-            try {
-                const created = await pb.create('sessions', serverPayload(s));
-                const oldId = s.id;
-                s._pbId = created.id; s._updated = Date.now();
-                await db.put('sessions', s);
-                await remapSessionRefs(oldId, created.id);
-                // drop the session's own queued create (already on server)
-                const q2 = await db.getAll('sync_queue');
-                for (const se of q2) {
-                    if (se.collection === 'sessions' && se.op === 'create' && se.localId === oldId) {
-                        await db.del('sync_queue', se.id);
-                    }
-                }
-                fixed = true;
-            } catch (err) { continue; }
-        }
-        const sNow = await db.get('sessions', sessId === s.id ? s.id : sessId);
-        const pbSid = (sNow && sNow._pbId) || (s._pbId);
-        if (pbSid && e.data.session !== pbSid) {
-            e.data.session = pbSid;
-            await db.put('sync_queue', e);
-            const local = await db.get(e.collection, e.localId);
-            if (local && local.session !== pbSid) {
-                local.session = pbSid;
-                local._updated = Date.now();
-                await db.put(e.collection, local);
-            }
-            fixed = true;
-        }
-    }
-    return fixed;
-}
 
 /** Auto-ack batches for Agent "Ok" display. Runs after sync. Writes to batch_acks. */
 /* Pho Oct 18: ANY Master user writes acks for their own tenant's batches
@@ -804,9 +756,7 @@ async function fullSync(manual) {
     _fullSyncRunning = true;
     updateSyncPill('busy', '⏳ Sync…');
     try {
-        await resolvePendingRelations();
         let res = await sync.syncNow();
-        if (await resolvePendingRelations()) res = await sync.syncNow();
         // Auto-ack: mark batches received (for Agent "Ok" display) - await it
         try { await writeBatchAcks(); } catch (e) { console.warn('Ack failed:', e.message); }
         // Refresh UI only when the pull actually brought changes (like Agent does) —
