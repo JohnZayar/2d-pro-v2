@@ -3764,7 +3764,7 @@ async function nuclearWipe() {
         closeEditDeleteMenu();
         if (!confirm('ဖျက်မလား?')) return;
         try {
-            await db.delete('lottery_records', rid);
+            await db.del('lottery_records', rid);
             await sync.mutate('delete', 'lottery_records', { id: rid });
             if (window.refreshVoucherView) await window.refreshVoucherView();
             else location.reload();
@@ -3854,7 +3854,7 @@ async function nuclearWipe() {
     window.deleteOneInGroup = async function(rid) {
         if (!confirm('ဒီ ၁ ကွက် ဖျက်မလား?')) return;
         try {
-            await db.delete('lottery_records', rid);
+            await db.del('lottery_records', rid);
             await sync.mutate('delete', 'lottery_records', { id: rid });
             _grpIds = _grpIds.filter((x) => x !== rid);
             if (!_grpIds.length) { closeEditDeleteMenu(); await _grpRefresh(); }
@@ -3872,7 +3872,7 @@ async function nuclearWipe() {
         if (!confirm(ids.length + ' ကွက် လုံး ဖျက်မလား? (စုစုပေါင်း ' + total + ')')) return;
         try {
             for (const id of ids) {
-                await db.delete('lottery_records', id);
+                await db.del('lottery_records', id);
                 await sync.mutate('delete', 'lottery_records', { id });
             }
             await _grpRefresh();
