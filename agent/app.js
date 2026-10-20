@@ -14,7 +14,7 @@
 
 import * as db from '../shared/db.js?v=3';
 import * as pb from '../shared/pb.js?v=4';
-import * as sync from '../shared/sync-simple.js?v=5';
+import * as sync from '../shared/sync-simple.js?v=6';
 import { parseBoardReport, parseLine } from '../shared/parser.js?v=14';
 
 // Global safety net: log unhandled promise rejections instead of failing silently.
@@ -407,8 +407,7 @@ window.disconnectAgent = async function disconnectAgent() {
 /** Pick the latest open session for this tenant (local-first). */
 async function refreshSession() {
     try {
-        const sessions = (await db.query('sessions', 'by_tenant', tenantId))
-            .sort((a, b) => (b.created || 0) - (a.created || 0));
+        const sessions = await getAgentSessions();
         const open = sessions.filter((s) => s.is_open !== false);
         const pick = open[0] || sessions[0] || null;
 
@@ -481,7 +480,27 @@ async function updateAgentReminders() {
 async function getAgentSessions() {
     try {
         const sessions = await db.query('sessions', 'by_tenant', tenantId);
-        return sessions.sort((a, b) => (b.created || 0) - (a.created || 0));
+        // Pho Oct 21: NEVER show two sessions for the same day-part.
+        // If a duplicate ever slips in, keep the one holding this agent's
+        // records (tie: the earliest created) and hide the twin.
+        const groups = new Map();
+        for (const s of sessions) {
+            const key = (s.date || '') + '|' + (s.timeType || '');
+            if (!groups.has(key)) groups.set(key, []);
+            groups.get(key).push(s);
+        }
+        const out = [];
+        for (const grp of groups.values()) {
+            if (grp.length === 1) { out.push(grp[0]); continue; }
+            let best = grp[0], bestCount = -1;
+            for (const s of grp) {
+                let cnt = 0;
+                try { cnt = (await db.query('lottery_records', 'by_session', s.id)).length; } catch (e) {}
+                if (cnt > bestCount || (cnt === bestCount && (s.created || 0) < (best.created || 0))) { best = s; bestCount = cnt; }
+            }
+            out.push(best);
+        }
+        return out.sort((a, b) => (b.created || 0) - (a.created || 0));
     } catch (e) {
         return [];
     }
