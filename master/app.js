@@ -948,6 +948,85 @@ async function setSetting(key, value) {
     else await createRecord('app_settings', { key, value: String(value) });
 }
 
+/** Pho Oct 21: Agent-account links + money resolver.
+ *  A registry person (agents) may be linked to a PocketBase agent ACCOUNT
+ *  (users). Link lives in app_settings: key 'agentlink_<userId>' -> agents id.
+ *  Commission/payout must follow the LINK (ID), not spelling alone:
+ *  'Kyaw Soe' vs 'kyawsoe' must never change the rates. */
+async function loadAgentLinksAndUsers() {
+    try {
+        const all = await db.getAll('app_settings');
+        const links = {};
+        for (const r of all) {
+            if (r.key && r.key.indexOf('agentlink_') === 0 && r.value) links[r.key.slice(10)] = r.value;
+        }
+        state.agentLinks = links;
+    } catch (e) { if (!state.agentLinks) state.agentLinks = {}; }
+    try {
+        let tenantId = state.tenantPbId;
+        if (!tenantId && state.user && state.user.tenant) tenantId = typeof state.user.tenant === 'string' ? state.user.tenant : state.user.tenant.id;
+        if (tenantId && pb.isLoggedIn()) {
+            const res = await pb.list('users', { perPage: 100 });
+            const allUsers = (res.items || res);
+            state.agentUsers = allUsers.filter((u) => {
+                const uTenant = typeof u.tenant === 'string' ? u.tenant : (u.tenant && u.tenant.id);
+                if (uTenant !== tenantId) return false;
+                const nm = (u.name || '').trim();
+                if (nm.toLowerCase().startsWith('agent ')) return true;
+                const em = (u.email || '').toLowerCase();
+                return em.startsWith('agent_' + tenantId.toLowerCase() + '_') && em.endsWith('@2dpro.local');
+            }).map((u) => {
+                const em = (u.email || '').match(/_(\d+)@2dpro\.local$/i);
+                const nm = (u.name || '').match(/agent\s+(\d+)/i);
+                return { id: u.id, name: u.name || '', num: em ? parseInt(em[1], 10) : (nm ? parseInt(nm[1], 10) : 0) };
+            }).sort((a, b) => (a.num || 999) - (b.num || 999));
+        }
+    } catch (e) { if (!state.agentUsers) state.agentUsers = []; }
+}
+
+const _normName = (s) => (s || '').toLowerCase().replace(/\s+/g, '');
+
+/** Resolve the registry person whose commission/payout applies to a bucket.
+ *  Order: 1) bucket 'id:' key -> registry by ID. 2) agent account (exact name)
+ *  -> saved link -> registry by ID. 3) exact registry name. 4) normalized
+ *  name (case/space-insensitive) via link, then registry. */
+function resolveAgentForBucket(pkey, label) {
+    const agents = state.agents || [];
+    if (pkey && pkey.indexOf('id:') === 0) {
+        const a = agents.find((x) => x.id === pkey.slice(3));
+        if (a) return a;
+    }
+    const links = state.agentLinks || {};
+    const users = state.agentUsers || [];
+    const byLink = (u) => (u && links[u.id]) ? (agents.find((x) => x.id === links[u.id]) || null) : null;
+    let a = byLink(users.find((x) => (x.name || '') === label));
+    if (a) return a;
+    a = agents.find((x) => x.name === label);
+    if (a) return a;
+    const nl = _normName(label);
+    if (nl) {
+        a = byLink(users.find((x) => _normName(x.name) === nl));
+        if (a) return a;
+        a = agents.find((x) => _normName(x.name) === nl);
+        if (a) return a;
+    }
+    return null;
+}
+
+/** 'Agent N' badge text for a linked registry person (or ''). */
+function agentBadgeForPerson(personId) {
+    const links = state.agentLinks || {};
+    const users = state.agentUsers || [];
+    for (const uid of Object.keys(links)) {
+        if (links[uid] === personId) {
+            const u = users.find((x) => x.id === uid);
+            if (u) return u.num ? ('Agent ' + u.num) : (u.name || 'Agent');
+            return 'Agent';
+        }
+    }
+    return '';
+}
+
 async function loadSettingsIntoUI() {
     const urlInput = $('serverUrlInput');
     if (urlInput) {
@@ -1002,7 +1081,7 @@ function switchTab(name, opts) {
     if (akp && name !== 'akandain' && !akp.hidden) { akp.hidden = true; $('akanKbToggle')?.classList.remove('active'); }
     if (name === 'ledger') renderLedger();
     if (name === 'entry') renderEntry();
-    if (name === 'agents') renderAgents();
+    if (name === 'agents') { renderAgents(); loadAgentLinksAndUsers().then(() => renderAgents()); }
     if (name === 'vouchers') renderVouchers();
     if (name === 'akan') renderOverlimit();
     if (name === 'akandain') renderAkandain();
@@ -1927,7 +2006,7 @@ function renderAgents() {
     }
     box.innerHTML = state.agents.map((a) => `
         <div class="agent-row">
-            <div><div class="nm">${escHtml(a.name)} <span class="ptype">${escHtml(personTypeLabel(a))}</span></div>
+            <div><div class="nm">${escHtml(a.name)} <span class="ptype">${escHtml(personTypeLabel(a))}</span>${agentBadgeForPerson(a.id) ? ` <span class="ptype" style="background:#1e3a5f;color:#7dd3fc">${escHtml(agentBadgeForPerson(a.id))}</span>` : ''}</div>
             <div class="ph">${escHtml(a.phone || '')} · ကော် ${a.commission || 0}% · အလျော် ${a.payout_rate || 80}</div></div>
             <div class="acts">
                 <button class="btn small gray" data-edit="${a.id}">✏️</button>
@@ -1940,7 +2019,7 @@ function renderAgents() {
         b.addEventListener('click', () => deleteAgent(b.dataset.delag)));
 }
 
-function openAgentModal(id) {
+async function openAgentModal(id) {
     state.editingAgentId = id;
     const a = id ? state.agents.find((x) => x.id === id) : null;
     $('agentModalTitle').textContent = a ? 'လူ ပြင်မယ်' : 'လူအသစ်';
@@ -1954,6 +2033,24 @@ function openAgentModal(id) {
     $('agLimitAmt').value = '';
     renderAgentLimitList();
     openModal('modal-agent');
+    // Pho Oct 21: fill the agent-account link picker (async, modal already open).
+    const linkSel = $('agLink');
+    if (linkSel) {
+        linkSel.innerHTML = '<option value="">— မချိတ်ထား —</option>';
+        try {
+            await loadAgentLinksAndUsers();
+            const links = state.agentLinks || {};
+            let linkedUser = '';
+            if (id) { for (const uid of Object.keys(links)) if (links[uid] === id) { linkedUser = uid; break; } }
+            for (const u of (state.agentUsers || [])) {
+                const opt = document.createElement('option');
+                opt.value = u.id;
+                opt.textContent = (u.num ? 'Agent ' + u.num + ' · ' : '') + (u.name || '');
+                if (u.id === linkedUser) opt.selected = true;
+                linkSel.appendChild(opt);
+            }
+        } catch (e) { /* picker stays empty; person fields unaffected */ }
+    }
 }
 
 /** Render per-number limits in the person modal. */
@@ -2001,13 +2098,26 @@ async function saveAgent() {
         payout_rate: Number($('agPayout').value) || 80,
         limits: Object.assign({}, state.editingLimits || {}),
     };
+    let personId = state.editingAgentId;
     if (state.editingAgentId) {
         const a = state.agents.find((x) => x.id === state.editingAgentId);
         Object.assign(a, data);
         await updateRecord('agents', a);
     } else {
-        await createRecord('agents', data);
+        const created = await createRecord('agents', data);
+        personId = created && created.id;
     }
+    // Pho Oct 21: persist the agent-account link (app_settings agentlink_<userId>).
+    try {
+        const sel = $('agLink');
+        const selUser = sel ? sel.value : '';
+        const links = state.agentLinks || {};
+        for (const uid of Object.keys(links)) {
+            if (personId && links[uid] === personId && uid !== selUser) await setSetting('agentlink_' + uid, '');
+        }
+        if (selUser && personId) await setSetting('agentlink_' + selUser, personId);
+        await loadAgentLinksAndUsers();
+    } catch (e) { /* link is best-effort; person data already saved */ }
     closeModal('modal-agent');
     await loadAgents();
     renderAgents();
@@ -2027,6 +2137,7 @@ async function deleteAgent(id) {
 /* ================= DAILY SUMMARY ================= */
 
 async function openDaily(sessionId) {
+    await loadAgentLinksAndUsers();
     const s = state.sessions.find((x) => x.id === sessionId);
     const recs = await db.query('lottery_records', 'by_session', sessionId);
     const wins = await _getWins(sessionId);
@@ -2046,7 +2157,7 @@ async function openDaily(sessionId) {
         // Behind the scenes ("နောက်ကွယ်ကတွက်မယ်") the net uses win × payout (80).
         // Bettors: Pho PAYS winnings (deduct). Akan: bookie PAYS Pho (add).
         if (winNum && String(r.number).padStart(2, '0') === winNum) {
-            const ag0 = state.agents.find((a) => a.name === pLabel[key]);
+            const ag0 = resolveAgentForBucket(pkey, pLabel[key]);
             const payout = ag0 ? (Number(ag0.payout_rate) || 80) : 80;
             per[key].win += amt;
             per[key].winDeduct += amt * payout;
@@ -2055,7 +2166,7 @@ async function openDaily(sessionId) {
     let rows = '', tBet = 0, tWin = 0, tComm = 0, tWinDeductPos = 0, tWinDeductAkan = 0, tNet = 0;
     for (const [key, v] of Object.entries(per)) {
         const label = pLabel[key];
-        const ag = state.agents.find((a) => a.name === label);
+        const ag = resolveAgentForBucket(key.replace(/^(akan|pos):/, ''), label);
         const comm = ag ? (Number(ag.commission) || 0) : 0;
         const commAmt = Math.round(v.bet * comm / 100);
         // Bettors: ကျန် = ထိုးငွေ − ကော် − (အပေါက် × 80). Pho pays winners.
@@ -2107,7 +2218,7 @@ function dailyAggFromRecords(recs, winNum) {
         per[key].bet += isAkan ? -amt : amt;
         if (winNum && String(r.number).padStart(2, '0') === winNum) {
             per[key].win += amt;
-            const ag0 = state.agents.find((a) => a.name === pLabel[key]);
+            const ag0 = resolveAgentForBucket(pkey, pLabel[key]);
             const payout = ag0 ? (Number(ag0.payout_rate) || 80) : 80;
             per[key].winDeduct += amt * payout;
         }
@@ -2115,7 +2226,7 @@ function dailyAggFromRecords(recs, winNum) {
     let rows = '', tBet = 0, tWin = 0, tNet = 0;
     for (const [key, v] of Object.entries(per)) {
         const label = pLabel[key];
-        const ag = state.agents.find((a) => a.name === label);
+        const ag = resolveAgentForBucket(key.replace(/^(akan|pos):/, ''), label);
         const comm = ag ? (Number(ag.commission) || 0) : 0;
         const commAmt = Math.round(v.bet * comm / 100);
         const net = v.isAkan ? v.bet - commAmt + v.winDeduct : v.bet - commAmt - v.winDeduct;
@@ -2129,6 +2240,7 @@ function dailyAggFromRecords(recs, winNum) {
 }
 
 async function renderHomeDaily() {
+    await loadAgentLinksAndUsers();
     const dateInput = $('homeDailyDate');
     if (!_homeDailyDate) {
         const today = new Date();
@@ -2224,6 +2336,7 @@ function shortTimeType(tt) {
 }
 
 async function renderWeekly() {
+    await loadAgentLinksAndUsers();
     const box = $('weeklyContent');
     const offset = state.weeklyOffset || 0;
     const mon = mondayOf(new Date());
@@ -2269,7 +2382,7 @@ async function renderWeekly() {
             if (amt !== 0) d.has = true;
             d.bet += isAkan ? -amt : amt;
             if (winNum && String(r.number).padStart(2, '0') === winNum) {
-                const ag0 = state.agents.find((a) => a.name === agg[rk].label);
+                const ag0 = resolveAgentForBucket(agg[rk].pkey, agg[rk].label);
                 const payout = ag0 ? (Number(ag0.payout_rate) || 80) : 80;
                 d.win += amt;
                 d.winDeduct += amt * payout;
@@ -2289,7 +2402,7 @@ async function renderWeekly() {
     let grandTotal = 0;
     const rows = rowOrder.map((rk) => {
         const e = agg[rk];
-        const ag = state.agents.find((a) => a.name === e.label);
+        const ag = resolveAgentForBucket(e.pkey, e.label);
         const comm = ag ? (Number(ag.commission) || 0) : 0;
         const cells = []; // 10 cells: [day0am, day0pm, day1am, ...]
         let rowTotal = 0;
@@ -2319,7 +2432,7 @@ async function renderWeekly() {
                 const key = `woverride_${state.weeklyMonday}_${e.pkey}_${days[di].ds}_${ampm}`;
                 const ov = await getSetting(key, null);
                 if (ov) {
-                    const ag = state.agents.find((a) => a.name === e.label);
+                    const ag = resolveAgentForBucket(e.pkey, e.label);
                     const comm = ag ? (Number(ag.commission) || 0) : 0;
                     const payout = ag ? (Number(ag.payout_rate) || 80) : 80;
                     const bet = Number(ov.bet) || 0;
