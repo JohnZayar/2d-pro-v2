@@ -146,7 +146,13 @@ async function _pushOne(entry) {
                 await _adoptSession(localId, items[0]);
                 return; // adopted — never create a second one
             }
-        } catch (e) { /* gate unreachable (offline): the normal create below also fails safe and stays queued */ }
+        } catch (e) {
+            // Pho Oct 21: NO PROOF, NO CREATE. If the gate cannot verify,
+            // stay queued and retry — never fall through to a blind create.
+            // (A 5 KB/s timeout here minted a twin while the original
+            // session had already been on the server for 5 minutes.)
+            throw e;
+        }
     }
 
     const local = await db.get(collection, localId);
