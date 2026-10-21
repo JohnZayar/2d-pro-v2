@@ -154,6 +154,11 @@ export function expandFormula(fullNoText) {
                     if (i !== j) generatedNums.push(d[i] + d[j]);
                 }
             }
+        } else if (cleanNo.length === 1) {
+            // Pho Oct 21: single digit + r/အာ/@ = အပါ set (same as bare digit)
+            const sdSeen = new Set();
+            for (let i = 0; i <= 9; i++) { sdSeen.add(`${cleanNo}${i}`); sdSeen.add(`${i}${cleanNo}`); }
+            sdSeen.forEach((x) => generatedNums.push(x));
         } else {
             generatedNums.push(cleanNo);
         }
@@ -400,13 +405,18 @@ export function parseLine(line) {
             }
         });
     };
+    // Pho Oct 21: a BARE single digit + (အာ/r/R/@) means အပါ — the 19-number
+    // contains-set, exactly like 1ပါ (a single digit has no reverse).
+    // Two-digit operands keep the reverse meaning (12အာ = 12 + 21).
+    const isBareDigit = (t) => /^\d$/.test((t || '').trim());
 
     // 1) "formula=mainAmt r rAmt"  e.g. "12=500r200"
     let m = convertedLine.match(/^(.+?)\s*=\s*(\d+)\s*[rR]\s*(\d+)$/);
     if (m) {
         const expanded = expandFormula(m[1].trim());
         if (expanded.length > 0) {
-            pushWithReverse(expanded, parseInt(m[2], 10), parseInt(m[3], 10));
+            if (isBareDigit(m[1])) pushNums(expanded, parseInt(m[2], 10));
+            else pushWithReverse(expanded, parseInt(m[2], 10), parseInt(m[3], 10));
             return results;
         }
     }
@@ -420,7 +430,7 @@ export function parseLine(line) {
         if (hasR) leftPart = leftPart.slice(0, -1).trim();
         const exp = expandFormula(leftPart);
         if (exp.length > 0 && !isNaN(mainAmt) && mainAmt > 0) {
-            if (hasR) pushWithReverse(exp, mainAmt, mainAmt);
+            if (hasR && !isBareDigit(leftPart)) pushWithReverse(exp, mainAmt, mainAmt);
             else pushNums(exp, mainAmt);
             return results;
         }
@@ -433,7 +443,8 @@ export function parseLine(line) {
         const mainAmt = parseInt(m[2], 10);
         const rAmt = parseInt(m[3], 10);
         if (exp.length > 0 && mainAmt > 0) {
-            pushWithReverse(exp, mainAmt, rAmt);
+            if (isBareDigit(m[1])) pushNums(exp, mainAmt);
+            else pushWithReverse(exp, mainAmt, rAmt);
             return results;
         }
     }
@@ -461,7 +472,7 @@ export function parseLine(line) {
         const exp = expandFormula(formulaPart);
         const isPlainNums = !/ထိပ်|နောက်|ပတ်|ပါ|ဘရိတ်|ရိတ်|ခွေ|ပူး|ပါဝါ|နက္ခတ်|စုံ|ညီအစ်ကို|bk/i.test(formulaPart);
         if (exp.length > 0 && amt > 0) {
-            if (isPlainNums) pushWithReverse(exp, amt, amt);
+            if (isPlainNums && !isBareDigit(formulaPart)) pushWithReverse(exp, amt, amt);
             else pushNums(exp, amt);
             return results;
         }
@@ -476,7 +487,7 @@ export function parseLine(line) {
         if (hasR) leftPart = leftPart.slice(0, -1).trim();
         const exp = expandFormula(leftPart);
         if (exp.length > 0 && !isNaN(amt) && amt > 0) {
-            if (hasR) pushWithReverse(exp, amt, amt);
+            if (hasR && !isBareDigit(leftPart)) pushWithReverse(exp, amt, amt);
             else pushNums(exp, amt);
             return results;
         }
