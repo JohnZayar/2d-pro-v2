@@ -1,5 +1,5 @@
 /**
- * Simplified Sync v1 (Pho Oct 19)
+ * Simplified Sync v1 (Pho Oct 19) + v10 incremental pull (Oct 21, clone test build)
  * 
  * Design:
  * 1. Server ID only: Local `id` IS the PocketBase record ID. No _pbId mapping.
@@ -312,49 +312,113 @@ function _toServerPayload(obj) {
 }
 
 /** Pull all collections from server, overwrite local. */
+/* ================================================================
+ * Pull — incremental with daily full reconciliation (Sync v10,
+ * Pho Oct 21, option A; built in the CLONE for testing first).
+ *
+ * - First pull ever (no watermark) and the FIRST pull of each day
+ *   run FULL: download everything, delete local orphans (with the
+ *   v9 protections: queue re-read at deletion time + 5-min grace).
+ *   That daily pass is how deletions propagate — a deleted row is
+ *   simply absent on the server, which only a full comparison sees.
+ * - Every other pull is INCREMENTAL: per collection, fetch only
+ *   rows whose server `updated` is >= (watermark - 5 min overlap).
+ *   The watermark is the newest server `updated` applied for that
+ *   collection; it advances ONLY after that collection's fetch
+ *   completes, so an interrupted pull loses nothing — the next
+ *   pull re-fetches the same window (upserts are idempotent).
+ * - Watermark values come from the SERVER's own `updated` fields,
+ *   never the phone clock, so a wrong phone clock can't skip rows.
+ * - Watermarks are keyed by user id: a different account logging in
+ *   on the same phone starts from a full pull, never a stale mark.
+ * ================================================================ */
+function _wmScope() {
+    let uid = 'anon';
+    try { const u = pb.getUser(); if (u && u.id) uid = u.id; } catch (e) {}
+    return 'syncv10_' + uid + '_';
+}
+function _todayStr() {
+    const d = new Date();
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+function _pbDateTime(ms) { return new Date(ms).toISOString().replace('T', ' '); }
+
 export async function pullUpdates() {
     if (_syncing) return { pulled: 0, skipped: true };
     try { pb.loadAuth(); } catch (e) {}
     if (!pb.isLoggedIn()) return { pulled: 0, skipped: true, reason: 'not-logged-in' };
-    
+
     _syncing = true;
     let pulled = 0;
     const errors = [];
     try {
         const collections = ['sessions', 'lottery_records', 'winning_numbers', 'agents', 'app_settings'];
+        const scope = _wmScope();
+        let fullDay = '';
+        try { fullDay = localStorage.getItem(scope + 'full_day') || ''; } catch (e) {}
+        const needFullDay = fullDay !== _todayStr();
+        let fullDayOk = true;
         for (const coll of collections) {
+            let wmMs = 0;
+            try { wmMs = Date.parse(localStorage.getItem(scope + 'wm_' + coll) || '') || 0; } catch (e) {}
+            const full = needFullDay || !wmMs;
             try {
-                const items = await pb.listAll(coll, { sort: '-updated' });
-                const serverIds = new Set(items.map(i => i.id));
-                for (const item of items) {
-                    const rec = _fromServer(item);
-                    await db.put(coll, rec);
-                    pulled++;
-                }
-                // Delete local orphans not on server (cleans duplicates).
-                // Pho Oct 21: re-read the queue NOW, at deletion time — not at
-                // pull start. A record saved DURING this (long, slow-network)
-                // pull has a queue entry by the time we get here, and must
-                // NEVER be wiped as an "orphan": on Oct 21 a board save
-                // mid-pull vanished from the Agent's own phone even though it
-                // reached the server, and only reappeared on a later pull.
-                // Second lock: never wipe a just-created local record
-                // (5-minute grace) even if its queue entry is not visible yet.
-                try {
-                    const qNow = await db.getAll('sync_queue');
-                    const pendingNow = new Set(qNow.map(e => e.localId).filter(Boolean));
-                    const locals = await db.getAll(coll);
-                    for (const local of locals) {
-                        const fresh = local.created && (Date.now() - local.created) < 5 * 60 * 1000;
-                        if (!serverIds.has(local.id) && !pendingNow.has(local.id) && !fresh) {
-                            await db.del(coll, local.id).catch(() => {});
-                        }
+                if (full) {
+                    const items = await pb.listAll(coll, { sort: '-updated' });
+                    const serverIds = new Set(items.map(i => i.id));
+                    let maxMs = wmMs;
+                    for (const item of items) {
+                        const rec = _fromServer(item);
+                        await db.put(coll, rec);
+                        pulled++;
+                        const t = Date.parse(item.updated);
+                        if (!isNaN(t) && t > maxMs) maxMs = t;
                     }
-                } catch (e) { /* ignore */ }
+                    // Delete local orphans not on server (cleans duplicates).
+                    // Pho Oct 21: re-read the queue NOW, at deletion time — not at
+                    // pull start. A record saved DURING this (long, slow-network)
+                    // pull has a queue entry by the time we get here, and must
+                    // NEVER be wiped as an "orphan": on Oct 21 a board save
+                    // mid-pull vanished from the Agent's own phone even though it
+                    // reached the server, and only reappeared on a later pull.
+                    // Second lock: never wipe a just-created local record
+                    // (5-minute grace) even if its queue entry is not visible yet.
+                    try {
+                        const qNow = await db.getAll('sync_queue');
+                        const pendingNow = new Set(qNow.map(e => e.localId).filter(Boolean));
+                        const locals = await db.getAll(coll);
+                        for (const local of locals) {
+                            const fresh = local.created && (Date.now() - local.created) < 5 * 60 * 1000;
+                            if (!serverIds.has(local.id) && !pendingNow.has(local.id) && !fresh) {
+                                await db.del(coll, local.id).catch(() => {});
+                            }
+                        }
+                    } catch (e) { /* ignore */ }
+                    if (maxMs > wmMs) { try { localStorage.setItem(scope + 'wm_' + coll, new Date(maxMs).toISOString()); } catch (e) {} }
+                } else {
+                    // Incremental: only rows changed since the watermark
+                    // (5-minute overlap window; re-applied rows are harmless
+                    // upserts). NO orphan deletion in this mode — deletions
+                    // are reconciled by the daily full pass.
+                    const since = _pbDateTime(wmMs - 5 * 60 * 1000);
+                    const items = await pb.listAll(coll, { filter: `updated >= "${since}"`, sort: 'updated' });
+                    let maxMs = wmMs;
+                    for (const item of items) {
+                        const rec = _fromServer(item);
+                        await db.put(coll, rec);
+                        pulled++;
+                        const t = Date.parse(item.updated);
+                        if (!isNaN(t) && t > maxMs) maxMs = t;
+                    }
+                    // Advance the watermark ONLY after the whole fetch landed.
+                    if (maxMs > wmMs) { try { localStorage.setItem(scope + 'wm_' + coll, new Date(maxMs).toISOString()); } catch (e) {} }
+                }
             } catch (err) {
                 errors.push(coll + ': ' + err.message);
+                if (full) fullDayOk = false;
             }
         }
+        if (needFullDay && fullDayOk) { try { localStorage.setItem(scope + 'full_day', _todayStr()); } catch (e) {} }
     } finally {
         _syncing = false;
     }
