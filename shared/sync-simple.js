@@ -141,7 +141,13 @@ export async function pushPending() {
                 pushed++;
             } catch (err) {
                 // Keep in queue for retry. Never auto-drop (Pho: records must not be lost).
-                // Continue with next (don't break) — one bad entry shouldn't block others.
+                // Stamp the attempt count (re-read fresh — the session gate may
+                // have rewritten this entry). A RETRIED create is verified with
+                // getOne BEFORE any re-send, so it never fires a blind 400.
+                try {
+                    const fresh = await db.get('sync_queue', entry.id);
+                    if (fresh) { fresh.attempts = (fresh.attempts || 0) + 1; await db.put('sync_queue', fresh); }
+                } catch (e) { /* ignore */ }
                 _lastPushError = _fmtErr(err);
                 failed++;
             }
@@ -184,6 +190,21 @@ async function _pushOne(entry) {
             // (A 5 KB/s timeout here minted a twin while the original
             // session had already been on the server for 5 minutes.)
             throw e;
+        }
+    }
+
+    // Pho Oct 21: a RETRIED create (attempts > 0) may already be on the
+    // server — its first response was lost. Verify with getOne BEFORE
+    // re-sending: if it's there, adopt silently (no blind POST, no 400).
+    // If the verify itself fails on the network, stay queued — no proof,
+    // no create. (Sessions are exempt: the gate above already proves them.)
+    if (op === 'create' && collection !== 'sessions' && entry.attempts > 0 && localId) {
+        try {
+            const ex = await pb.getOne(collection, localId);
+            if (ex && ex.id) return; // already there — adopt
+        } catch (e) {
+            if (!(e && (e.code === 404 || e.status === 404))) throw e;
+            // 404 = truly not there — fall through and create.
         }
     }
 
@@ -300,13 +321,6 @@ export async function pullUpdates() {
     let pulled = 0;
     const errors = [];
     try {
-        // Pho Oct 19: Get pending IDs from queue — don't delete unsynced local records.
-        let pendingIds = new Set();
-        try {
-            const queue = await db.getAll('sync_queue');
-            pendingIds = new Set(queue.map(e => e.localId).filter(Boolean));
-        } catch (e) { /* ignore */ }
-        
         const collections = ['sessions', 'lottery_records', 'winning_numbers', 'agents', 'app_settings'];
         for (const coll of collections) {
             try {
@@ -317,12 +331,22 @@ export async function pullUpdates() {
                     await db.put(coll, rec);
                     pulled++;
                 }
-                // Pho Oct 19: Delete local orphans not on server (cleans duplicates).
-                // Skip pending (unsynced) records — they're waiting to push.
+                // Delete local orphans not on server (cleans duplicates).
+                // Pho Oct 21: re-read the queue NOW, at deletion time — not at
+                // pull start. A record saved DURING this (long, slow-network)
+                // pull has a queue entry by the time we get here, and must
+                // NEVER be wiped as an "orphan": on Oct 21 a board save
+                // mid-pull vanished from the Agent's own phone even though it
+                // reached the server, and only reappeared on a later pull.
+                // Second lock: never wipe a just-created local record
+                // (5-minute grace) even if its queue entry is not visible yet.
                 try {
+                    const qNow = await db.getAll('sync_queue');
+                    const pendingNow = new Set(qNow.map(e => e.localId).filter(Boolean));
                     const locals = await db.getAll(coll);
                     for (const local of locals) {
-                        if (!serverIds.has(local.id) && !pendingIds.has(local.id)) {
+                        const fresh = local.created && (Date.now() - local.created) < 5 * 60 * 1000;
+                        if (!serverIds.has(local.id) && !pendingNow.has(local.id) && !fresh) {
                             await db.del(coll, local.id).catch(() => {});
                         }
                     }
