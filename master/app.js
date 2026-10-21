@@ -677,6 +677,15 @@ async function createRecord(collection, data) {
 
 async function updateRecord(collection, obj) {
     obj._updated = Date.now();
+    // Pho Oct 21: sync-simple rows carry no _pbId, so the old
+    // "_pbId ? 'update' : 'create'" guess sent every EDIT as a create —
+    // the server then "adopted" it and silently dropped the changes
+    // (session limit, blocked numbers, person edits reverted after sync).
+    // Decide by local existence instead: a row already in the local DB
+    // is an edit ('update' — sync falls back to create if the server
+    // somehow lacks it); only a genuinely new row is a 'create'.
+    let existed = false;
+    try { existed = !!(await db.get(collection, obj.id)); } catch (e) { /* ignore */ }
     await db.put(collection, obj);
     if (pb.isLoggedIn() && sync.isOnline() && obj._pbId) {
         try {
@@ -685,7 +694,7 @@ async function updateRecord(collection, obj) {
             return obj;
         } catch (e) { /* fall through → queue */ }
     }
-    await sync.queueOp({ op: obj._pbId ? 'update' : 'create', collection, localId: obj.id, data: obj });
+    await sync.queueOp({ op: existed ? 'update' : 'create', collection, localId: obj.id, data: obj });
     updateSyncPill();
     return obj;
 }
@@ -723,7 +732,11 @@ async function writeBatchAcks() {
         if (!pb.isLoggedIn()) return;
     } catch (e) { return; }
     try {
-        const res = await pb.list('lottery_records', { perPage: 100, sort: '-created' });
+        // Pho Oct 21: scan ALL records, not just the newest 100 — a batch
+        // that fell out of the 100-record window never got its ack and was
+        // never re-checked (TL batch 2, 156 records, stayed Ok-less while
+        // batches 1, 3, 4 were acked).
+        const res = await pb.listAll('lottery_records', { sort: '-created' });
         const records = res.items || res;
         const seen = new Map();
         for (const r of records) {
