@@ -101,8 +101,40 @@ export async function pushPending() {
     try {
         const queue = (await db.getAll('sync_queue'))
             .sort((a, b) => (a.created || 0) - (b.created || 0));
-        
+
+        // Pho Oct 21: PRE-FLIGHT — a create whose response was lost last
+        // time is ALREADY on the server. Ask once per chunk which queued
+        // create IDs exist, and adopt those WITHOUT re-sending. (A blind
+        // re-send costs a 400 + a verify round-trip each; bursts of them
+        // made sync crawl.) Skipping a send can never duplicate a record —
+        // it is already there exactly once, under the same ID.
+        const adopted = new Set();
+        try {
+            const byColl = {};
+            for (const e of queue) {
+                if (e.op === 'create' && e.localId) (byColl[e.collection] = byColl[e.collection] || []).push(e);
+            }
+            for (const coll of Object.keys(byColl)) {
+                const ops = byColl[coll];
+                for (let i = 0; i < ops.length; i += 20) {
+                    const chunk = ops.slice(i, i + 20);
+                    const filter = chunk.map((e) => `id="${e.localId}"`).join(' || ');
+                    const res = await pb.list(coll, { filter, perPage: 50 });
+                    const items = res && res.items ? res.items : (Array.isArray(res) ? res : []);
+                    const found = new Set(items.map((r) => r.id));
+                    for (const e of chunk) {
+                        if (found.has(e.localId)) {
+                            adopted.add(e.id);
+                            await db.del('sync_queue', e.id).catch(() => {});
+                            pushed++;
+                        }
+                    }
+                }
+            }
+        } catch (e) { /* pre-flight failed (offline): per-op path below still protects via 400-adopt */ }
+
         for (const entry of queue) {
+            if (adopted.has(entry.id)) continue;
             try {
                 await _pushOne(entry);
                 await db.del('sync_queue', entry.id).catch(() => {});
@@ -177,6 +209,15 @@ async function _pushOne(entry) {
                 }
             }
         } catch (err) {
+            // Lost response? The create may have landed before the reply
+            // died. Verify once, right now — if it is there, adopt it
+            // instead of queueing a blind re-send for the next sync.
+            if (op === 'create' && localId && err && (err.code === 'NETWORK_ERROR' || err.code === 'TIMEOUT')) {
+                try {
+                    const ex = await pb.getOne(collection, localId);
+                    if (ex && ex.id) return; // landed — adopt
+                } catch (e2) { /* verify failed too — stay queued */ }
+            }
             // If 400 and we have localId, check if it already exists (lost-response retry)
             if (localId && err && (err.code === 400 || err.status === 400)) {
                 try {
