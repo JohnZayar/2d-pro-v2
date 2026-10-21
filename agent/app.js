@@ -1068,7 +1068,6 @@ window.renderRecordsView = async function renderRecordsView() {
     const prevSess = sessSel.value;
 
     let pHtml = '<option value="__all">-- အားလုံး --</option>';
-    pHtml += '<option value="">🧍 ကိုယ်တိုင်</option>';
     pHtml += players.map((p) => '<option value="' + escHtml(p.name) + '">' + escHtml(p.name) + '</option>').join('');
     playerSel.innerHTML = pHtml;
     if (prevPlayer !== undefined && Array.from(playerSel.options).some((o) => o.value === prevPlayer)) {
@@ -1455,8 +1454,7 @@ window.openBoard = function openBoard() {
 async function populateBoardPlayer() {
     const sel = $('boardPlayer');
     const players = await getPlayers();
-    sel.innerHTML = '<option value="">🧍 ကိုယ်တိုင်</option>' +
-        players.map((p) => '<option value="' + escHtml(p.name) + '">' + escHtml(p.name) + '</option>').join('');
+    sel.innerHTML = players.map((p) => '<option value="' + escHtml(p.name) + '">' + escHtml(p.name) + '</option>').join('');
     sel.value = players.length ? players[0].name : '';
 }
 
@@ -1736,7 +1734,6 @@ window.renderDaily = async function renderDaily() {
     const players = await getPlayers().catch(() => []);
     const prevVal = playerSel.value;
     let pHtml = '<option value="__all">-- အားလုံး --</option>';
-    pHtml += '<option value="">🧍 ကိုယ်တိုင်</option>';
     pHtml += players.map((p) => '<option value="' + escHtml(p.name) + '">' + escHtml(p.name) + '</option>').join('');
     playerSel.innerHTML = pHtml;
     if (prevVal && Array.from(playerSel.options).some((o) => o.value === prevVal)) {
