@@ -813,3 +813,8 @@ tr.win-row td { background: rgba(250,204,21,.15); }
 .offline-contact { display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px; }
 .offline-btn { display: block; padding: 12px; background: #1e293b; border: 1px solid #334155; border-radius: 10px; color: #fff; text-decoration: none; font-size: 16px; font-weight: 600; }
 .offline-btn:active { background: #38bdf8; color: #fff; }
+
+/* voucher formula expansion (စာရင်းဖြေ) */
+.vx-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px 10px; font-size: 13px; font-weight: 400; letter-spacing: 0; }
+.vx-chip.win { color: #f5c542; font-weight: 700; }
+.v-table tr.vx-row td { background: rgba(127, 127, 127, 0.08); }
