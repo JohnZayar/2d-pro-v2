@@ -1216,7 +1216,7 @@ window.renderRecordsView = async function renderRecordsView() {
                             const ft = (grp[0].formula_text || '').trim();
                             const total = grp.reduce((s, r) => s + (Number(r.amount) || 0), 0);
                             const ids = grp.map((r) => r.id).join(',');
-                            return '<tr data-rids="' + escHtml(ids) + '" style="user-select:none;-webkit-user-select:none;"><td>' + escHtml(ft) + '</td><td>(' + grp.length + ') ' + formatMoney(total) + '</td></tr>';
+                            return '<tr data-rids="' + escHtml(ids) + '" style="user-select:none;-webkit-user-select:none;"><td>' + escHtml(ft) + '</td><td>(' + grp.length + ') ' + formatMoney(total) + '</td></tr>' + voucherExpandRow(grp, winNums);
                         }
                         const r = grp[0];
                         const numStr = String(r.number).padStart(2, '0');
@@ -1237,6 +1237,15 @@ window.renderRecordsView = async function renderRecordsView() {
 };
 
 /* ================= Voucher actions: Copy / Print / Share ================= */
+
+/** Voucher formula-group expansion row (စာရင်းဖြေ): the group's numbers, hidden until the formula row is tapped. */
+function voucherExpandRow(grp, winNums) {
+    const chips = grp.map((r) => {
+        const ns = String(r.number).padStart(2, '0');
+        return '<span class="vx-chip' + (winNums.has(ns) ? ' win' : '') + '">' + ns + ' · ' + formatMoney(r.amount) + '</span>';
+    }).join('');
+    return '<tr class="vx-row" hidden><td colspan="2"><div class="vx-grid">' + chips + '</div></td></tr>';
+}
 
 function buildVoucherText() {
     const v = lastVoucher;
@@ -2310,3 +2319,23 @@ window.resetAgentApp = async function resetAgentApp() {
     };
 })();
 
+
+
+/* Tap a voucher formula row -> toggle its စာရင်းဖြေ expansion.
+   A long-press (>500ms) still opens the group menu and must NOT toggle. */
+(function () {
+    let downAt = 0, downRow = null;
+    const mark = (e) => {
+        const tr = e.target && e.target.closest ? e.target.closest('tr[data-rids]') : null;
+        if (tr) { downAt = Date.now(); downRow = tr; }
+    };
+    document.addEventListener('touchstart', mark, { passive: true });
+    document.addEventListener('mousedown', mark);
+    document.addEventListener('click', (e) => {
+        const tr = e.target && e.target.closest ? e.target.closest('tr[data-rids]') : null;
+        if (!tr) return;
+        if (tr === downRow && Date.now() - downAt > 500) return;
+        const nx = tr.nextElementSibling;
+        if (nx && nx.classList.contains('vx-row')) nx.hidden = !nx.hidden;
+    });
+})();
