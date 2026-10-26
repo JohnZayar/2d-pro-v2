@@ -14,7 +14,7 @@
 
 import * as db from '../shared/db.js?v=3';
 import * as pb from '../shared/pb.js?v=4';
-import * as sync from '../shared/sync-simple.js?v=10';
+import * as sync from '../shared/sync-simple.js?v=11';
 import { parseBoardReport, parseLine } from '../shared/parser.js?v=15';
 
 // Global safety net: log unhandled promise rejections instead of failing silently.
@@ -671,6 +671,15 @@ window.savePlayer = async function savePlayer() {
 window.deletePlayer = async function deletePlayer(id) {
     const p = await db.get('players', id);
     if (!p) return;
+    // Pho Oct 26: refuse when the player still has records — the server
+    // rejects such deletes (required relation) and the queue entry would
+    // stick forever, lighting the red pill in both apps (shared DB).
+    // Records link players by player_name (text), not by id.
+    try {
+        const recs = await db.getAll('lottery_records').catch(() => []);
+        const mine = recs.filter(r => r && r.player_name === p.name && (!p.tenant || !r.tenant || r.tenant === p.tenant));
+        if (mine.length) { showToast('❌ စာရင်း ရှိသေးလို့ ဖျက်မရဘူး (' + mine.length + ' ကွက်) — စာရင်းတွေ အရင် ဖျက်ပါ'); return; }
+    } catch (e) { /* check failed: fall through — the sync drop covers the server side */ }
     if (!confirm('"' + p.name + '" ကို ဖျက်မှာလား?')) return;
     await sync.mutate('delete', 'players', { id });
     await renderPlayers();
