@@ -7,7 +7,16 @@
  *    - Idempotent: retry with same ID doesn't duplicate (server returns 400, we adopt).
  * 2. FIFO queue: Push in creation order, sequentially. No parallel, no dependency ordering.
  *    - Sessions are created before records (UI flow), so FIFO naturally orders them.
- * 3. No tombstones: Delete = delete from server. If pull resurrects, it's a bug to fix.
+ * 3. Deletes: a delete the server REFUSES (400 required-relation, e.g. a
+ *    session whose records are kept by design, or a player with records)
+ *    is DROPPED from the queue with a clear message — retrying it forever
+ *    only kept the red pill lit in both apps (shared IndexedDB). The row
+ *    stays on the server and pull restores it locally: the delete did not
+ *    go through, and the app says so instead of pretending otherwise.
+ *    Sessions: Master's local tombstones (v2_deleted_sessions) ARE honored
+ *    on pull (v11) — a user-deleted session card never resurrects, even
+ *    when its server delete was refused. (v10 lost the old sync.js
+ *    tombstone filter; v11 restores it.)
  * 4. Pull: Full overwrite. Server wins. Simple.
  * 
  * API (same as old sync.js for drop-in replacement):
@@ -97,7 +106,11 @@ export async function pushPending() {
     if (!pb.isLoggedIn()) return { pushed: 0, failed: 0, skipped: true, reason: 'not-logged-in' };
     
     _syncing = true;
-    let pushed = 0, failed = 0;
+    // A clean run clears the last error: the pill must show the CURRENT
+    // run's state, not a stale failure from an earlier run (Pho Oct 26:
+    // the red pill stayed lit long after the underlying issue was gone).
+    _lastPushError = null;
+    let pushed = 0, failed = 0, dropped = 0;
     try {
         const queue = (await db.getAll('sync_queue'))
             .sort((a, b) => (a.created || 0) - (b.created || 0));
@@ -140,7 +153,18 @@ export async function pushPending() {
                 await db.del('sync_queue', entry.id).catch(() => {});
                 pushed++;
             } catch (err) {
-                // Keep in queue for retry. Never auto-drop (Pho: records must not be lost).
+                if (err && err._dropDelete) {
+                    // Server REFUSED this delete (required relation): retrying
+                    // can never succeed — the referencing rows are still there
+                    // by design (kept records). Drop it and say so plainly.
+                    // The row stays on the server and pull restores it locally.
+                    await db.del('sync_queue', entry.id).catch(() => {});
+                    _lastPushError = err.message;
+                    dropped++;
+                    continue;
+                }
+                // Keep in queue for retry. Never auto-drop CREATES/UPDATES
+                // (Pho: records must not be lost).
                 // Stamp the attempt count (re-read fresh — the session gate may
                 // have rewritten this entry). A RETRIED create is verified with
                 // getOne BEFORE any re-send, so it never fires a blind 400.
@@ -155,7 +179,7 @@ export async function pushPending() {
     } finally {
         _syncing = false;
     }
-    return { pushed, failed, skipped: false };
+    return { pushed, failed, dropped, skipped: false };
 }
 
 /** Push one queue entry. Local ID = Server ID. */
@@ -260,6 +284,15 @@ async function _pushOne(entry) {
             await pb.del(collection, localId);
         } catch (err) {
             if (err && err.code === 404) return; // Already gone, fine
+            // Server refuses: the row is still referenced by a required
+            // relation (e.g. a session whose records are kept for history,
+            // or a player with records). Retrying forever cannot succeed —
+            // signal the caller to drop it with a plain message.
+            if (err && err.code === 400 && /required relation/.test(err.message || '')) {
+                const e = new Error('ဖျက်မရဘူး — စာရင်း ရှိသေးတယ်');
+                e._dropDelete = true;
+                throw e;
+            }
             throw err;
         }
     }
@@ -343,6 +376,17 @@ function _todayStr() {
 }
 function _pbDateTime(ms) { return new Date(ms).toISOString().replace('T', ' '); }
 
+/** True if this device tombstoned (user-deleted) the given server session id.
+ *  Mirrors the old sync.js filter that v10 lost (Pho Oct 26: deleted
+ *  sessions resurrected on every pull because v10 never read this list).
+ *  Tombstone values are server ids (sync-simple rows carry no _pbId). */
+function _isSessionTombstoned(pbId) {
+    try {
+        const arr = JSON.parse(localStorage.getItem('v2_deleted_sessions') || '[]');
+        return Array.isArray(arr) && arr.includes(pbId);
+    } catch (e) { return false; }
+}
+
 export async function pullUpdates() {
     if (_syncing) return { pulled: 0, skipped: true };
     try { pb.loadAuth(); } catch (e) {}
@@ -368,6 +412,9 @@ export async function pullUpdates() {
                     const serverIds = new Set(items.map(i => i.id));
                     let maxMs = wmMs;
                     for (const item of items) {
+                        // Skip sessions the user deleted on this device
+                        // (tombstones) — never resurrect a deleted card.
+                        if (coll === 'sessions' && _isSessionTombstoned(item.id)) continue;
                         const rec = _fromServer(item);
                         await db.put(coll, rec);
                         pulled++;
@@ -404,6 +451,9 @@ export async function pullUpdates() {
                     const items = await pb.listAll(coll, { filter: `updated >= "${since}"`, sort: 'updated' });
                     let maxMs = wmMs;
                     for (const item of items) {
+                        // Skip sessions the user deleted on this device
+                        // (tombstones) — never resurrect a deleted card.
+                        if (coll === 'sessions' && _isSessionTombstoned(item.id)) continue;
                         const rec = _fromServer(item);
                         await db.put(coll, rec);
                         pulled++;
