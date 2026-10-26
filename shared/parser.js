@@ -18,6 +18,12 @@
  *              Lines that cannot be parsed are skipped (use parseBoardReport
  *              for per-line success info).
  *
+ * Oct 26 2026 (v16): Fix 1 — rule 4 allows a separator between a cover and its
+ * main amount ("35-ထိပ်-750r250" → cover @750 + swapped @250). Fix 2 — rule 5
+ * peels a trailing 3-4 digit group as the main amount ("…-1500r500" → mains
+ * @1500 + reverses @500). Fix 3 — trailing separators stripped from lines and
+ * combined parts ("6-ထိပ်-500-နောက်200" → 10 @500 + 10 @200).
+ *
  * Use as ES6 module:  import { parseBoard } from './parser.js'
  */
 
@@ -352,6 +358,9 @@ function splitCombinedFormula(line) {
         if (i > 0 && leadingDigits && part.startsWith(filtered[i].kw)) {
             part = leadingDigits + part;
         }
+        // Pho Oct 26 Fix 3: strip a trailing separator left by the cut before the
+        // next keyword ("6-ထိပ်-500-" → "6-ထိပ်-500") so the amount survives.
+        part = part.replace(/[\s\-,\/\.]+$/, '');
         if (part) parts.push(part);
     }
     return parts.length > 1 ? parts : [line];
@@ -371,6 +380,9 @@ export function parseLine(line) {
     cleanLine = cleanLine
         .replace(/အရှေ့/g, 'ထိပ်').replace(/ရှေ့/g, 'ထိပ်')
         .replace(/အနောက်/g, 'နောက်').replace(/အပိတ်/g, 'နောက်').replace(/ပိတ်/g, 'နောက်');
+
+    // Pho Oct 26 Fix 3: a trailing separator at line end is never meaningful.
+    cleanLine = cleanLine.replace(/[\s\-,\/\.]+$/, '');
 
     // Handle combined formulas: "5ထိပ်400နောက်100" → parse each part separately
     const cParts = splitCombinedFormula(cleanLine);
@@ -450,17 +462,25 @@ export function parseLine(line) {
     }
 
     // 4) jammed "formulaAmt r reverseAmt"  e.g. "6ထိပ်7000r3000"
-    m = convertedLine.match(/^(.+?[^0-9\s,.\-\/])(\d{2,})[rR](\d{2,})$/);
+    // Pho Oct 26 Fix 1: allow a separator between the cover and its main amount
+    // ("35-ထိပ်-750r250" → cover @750 + swapped @250). The separator form only
+    // applies to cover formulas (ထိပ်/နောက်); other formulas keep the old path
+    // (e.g. "123ခွေ-500r300" still gives 6 @300 via rule 5).
+    m = convertedLine.match(/^(.+?[^0-9\s,.\-\/])([\s,\-\/]*)(\d{2,})[rR](\d{2,})$/);
     if (m) {
         const formulaPart = m[1].trim();
-        const mainAmt = parseInt(m[2], 10);
-        const rAmt = parseInt(m[3], 10);
-        const exp = expandFormula(formulaPart);
-        const revExp = expandReverseFormula(formulaPart);
-        if (exp.length > 0 && mainAmt > 0) {
-            pushNums(exp, mainAmt);
-            pushNums(revExp, rAmt);
-            return results;
+        const seps = m[2];
+        const mainAmt = parseInt(m[3], 10);
+        const rAmt = parseInt(m[4], 10);
+        const isCover = /ထိပ်|နောက်/.test(formulaPart);
+        if (!(seps && !isCover)) {
+            const exp = expandFormula(formulaPart);
+            const revExp = expandReverseFormula(formulaPart);
+            if (exp.length > 0 && mainAmt > 0) {
+                pushNums(exp, mainAmt);
+                pushNums(revExp, rAmt);
+                return results;
+            }
         }
     }
 
@@ -472,7 +492,21 @@ export function parseLine(line) {
         const exp = expandFormula(formulaPart);
         const isPlainNums = !/ထိပ်|နောက်|ပတ်|ပါ|ဘရိတ်|ရိတ်|ခွေ|ပူး|ပါဝါ|နက္ခတ်|စုံ|ညီအစ်ကို|bk/i.test(formulaPart);
         if (exp.length > 0 && amt > 0) {
-            if (isPlainNums && !isBareDigit(formulaPart)) pushWithReverse(exp, amt, amt);
+            if (isPlainNums && !isBareDigit(formulaPart)) {
+                // Pho Oct 26 Fix 2: a trailing 3-4 digit group before r is the main
+                // amount ("10-30-50-17-37-57-1500r500" → mains @1500 + reverses @500).
+                // A 2-digit tail stays a number ("12-34r500" unchanged).
+                const peel = formulaPart.match(/^(.*)[\s,\-\/]+(\d{3,4})$/);
+                if (peel && peel[1].trim()) {
+                    const mains = expandFormula(peel[1].trim());
+                    const mainAmt = parseInt(peel[2], 10);
+                    if (mains.length > 0) {
+                        pushWithReverse(mains, mainAmt, amt);
+                        return results;
+                    }
+                }
+                pushWithReverse(exp, amt, amt);
+            }
             else pushNums(exp, amt);
             return results;
         }
