@@ -1120,12 +1120,22 @@ function sessionLabel(s) {
 
 async function renderSessions() {
     const box = $('sessionList');
+    await loadArchivedSessionIds();
     if (!state.sessions.length) {
         box.innerHTML = '<div class="empty">ပွဲ မရှိသေးပါ<br>“+” နှိပ်ပြီး အသစ်ဖန်တီးပါ</div>';
         return;
     }
+    const visible = state.sessions.filter((s) => !state.archivedSessionIds.has(s.id));
+    if (!visible.length) {
+        box.innerHTML = '<div class="empty">ပွဲတွေ ဝှက်ထားပါတယ်</div>';
+        return;
+    }
     let html = '';
-    for (const s of state.sessions) {
+    const bulkable = bulkArchivableSessions();
+    if (bulkable.length) {
+        html += `<button class="btn small gray" id="bulkArchiveBtn">အဟောင်းတွေ ဝှက် (${bulkable.length})</button>`;
+    }
+    for (const s of visible) {
         const recs = await db.query('lottery_records', 'by_session', s.id);
         const total = recs.reduce((t, r) => t + (Number(r.amount) || 0), 0);
         html += `<div class="card session-card">
@@ -1145,11 +1155,13 @@ async function renderSessions() {
                 <button class="btn small gray" data-act="blocked" data-id="${s.id}">🚫 ဒိုင်ပိတ်</button>
                 <button class="btn small gray" data-act="alltotal" data-id="${s.id}">💰 ALL Total</button>
                 <button class="btn small ${s.closed ? 'gray' : 'red'}" data-act="toggleclose" data-id="${s.id}">${s.closed ? '🔓 ဖွင့်' : '🔴 ပိတ်'}</button>
-                <button class="btn small red" data-act="del" data-id="${s.id}">🗑️</button>
+                <button class="btn small gray" data-act="archive" data-id="${s.id}">ဝှက်</button>
             </div>
         </div>`;
     }
     box.innerHTML = html;
+    const bulkBtn = $('bulkArchiveBtn');
+    if (bulkBtn) bulkBtn.addEventListener('click', bulkArchiveOldSessions);
     box.querySelectorAll('button[data-act]').forEach((b) => {
         b.addEventListener('click', () => sessionAction(b.dataset.act, b.dataset.id));
     });
@@ -1169,7 +1181,7 @@ async function sessionAction(act, id) {
     else if (act === 'blocked') { setActiveSession(id); openBlocked(id); }
     else if (act === 'alltotal') { setActiveSession(id); openAllTotal(id); }
     else if (act === 'toggleclose') toggleSessionClose(id);
-    else if (act === 'del') deleteSession(id);
+    else if (act === 'archive') archiveSession(id);
 }
 
 async function toggleSessionClose(id) {
@@ -1254,26 +1266,65 @@ async function saveSession() {
     showToast('✅ ပွဲ ဖန်တီးပြီးပြီ');
 }
 
-async function deleteSession(id) {
+/** Archived session ids (Pho Oct 27): one synced app_settings row per hidden
+ * session, key 'archived_<sessionId>'. Session ids are globally unique, so
+ * one buyer's archive can never hide another buyer's session. Only the card
+ * hides — records, winnings and Daily/Weekly history are untouched. */
+async function loadArchivedSessionIds() {
+    try {
+        const all = await db.getAll('app_settings');
+        const set = new Set();
+        for (const r of all) {
+            if (r.key && r.key.indexOf('archived_') === 0) set.add(r.key.slice(9));
+        }
+        state.archivedSessionIds = set;
+    } catch (e) { if (!state.archivedSessionIds) state.archivedSessionIds = new Set(); }
+    return state.archivedSessionIds;
+}
+
+/** Sessions the bulk-hide button covers: dated before today, never the
+ * active session, not already archived. Unparseable dates are skipped. */
+function bulkArchivableSessions() {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    return state.sessions.filter((s) => {
+        if (s.id === state.activeSessionId) return false;
+        if (state.archivedSessionIds && state.archivedSessionIds.has(s.id)) return false;
+        if (!s.date) return false;
+        const parts = String(s.date).split('.');
+        if (parts.length !== 3) return false;
+        const d = new Date(Number(parts[2]), Number(parts[1]) - 1, Number(parts[0]));
+        return !isNaN(d.getTime()) && d < today;
+    });
+}
+
+/** Bulk-hide old sessions (Pho Oct 27): buyers accumulate dozens of cards;
+ * one tap clears the old ones. Cards only — records and history stay. */
+async function bulkArchiveOldSessions() {
+    await loadArchivedSessionIds();
+    const targets = bulkArchivableSessions();
+    if (!targets.length) { showToast('ဝှက်စရာ မရှိပါ'); return; }
+    if (!confirm(`ပွဲ ${targets.length} ခု ဝှက်မှာလား?\nကဒ်ပဲ ပျောက်မယ် — စာရင်း၊ အချုပ်တွေ ကျန်မယ်။`)) return;
+    for (const s of targets) {
+        await setSetting('archived_' + s.id, state.tenantPbId || '');
+        state.archivedSessionIds.add(s.id);
+    }
+    await loadSessions();
+    renderSessions();
+    renderLedger();
+    showToast(`${targets.length} ပွဲ ဝှက်ပြီးပြီ`);
+}
+
+async function archiveSession(id) {
     const s = state.sessions.find((x) => x.id === id);
     if (!s) return;
-    if (!confirm(`"${sessionLabel(s)}" ကို ဖျက်မှာလား?\nပွဲစဥ်ကဒ်ပဲ ပျက်မယ် — စာရင်း၊ ပေါက်သီး၊ အချုပ်တွေ ကျန်မယ်။`)) return;
-    // Tombstone the server id so a later pull never resurrects this session,
-    // even if the server-side delete failed or is still queued.
-    try {
-        const pbId = s._pbId || s.id;
-        const raw = localStorage.getItem('v2_deleted_sessions');
-        const arr = raw ? JSON.parse(raw) : [];
-        if (!arr.includes(pbId)) {
-            arr.push(pbId);
-            if (arr.length > 500) arr.splice(0, arr.length - 500);
-        }
-        localStorage.setItem('v2_deleted_sessions', JSON.stringify(arr));
-    } catch (e) { /* ignore */ }
-    // NOTE: lottery_records are KEPT for Daily/Weekly history (2 weeks)
-    // They are auto-deleted when older than 2 weeks (see cleanupOldRecords)
-    // NOTE: winning_numbers are KEPT for ကျန်ဂဏန်း (10-week history)
-    await deleteRecord('sessions', s);
+    if (!confirm(`"${sessionLabel(s)}" ဝှက်မှာလား?\nကဒ်ပဲ ပျောက်မယ် — စာရင်း၊ ပေါက်သီး၊ အချုပ်တွေ ကျန်မယ်။`)) return;
+    // Archive (Pho Oct 27): a synced app_settings row — NOT a server delete,
+    // so PocketBase's required-relation rule never blocks it, and every
+    // device hides the card on its next pull. Records, winnings and
+    // Daily/Weekly history are untouched (they are date-based, not card-based).
+    await setSetting('archived_' + id, state.tenantPbId || '');
+    if (!state.archivedSessionIds) state.archivedSessionIds = new Set();
+    state.archivedSessionIds.add(id);
     if (state.activeSessionId === id) {
         state.activeSessionId = null;
         localStorage.removeItem('v2_active_session');
@@ -1281,7 +1332,7 @@ async function deleteSession(id) {
     await loadSessions();
     renderSessions();
     renderLedger();
-    showToast('🗑️ ဖျက်ပြီးပြီ');
+    showToast('ဝှက်ပြီးပြီ');
 }
 
 /* ================= DIGITAL BOARD ================= */
