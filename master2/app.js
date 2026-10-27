@@ -450,23 +450,25 @@ async function enterApp() {
     // Server-direct (Pho Oct 27): load straight from the server, no sync step.
     try {
         await ensureTenant();
-        // Clean up old records (>2 weeks, same rule as before) + old winnings (>10 weeks).
-        await cleanupOldRecords();
-        await cleanupOldWinnings();
     } catch (e) {
         console.warn('Initial load failed:', e.message);
     }
-    // Load server data for the first view.
+    // Load + render FIRST so the first view paints fast (Pho Oct 27: boot
+    // maintenance was blocking first paint on a slow line). Maintenance runs
+    // behind below — same work, same rules, just not blocking the UI.
     await loadSessions();
     await loadAgents();
-    // One-time backfill: denormalize dates onto records/winning numbers so
-    // history views survive session deletion (see backfillDates).
-    await backfillDates().catch((e) => console.warn('backfillDates failed:', e.message));
     await loadSettingsIntoUI();
     renderSessions();
     renderAgents();
     if (state.activeSessionId) renderLedger();
     updateSyncPill();
+    // Background maintenance (not awaited): old-record/winnings cleanup
+    // (>2 weeks / >10 weeks, same rules as before) + date backfill so history
+    // views survive session deletion. Failures only warn; next boot retries.
+    cleanupOldRecords().catch((e) => console.warn('cleanupOldRecords failed:', e.message));
+    cleanupOldWinnings().catch((e) => console.warn('cleanupOldWinnings failed:', e.message));
+    backfillDates().catch((e) => console.warn('backfillDates failed:', e.message));
     // Realtime: server pushes changes in ~1-2s; refresh ONLY the visible view.
     // No polling loop, no full sync. The transport carries no collection info
     // (see _refreshOnRealtime), so each burst refreshes the current view.
