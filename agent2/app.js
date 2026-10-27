@@ -658,6 +658,19 @@ window.closePlayerModal = function closePlayerModal() {
     editingPlayerId = null;
 };
 
+// Server-direct (Pho Oct 27): PocketBase returns field-level validation
+// detail in e.data.data (e.g. {phone: {message: '...'}}) but its top-level
+// message is just the generic 'Failed to create record.' — surface the
+// field detail so a failed save says WHICH field broke, not just that it did.
+function pbFieldDetail(e) {
+    const fields = e && e.data && e.data.data;
+    if (!fields || typeof fields !== 'object') return '';
+    return Object.keys(fields).map((f) => {
+        const v = fields[f];
+        return f + ': ' + ((v && v.message) ? v.message : 'invalid');
+    }).join(', ');
+}
+
 window.savePlayer = async function savePlayer() {
     const name = document.getElementById('playerNameInput').value.trim();
     const phone = document.getElementById('playerPhoneInput').value.trim();
@@ -690,7 +703,7 @@ window.savePlayer = async function savePlayer() {
         await renderPlayers();
         updateSyncPill();
     } catch (e) {
-        showToast('❌ သိမ်းမရပါ: ' + e.message);
+        showToast('❌ သိမ်းမရပါ: ' + (pbFieldDetail(e) || e.message));
     }
 };
 
