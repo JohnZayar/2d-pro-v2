@@ -24,6 +24,19 @@
  * @1500 + reverses @500). Fix 3 — trailing separators stripped from lines and
  * combined parts ("6-ထိပ်-500-နောက်200" → 10 @500 + 10 @200).
  *
+ * Oct 27 2026 (v17, Pho's written examples): "/" separates entries/groups
+ * ("3-8-bk-2500/1@1000" → 20 @2500 + 1ပါ 19 @1000 = 39;
+ * "7890/567-ခွေပူး-4000" → 16 + 9 = 25 — digits-only groups inherit the
+ * last part's keyword + amount). "/" keeps its OLD meanings for a bare
+ * trailing amount ("12/500") and for digit-lists before a digit-set keyword
+ * ("2/3/4 ပါ-3000" → 57). Rule 5 peel extended to 5+ digit amounts
+ * ("76-20000@15000" → 76 @20000 + 67 @15000). Odd-length digit run + r/@ =
+ * perms, no doubles ("16907r1000", "12457-@1000" → 20 each; even-length runs
+ * keep the old pair reading, e.g. "12-34r500"). New keywords, digit-required
+ * only (bare forms do NOT exist): digit + စုံကပ် = digit paired with each
+ * EVEN digit both orders (10 lines, overlaps kept); digit + မကပ် = digit
+ * paired with each ODD digit both orders (10 lines).
+ *
  * Use as ES6 module:  import { parseBoard } from './parser.js'
  */
 
@@ -247,6 +260,29 @@ export function expandFormula(fullNoText) {
         for (let i = 0; i <= 9; i += 2) for (let j = 1; j <= 9; j += 2) generatedNums.push(`${i}${j}`);
     } else if (cleanText.includes('မစုံ')) {
         for (let i = 1; i <= 9; i += 2) for (let j = 0; j <= 9; j += 2) generatedNums.push(`${i}${j}`);
+    } else if (cleanText.includes('စုံကပ်')) {
+        // Pho Oct 27 (v17): digit + စုံကပ် = digit paired with each EVEN digit,
+        // both orders (10 lines, overlaps kept — 0စုံကပ် has 00 twice).
+        // Digits come from BEFORE the keyword only (amount excluded), so a
+        // bare "စုံကပ်1000" yields nothing — bare forms do NOT exist.
+        const beforeKw = cleanText.split(/စုံကပ်/)[0];
+        const dStr = beforeKw.replace(/[^\d]/g, '');
+        const digits = dStr ? Array.from(new Set(dStr.split(''))) : [];
+        for (const d of digits) {
+            for (const e of ['0', '2', '4', '6', '8']) generatedNums.push(`${d}${e}`);
+            for (const e of ['0', '2', '4', '6', '8']) generatedNums.push(`${e}${d}`);
+        }
+    } else if (cleanText.includes('မကပ်')) {
+        // Pho Oct 27 (v17): digit + မကပ် = digit paired with each ODD digit,
+        // both orders (10 lines, overlaps kept — 1မကပ် has 11 twice).
+        // Bare မကပ် does NOT exist (digits from before the keyword only).
+        const beforeKw = cleanText.split(/မကပ်/)[0];
+        const dStr = beforeKw.replace(/[^\d]/g, '');
+        const digits = dStr ? Array.from(new Set(dStr.split(''))) : [];
+        for (const d of digits) {
+            for (const o of ['1', '3', '5', '7', '9']) generatedNums.push(`${d}${o}`);
+            for (const o of ['1', '3', '5', '7', '9']) generatedNums.push(`${o}${d}`);
+        }
     } else if (cleanText.includes('ညီအစ်ကို')) {
         return ['01', '10', '12', '21', '23', '32', '34', '43', '45', '54', '56', '65', '67', '76', '78', '87', '89', '98', '90', '09'];
     } else {
@@ -321,7 +357,7 @@ export function expandReverseFormula(formulaText) {
  */
 function splitCombinedFormula(line) {
     // Note: ခွေပူး variants must come FIRST so overlap logic keeps them as single units
-    const keywords = ['ထိုင်းနက္ခတ်', 'နက္ခတ်', 'ညီအစ်ကို', 'အခွေအပူးပါ', 'အခွေအပူး', 'ခွေပူးပါ', 'ခွေအပူး', 'အခွေပူး', 'ခွေပူး', 'ဘရိတ်', 'ပွင့်', 'Bk', 'bk', 'BK', 'ထိပ်', 'နောက်', 'ပတ်', 'အပါ', 'ပါ', 'အပူး', 'ပူး', 'အခွေ', 'ခွေ', 'စုံမ', 'မစုံ'];
+    const keywords = ['ထိုင်းနက္ခတ်', 'နက္ခတ်', 'ညီအစ်ကို', 'အခွေအပူးပါ', 'အခွေအပူး', 'ခွေပူးပါ', 'ခွေအပူး', 'အခွေပူး', 'ခွေပူး', 'ဘရိတ်', 'ပွင့်', 'Bk', 'bk', 'BK', 'ထိပ်', 'နောက်', 'ပတ်', 'အပါ', 'ပါ', 'အပူး', 'ပူး', 'အခွေ', 'ခွေ', 'စုံမ', 'မစုံ', 'စုံကပ်', 'မကပ်'];
     // Find all keyword occurrences
     const positions = [];
     for (const kw of keywords) {
@@ -399,6 +435,47 @@ export function parseLine(line) {
     // Do this BEFORE _normR converts ရ → r
     let preLine = convertMyanmarNumbers(cleanLine).replace(/ရ(?=\s*ခွေ|ခွေ|ပူး|ပါ|ပတ်|ထိပ်|နောက်|နက္ခတ်|စုံ)/g, '');
     let convertedLine = _normR(preLine);
+    // Pho Oct 27 (v17): "/" separates entries/groups — split FIRST, then parse
+    // each part on its own ("3-8-bk-2500/1@1000" → 20 @2500 + 1ပါ 19 @1000;
+    // "48@6000/17-18@2500" → 48,84 @6000 + 17,71,18,81 @2500).
+    // Two cases keep the OLD "/" meaning and do NOT split:
+    //  (a) last part is a bare amount ("12/500" → amount separator);
+    //  (b) digit-list before a digit-set keyword ("2/3/4 ပါ-3000" → ပါ sets
+    //      for {2,3,4} — the "/" is a digit separator there).
+    // Digits-only parts (e.g. "7890" in "7890/567-ခွေပူး-4000") inherit the
+    // last part's keyword + amount, so each group gets the shared formula.
+    if (convertedLine.includes('/')) {
+        const sParts = convertedLine.split('/').map((p) => p.trim()).filter((p) => p.length > 0);
+        if (sParts.length > 1) {
+            const lastP = sParts[sParts.length - 1];
+            const lastIsBareAmt = /^\d+$/.test(lastP);
+            const lastHasGroupKw = /ခွေ/.test(lastP);
+            const lastHasSetKw = !lastHasGroupKw && !/ပါဝါ/.test(lastP) && /(ထိပ်|နောက်|အပတ်|ပတ်|အပါ|ပါ|ဘရိတ်|ပွင့်|bk)/i.test(lastP);
+            const earlierBareDigits = sParts.slice(0, -1).every((p) => /^\d+$/.test(p.replace(/[\s,\-\.]+/g, '')));
+            const isDigitList = lastHasSetKw && earlierBareDigits;
+            if (!lastIsBareAmt && !isDigitList) {
+                // Keyword + amount to lend to digits-only parts (longest keyword first)
+                const kwList = ['ခွေပူး', 'အခွေ', 'ခွေ', 'စုံကပ်', 'မကပ်', 'ထိပ်', 'နောက်', 'အပတ်', 'ပတ်', 'အပါ', 'ပါ', 'ဘရိတ်', 'ပွင့်', 'ပါဝါ', 'နက္ခတ်', 'စုံစုံ', 'မမ', 'စုံမ', 'မစုံ', 'ညီအစ်ကို', 'အပူး', 'ပူး'];
+                const sortedKw = [...kwList].sort((a, b) => b.length - a.length);
+                let inheritKw = '';
+                for (const kw of sortedKw) {
+                    if (lastP.includes(kw)) { inheritKw = kw; break; }
+                }
+                if (!inheritKw && /bk/i.test(lastP)) inheritKw = 'bk';
+                const amtM = lastP.match(/(\d+)\s*$/);
+                const inheritAmt = amtM ? amtM[1] : '';
+                for (const part of sParts) {
+                    let pp = part.replace(/[\s\-,\.]+$/, '');
+                    if (/^\d+$/.test(pp) && (inheritKw || inheritAmt)) {
+                        pp = pp + '-' + (inheritKw ? inheritKw + '-' : '') + inheritAmt;
+                    }
+                    const sub = parseLine(pp);
+                    results.push(...sub);
+                }
+                return results;
+            }
+        }
+    }
     // v218.3: / and , as amount separators (12/500 -> 12=500, 12,500 -> 12=500)
     convertedLine = convertedLine.replace(/^(.+?)[/,](\d{3,})$/, '$1=$2');
     // Pho: "=" between digits and formula keyword = space (e.g. "567=ပါ" → "567 ပါ")
@@ -493,10 +570,12 @@ export function parseLine(line) {
         const isPlainNums = !/ထိပ်|နောက်|ပတ်|ပါ|ဘရိတ်|ရိတ်|ခွေ|ပူး|ပါဝါ|နက္ခတ်|စုံ|ညီအစ်ကို|bk/i.test(formulaPart);
         if (exp.length > 0 && amt > 0) {
             if (isPlainNums && !isBareDigit(formulaPart)) {
-                // Pho Oct 26 Fix 2: a trailing 3-4 digit group before r is the main
-                // amount ("10-30-50-17-37-57-1500r500" → mains @1500 + reverses @500).
+                // Pho Oct 26 Fix 2 (v17: extended to 5+ digit groups):
+                // a trailing 3+ digit group before r is the main amount
+                // ("10-30-50-17-37-57-1500r500" → mains @1500 + reverses @500;
+                // "76-20000r15000" → 76 @20000 + 67 @15000).
                 // A 2-digit tail stays a number ("12-34r500" unchanged).
-                const peel = formulaPart.match(/^(.*)[\s,\-\/]+(\d{3,4})$/);
+                const peel = formulaPart.match(/^(.*)[\s,\-\/]+(\d{3,})$/);
                 if (peel && peel[1].trim()) {
                     const mains = expandFormula(peel[1].trim());
                     const mainAmt = parseInt(peel[2], 10);
@@ -504,6 +583,23 @@ export function parseLine(line) {
                         pushWithReverse(mains, mainAmt, amt);
                         return results;
                     }
+                }
+                // Pho Oct 27 (v17): a separator-free ODD-length digit run + r/@ =
+                // perms, no doubles ("16907r1000", "12457-@1000" → 20 each).
+                // Even-length runs keep the old pair reading ("1234r500" → pairs),
+                // and separated lists ("12-34r500") are untouched — a run with an
+                // internal separator is never treated as one digit string.
+                const core = formulaPart.replace(/^[\s,\-\/\.]+|[\s,\-\/\.]+$/g, '');
+                if (/^\d{3,}$/.test(core) && core.length % 2 === 1) {
+                    const uniq = Array.from(new Set(core.split('')));
+                    const perms = [];
+                    for (let i = 0; i < uniq.length; i++) {
+                        for (let j = 0; j < uniq.length; j++) {
+                            if (i !== j) perms.push(uniq[i] + uniq[j]);
+                        }
+                    }
+                    pushNums(perms, amt);
+                    return results;
                 }
                 pushWithReverse(exp, amt, amt);
             }
