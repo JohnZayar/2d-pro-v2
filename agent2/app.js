@@ -487,7 +487,10 @@ async function getAgentSessions() {
             }
             out.push(best);
         }
-        return out.sort((a, b) => (b.created || 0) - (a.created || 0));
+        // PB created is an ISO string: subtraction = NaN (no-op sort), so the
+        // banner auto-pick took the oldest session. String compare orders
+        // newest first, so the banner picks the newest open session.
+        return out.sort((a, b) => String(b.created || '').localeCompare(String(a.created || '')));
     } catch (e) {
         _sessionsFetchFailed = true;
         return [];
