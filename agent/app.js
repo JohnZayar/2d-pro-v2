@@ -479,7 +479,16 @@ async function updateAgentReminders() {
 
 async function getAgentSessions() {
     try {
-        const sessions = await db.query('sessions', 'by_tenant', tenantId);
+        // Pho Oct 27: Master-archived sessions never appear in Agent lists.
+        // Archive rows sync via app_settings (key 'archived_<sessionId>').
+        let archived = new Set();
+        try {
+            const all = await db.getAll('app_settings');
+            for (const r of all) {
+                if (r.key && r.key.indexOf('archived_') === 0) archived.add(r.key.slice(9));
+            }
+        } catch (e) { /* ignore */ }
+        const sessions = (await db.query('sessions', 'by_tenant', tenantId)).filter((s) => !archived.has(s.id));
         // Pho Oct 21: NEVER show two sessions for the same day-part.
         // If a duplicate ever slips in, keep the one holding this agent's
         // records (tie: the earliest created) and hide the twin.
