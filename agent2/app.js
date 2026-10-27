@@ -729,6 +729,28 @@ window.deletePlayer = async function deletePlayer(id) {
     showToast('🗑️ ဖျက်ပြီးပြီ');
 };
 
+// TEMPORARY test cleanup (Pho Oct 27): delete ALL players in this tenant
+// + their records. Pho removes this button when it is no longer needed.
+window.cleanupTestPlayers = async function cleanupTestPlayers() {
+    try {
+        const players = await direct.withRetry(() => direct.directList('players', tenantId));
+        const names = new Set(players.map((p) => p.name || ''));
+        const recs = await direct.withRetry(() => direct.directList('lottery_records', tenantId));
+        const mine = recs.filter((r) => names.has(r.player_name || ''));
+        if (!players.length && !mine.length) { showToast('ဖျက်စရာ မရှိပါ'); return; }
+        if (!confirm(players.length + ' လူ + ' + mine.length + ' စာရင်း အကုန် ဖျက်မှာလား? (ပြန်မရဘူး)')) return;
+        try { localStorage.setItem('cleanup_backup_' + Date.now(), JSON.stringify({ players, records: mine })); } catch (e) {}
+        let delRecs = 0, delPlayers = 0;
+        for (const r of mine) { try { await direct.withRetry(() => direct.directDelete('lottery_records', r.id)); delRecs++; } catch (e) {} }
+        for (const p of players) { try { await direct.withRetry(() => direct.directDelete('players', p.id)); delPlayers++; } catch (e) {} }
+        await renderPlayers();
+        updateSyncPill();
+        showToast('🗑️ ' + delPlayers + ' လူ + ' + delRecs + ' စာရင်း ဖျက်ပြီးပြီ');
+    } catch (e) {
+        showToast('❌ ဖျက်မရပါ: ' + (e.message || e));
+    }
+};
+
 async function renderPlayers() {
     const listEl = document.getElementById('playersList');
     const emptyEl = document.getElementById('playersEmpty');
