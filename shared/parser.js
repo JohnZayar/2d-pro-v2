@@ -500,7 +500,10 @@ export function parseLine(line) {
     const isBareDigit = (t) => /^\d$/.test((t || '').trim());
 
     // 1) "formula=mainAmt r rAmt"  e.g. "12=500r200"
-    let m = convertedLine.match(/^(.+?)\s*=\s*(\d+)\s*[rR]\s*(\d+)$/);
+    // Pho Oct 27 (v18): main amount MUST be 3+ digits (bets are 100/150/250+;
+    // 50/20/10 never bet) — a 2-digit tail stays a number ("60=64=68r1000"
+    // → 6 @1000 via rule 5, not mains @68). Falls through to rule 5.
+    let m = convertedLine.match(/^(.+?)\s*=\s*(\d{3,})\s*[rR]\s*(\d+)$/);
     if (m) {
         const expanded = expandFormula(m[1].trim());
         if (expanded.length > 0) {
@@ -526,7 +529,10 @@ export function parseLine(line) {
     }
 
     // 3) "numbers amount r reverseAmount"  e.g. "12,13,14 500r100"
-    m = convertedLine.match(/^(.+?)\s+(\d+)\s*[rR]\s*(\d+)$/);
+    // Pho Oct 27 (v18): main amount MUST be 3+ digits (bets are 100/150/250+;
+    // 50/20/10 never bet) — a 2-digit tail stays a number ("20 24 27 47 70
+    // 40R 2000" → 12 @2000 via rule 6, not mains @40). Falls through to rule 6.
+    m = convertedLine.match(/^(.+?)\s+(\d{3,})\s*[rR]\s*(\d+)$/);
     if (m) {
         const exp = expandFormula(m[1].trim());
         const mainAmt = parseInt(m[2], 10);
@@ -539,11 +545,13 @@ export function parseLine(line) {
     }
 
     // 4) jammed "formulaAmt r reverseAmt"  e.g. "6ထိပ်7000r3000"
+    // Pho Oct 27 (v18): main amount MUST be 3+ digits — a 2-digit tail stays
+    // a number ("60=64=68r1000" → 6 @1000 via rule 5, not mains @68).
     // Pho Oct 26 Fix 1: allow a separator between the cover and its main amount
     // ("35-ထိပ်-750r250" → cover @750 + swapped @250). The separator form only
     // applies to cover formulas (ထိပ်/နောက်); other formulas keep the old path
     // (e.g. "123ခွေ-500r300" still gives 6 @300 via rule 5).
-    m = convertedLine.match(/^(.+?[^0-9\s,.\-\/])([\s,\-\/]*)(\d{2,})[rR](\d{2,})$/);
+    m = convertedLine.match(/^(.+?[^0-9\s,.\-\/])([\s,\-\/]*)(\d{3,})[rR](\d{2,})$/);
     if (m) {
         const formulaPart = m[1].trim();
         const seps = m[2];
