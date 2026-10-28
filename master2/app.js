@@ -2868,6 +2868,8 @@ async function openRemaining() {
     // week's 5 days of winning numbers — never the 70-day window.
     // Top (coloured): last week's remainder; below: this week's remainder
     // (draws so far). Daylines stay, grouped under week headers.
+    // Mon-Fri ONLY, always: Sat/Sun never shown and never counted; a
+    // weekday missing from a week is a holiday (no draw that day).
     const thisMon = mondayOf(new Date());
     const lastMon = new Date(thisMon.getFullYear(), thisMon.getMonth(), thisMon.getDate() - 7);
     const thisMonDs = dsOf(thisMon);
@@ -2877,6 +2879,8 @@ async function openRemaining() {
     for (const dateKey of Object.keys(byDate)) {
         const pd = parseSessionDate(dateKey);
         if (!pd) continue;
+        const wd = pd.getDay();
+        if (wd === 0 || wd === 6) continue; // Mon-Fri only
         const wk = dsOf(mondayOf(pd));
         const d = byDate[dateKey];
         const nums = [];
@@ -2897,6 +2901,7 @@ async function openRemaining() {
         const d = byDate[dateKey];
         if (!d.am && !d.pm) continue;
         const pd = parseSessionDate(dateKey);
+        if (pd && (pd.getDay() === 0 || pd.getDay() === 6)) continue; // Mon-Fri only
         const mon = pd ? mondayOf(pd) : null;
         const wk = mon ? dsOf(mon) : null;
         if (wk && wk !== curWeek) {
