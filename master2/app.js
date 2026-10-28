@@ -267,19 +267,9 @@ async function createBuyerAccount() {
             name: shopName,
             tenant: tenant.id
         });
-        // 3. Create per-tenant agent account #1 (for Agent app sync, tenant-isolated)
-        // Buyer can add up to 4 more via Agent management (5 total max)
-        const agentEmail = agentEmailForNum(tenant.id, 1);
-        const agentSecret1 = generateAgentSecret();
-        const agentPass = agentPasswordForNum(tenant.id, 1, agentSecret1);
-        const agentCode1 = agentCodeFor(tenant.id, 1, agentSecret1);
-        await pb.create('users', {
-            email: agentEmail,
-            password: agentPass,
-            passwordConfirm: agentPass,
-            name: `Agent 1 (${shopName})`,
-            tenant: tenant.id
-        });
+        // Pho Oct 28: NO auto Agent 1. Buyer creates their own agents when
+        // needed (up to 5 via Agent management) — Admin must never have to
+        // remember/relay an agent code for a buyer.
         resultEl.style.display = '';
         resultEl.innerHTML =
             '<div style="background:#052e16;border:1px solid #16a34a;border-radius:8px;padding:10px;margin-top:8px">' +
@@ -287,7 +277,6 @@ async function createBuyerAccount() {
             '<div class="mt">Email: <b>' + escHtml(email) + '</b></div>' +
             '<div>Temp password: <b style="font-size:16px;letter-spacing:1px">' + escHtml(tmp) + '</b></div>' +
             '<div class="small muted mt">Buyer ကို ပို့ပေးပါ — သူ Settings မှာ password ချိန်းရမယ်</div>' +
-            '<div class="mt" style="border-top:1px solid #16a34a;padding-top:8px">Agent 1 Code: <b style="font-size:14px;letter-spacing:1px">' + escHtml(agentCode1) + '</b><div class="small muted">ကူးယူထားပါ — နောက်မှ ပြန်မရဘူး</div></div>' +
             '</div>';
         emailEl.value = '';
         shopEl.value = '';
@@ -423,11 +412,15 @@ async function changePassword() {
     btn.disabled = true;
     btn.textContent = 'ချိန်းနေတယ်…';
     try {
-        await pb.update('users', state.user.id, {
+        // Pho Oct 28: send current tenant so the users Update rule's
+        // self-branch (body.tenant = data.tenant) passes; without it a
+        // buyer can never update their own row (404).
+        const selfTenant = state.tenantPbId || (state.user && (typeof state.user.tenant === 'string' ? state.user.tenant : (state.user.tenant && state.user.tenant.id)));
+        await pb.update('users', state.user.id, Object.assign({
             oldPassword: oldPw,
             password: newPw,
             passwordConfirm: newPw2
-        });
+        }, selfTenant ? { tenant: selfTenant } : {}));
         oldEl.value = ''; newEl.value = ''; new2El.value = '';
         showToast('✅ Password ချိန်းပြီးပြီ');
     } catch (e) {
@@ -444,6 +437,16 @@ async function enterApp() {
     // first login (fixes the "login twice" issue where an empty view rendered
     // before data arrived).
     showPage('page-main');
+    // Pho Oct 28: tenant/shop name chip in the topbar — always visible so
+    // the signed-in account can never be mistaken (buyer user.name = shop name).
+    try {
+        const chip = $('shopChip');
+        const shopName = (state.user && state.user.name || '').trim();
+        if (chip) {
+            if (shopName) { chip.textContent = '🏪 ' + shopName; chip.style.display = ''; }
+            else chip.style.display = 'none';
+        }
+    } catch (e) { /* never block boot on the chip */ }
     const sessionList = $('sessionList');
     if (sessionList) sessionList.innerHTML = '<div class="empty">⏳ တင်နေတယ်… ခနစောင့်ပါ</div>';
     // Server-direct (Pho Oct 27): load straight from the server, no sync step.
@@ -455,8 +458,8 @@ async function enterApp() {
     // Load + render FIRST so the first view paints fast (Pho Oct 27: boot
     // maintenance was blocking first paint on a slow line). Maintenance runs
     // behind below — same work, same rules, just not blocking the UI.
-    await loadSessions();
-    await loadAgents();
+    // Pho Oct 28 speed: sessions + agents are independent — load in parallel.
+    await Promise.all([loadSessions(), loadAgents()]);
     await loadSettingsIntoUI();
     renderSessions();
     renderAgents();
@@ -467,10 +470,14 @@ async function enterApp() {
     // views survive session deletion. Failures only warn; next boot retries.
     // M3: SERIALIZED background maintenance (still non-blocking): cleanup
     // runs before backfill so backfill never races deletes on the same rows.
-    cleanupOldRecords()
-        .then(() => cleanupOldWinnings())
-        .then(() => backfillDates())
-        .catch((e) => console.warn('background maintenance failed:', e.message));
+    // Pho Oct 28 speed: delay background maintenance so it never competes
+    // with the home counts on a slow line (missed runs retry next boot).
+    setTimeout(() => {
+        cleanupOldRecords()
+            .then(() => cleanupOldWinnings())
+            .then(() => backfillDates())
+            .catch((e) => console.warn('background maintenance failed:', e.message));
+    }, 8000);
     // Realtime: server pushes changes in ~1-2s; refresh ONLY the visible view.
     // No polling loop, no full sync. The transport carries no collection info
     // (see _refreshOnRealtime), so each burst refreshes the current view.
@@ -828,6 +835,8 @@ async function setSetting(key, value) {
  *  Commission/payout must follow the LINK (ID), not spelling alone:
  *  'Kyaw Soe' vs 'kyawsoe' must never change the rates. */
 async function loadAgentLinksAndUsers() {
+    // Pho Oct 28 speed: the two lists are independent — fetch in parallel.
+    const _linksTask = (async () => {
     try {
         // Server-direct (Pho Oct 27): links live in server app_settings.
         const all = await direct.withRetry(() => direct.directList('app_settings', state.tenantPbId));
@@ -837,6 +846,8 @@ async function loadAgentLinksAndUsers() {
         }
         state.agentLinks = links;
     } catch (e) { if (!state.agentLinks) state.agentLinks = {}; }
+    })();
+    const _usersTask = (async () => {
     try {
         let tenantId = state.tenantPbId;
         if (!tenantId && state.user && state.user.tenant) tenantId = typeof state.user.tenant === 'string' ? state.user.tenant : state.user.tenant.id;
@@ -857,6 +868,8 @@ async function loadAgentLinksAndUsers() {
             }).sort((a, b) => (a.num || 999) - (b.num || 999));
         }
     } catch (e) { if (!state.agentUsers) state.agentUsers = []; }
+    })();
+    await Promise.all([_linksTask, _usersTask]);
 }
 
 const _normName = (s) => (s || '').toLowerCase().replace(/\s+/g, '');
@@ -1061,6 +1074,7 @@ function sessionLabel(s) {
     return s.name || s.date || 'ပွဲ';
 }
 
+let _sessCountsToken = 0;
 async function renderSessions() {
     const box = $('sessionList');
     await loadArchivedSessionIds();
@@ -1079,20 +1093,13 @@ async function renderSessions() {
         html += `<button class="btn small gray" id="bulkArchiveBtn">အဟောင်းတွေ ဝှက် (${bulkable.length})</button>`;
     }
     // Server-direct (Pho Oct 27): card counts come from the server, not local DB.
-    // Fetch all cards in parallel (same output order); on failure a card shows 0
-    // and corrects itself on the next load (the old local query had no failure path).
-    const counts = await Promise.all(visible.map(async (s) => {
-        try {
-            return await direct.withRetry(() => direct.directList('lottery_records', state.tenantPbId, { filter: `session = "${s.id}"` }));
-        } catch (e) { return []; }
-    }));
+    // Pho Oct 28 speed: render cards IMMEDIATELY, then fill counts from ONE
+    // tenant-wide list (was: one full list per session, cards waited for all).
     for (let i = 0; i < visible.length; i++) {
         const s = visible[i];
-        const recs = counts[i];
-        const total = recs.reduce((t, r) => t + (Number(r.amount) || 0), 0);
         html += `<div class="card session-card">
             <div class="sname">${escHtml(sessionLabel(s))}</div>
-            <div class="smeta">${recs.length} မှတ်တမ်း · စုစုပေါင်း ${formatMoney(total)}</div>
+            <div class="smeta" data-smeta="${s.id}">… မှတ်တမ်း · စုစုပေါင်း …</div>
             <div class="btn-grid">
                 <button class="btn small" data-act="board" data-id="${s.id}">📝 ထိုးကွက်</button>
                 <button class="btn small gray" data-act="ledger" data-id="${s.id}">📊 လယ်ဂျာ</button>
@@ -1117,6 +1124,29 @@ async function renderSessions() {
     box.querySelectorAll('button[data-act]').forEach((b) => {
         b.addEventListener('click', () => sessionAction(b.dataset.act, b.dataset.id));
     });
+    // Fill counts from one tenant-wide list (non-blocking; stale fills ignored).
+    const myCountToken = ++_sessCountsToken;
+    direct.withRetry(() => direct.directList('lottery_records', state.tenantPbId))
+        .then((all) => {
+            if (myCountToken !== _sessCountsToken) return;
+            const bySession = {};
+            for (const r of all) {
+                const sid = typeof r.session === 'string' ? r.session : (r.session && r.session.id);
+                if (!sid) continue;
+                (bySession[sid] || (bySession[sid] = [])).push(r);
+            }
+            box.querySelectorAll('[data-smeta]').forEach((el) => {
+                const recs = bySession[el.dataset.smeta] || [];
+                const total = recs.reduce((t, r) => t + (Number(r.amount) || 0), 0);
+                el.textContent = `${recs.length} မှတ်တမ်း · စုစုပေါင်း ${formatMoney(total)}`;
+            });
+        })
+        .catch(() => {
+            if (myCountToken !== _sessCountsToken) return;
+            box.querySelectorAll('[data-smeta]').forEach((el) => {
+                el.textContent = `0 မှတ်တမ်း · စုစုပေါင်း ${formatMoney(0)}`;
+            });
+        });
 }
 
 async function sessionAction(act, id) {
@@ -1855,17 +1885,14 @@ async function renderLedger() {
     const limit = sessionLimit(s);
     // Server-direct (Pho Oct 27): ledger records come from the server, not local DB.
     // On a failed read, keep the previous ledger content (never blank it).
-    let recs;
+    // Pho Oct 28 speed: records + wins are independent — fetch in parallel.
+    // On any failure, keep the previous ledger content (never blank it).
+    let recs, wins;
     try {
-        recs = await direct.withRetry(() => direct.directList('lottery_records', state.tenantPbId, { filter: `session = "${s.id}"` }));
-    } catch (e) {
-        showToast('❌ ' + (e.message || e));
-        return;
-    }
-    // On a failed wins read, keep the previous ledger content (never blank it).
-    let wins;
-    try {
-        wins = await _getWins(s.id);
+        [recs, wins] = await Promise.all([
+            direct.withRetry(() => direct.directList('lottery_records', state.tenantPbId, { filter: `session = "${s.id}"` })),
+            _getWins(s.id),
+        ]);
     } catch (e) {
         showToast('❌ ' + (e.message || e));
         return;
@@ -2184,20 +2211,17 @@ async function deleteAgent(id) {
 /* ================= DAILY SUMMARY ================= */
 
 async function openDaily(sessionId) {
-    await loadAgentLinksAndUsers();
     const s = state.sessions.find((x) => x.id === sessionId);
-    // On a failed records read, keep the previous content (never blank it).
-    let recs;
+    // Pho Oct 28 speed: links, records, wins are independent — fetch in
+    // parallel. On any records/wins failure, keep previous content (never
+    // blank it); links never throws (defaults inside).
+    let recs, wins;
     try {
-        recs = await direct.withRetry(() => direct.directList('lottery_records', state.tenantPbId, { filter: `session = "${sessionId}"`, sort: 'created' }));
-    } catch (e) {
-        showToast('❌ ' + (e.message || e));
-        return;
-    }
-    // On a failed wins read, keep the previous content (never blank it).
-    let wins;
-    try {
-        wins = await _getWins(sessionId);
+        [, recs, wins] = await Promise.all([
+            loadAgentLinksAndUsers(),
+            direct.withRetry(() => direct.directList('lottery_records', state.tenantPbId, { filter: `session = "${sessionId}"`, sort: 'created' })),
+            _getWins(sessionId),
+        ]);
     } catch (e) {
         showToast('❌ ' + (e.message || e));
         return;
@@ -2295,7 +2319,6 @@ function dailyAggFromRecords(recs, winNum) {
 }
 
 async function renderHomeDaily() {
-    await loadAgentLinksAndUsers();
     const dateInput = $('homeDailyDate');
     if (!_homeDailyDate) {
         const today = new Date();
@@ -2306,11 +2329,20 @@ async function renderHomeDaily() {
     const [y, m, d] = _homeDailyDate.split('-');
     const ds = `${d}.${m}.${y}`; // match session.date format DD.MM.YYYY
 
-    // Get ALL records for this date (works even after session deletion)
-    // On a failed records read, keep the previous body (never blank it).
-    let allRecs;
+    // Get records for this date (works even after session deletion).
+    // Pho Oct 29 speed (Master v213): Daily used to download the ENTIRE
+    // record history, then keep one day. Fetch only this day server-side
+    // (+ rows with an empty stamp, which the session fallback below still
+    // places correctly) — same totals, far less download on a slow line.
+    // Links + records + wins are independent: fetch in parallel.
+    // On any failure, keep the previous body (never blank it).
+    let allRecs, allWins;
     try {
-        allRecs = await direct.withRetry(() => direct.directList('lottery_records', state.tenantPbId, { sort: 'created' }));
+        [, allRecs, allWins] = await Promise.all([
+            loadAgentLinksAndUsers(),
+            direct.withRetry(() => direct.directList('lottery_records', state.tenantPbId, { sort: 'created', filter: `(session_date = "${ds}" || session_date = "")` })),
+            direct.withRetry(() => direct.directList('winning_numbers', state.tenantPbId, { filter: `(date = "${ds}" || date = "")` })),
+        ]);
     } catch (e) {
         showToast('❌ ' + (e.message || e));
         return;
@@ -2327,16 +2359,9 @@ async function renderHomeDaily() {
         return sess && sess.date === ds;
     });
 
-    // Get winning numbers for this date (prefer denormalized w.date so
-    // deleted sessions don't hide them)
-    // On a failed wins read, keep the previous body (never blank it).
-    let allWins;
-    try {
-        allWins = await direct.withRetry(() => direct.directList('winning_numbers', state.tenantPbId));
-    } catch (e) {
-        showToast('❌ ' + (e.message || e));
-        return;
-    }
+    // Winning numbers for this date were fetched above, in parallel with
+    // the records (prefer denormalized w.date so deleted sessions don't
+    // hide them; the loop below is unchanged).
     const dayWins = {};
     for (const w of allWins) {
         const sess = state.sessions.find((s) => s.id === w.session);
@@ -2405,7 +2430,6 @@ function shortTimeType(tt) {
 }
 
 async function renderWeekly() {
-    await loadAgentLinksAndUsers();
     const box = $('weeklyContent');
     const offset = state.weeklyOffset || 0;
     const mon = mondayOf(new Date());
@@ -2419,18 +2443,21 @@ async function renderWeekly() {
     state.weeklyMonday = days[0].ds;
     // NOTE: iterate dates (not sessions) so deleted sessions don't hide history.
     // Records/winning numbers carry denormalized session_date/date (see backfillDates).
-    // On a failed records read, keep the previous content (never blank it).
-    let allRecs;
+    // Pho Oct 28 speed: links, records, wins are independent — fetch in
+    // parallel. On any records/wins failure, keep previous content.
+    // Pho Oct 29 speed (Master v213): Weekly used to download the ENTIRE
+    // record history, then keep 5 days. Fetch only this week's days
+    // server-side (+ rows with an empty stamp, which the session fallback
+    // below still places correctly) — same totals, far less download.
+    const recFilter = `(${days.map((d) => `session_date = "${d.ds}"`).join(' || ')} || session_date = "")`;
+    const winFilter = `(${days.map((d) => `date = "${d.ds}"`).join(' || ')} || date = "")`;
+    let allRecs, allWins;
     try {
-        allRecs = await direct.withRetry(() => direct.directList('lottery_records', state.tenantPbId, { sort: 'created' }));
-    } catch (e) {
-        showToast('❌ ' + (e.message || e));
-        return;
-    }
-    // On a failed wins read, keep the previous content (never blank it).
-    let allWins;
-    try {
-        allWins = await direct.withRetry(() => direct.directList('winning_numbers', state.tenantPbId));
+        [, allRecs, allWins] = await Promise.all([
+            loadAgentLinksAndUsers(),
+            direct.withRetry(() => direct.directList('lottery_records', state.tenantPbId, { sort: 'created', filter: recFilter })),
+            direct.withRetry(() => direct.directList('winning_numbers', state.tenantPbId, { filter: winFilter })),
+        ]);
     } catch (e) {
         showToast('❌ ' + (e.message || e));
         return;
