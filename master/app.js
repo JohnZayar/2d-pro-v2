@@ -448,8 +448,8 @@ async function enterApp() {
     // Load + render FIRST so the first view paints fast (Pho Oct 27: boot
     // maintenance was blocking first paint on a slow line). Maintenance runs
     // behind below — same work, same rules, just not blocking the UI.
-    await loadSessions();
-    await loadAgents();
+    // Pho Oct 28 speed: sessions + agents are independent — load in parallel.
+    await Promise.all([loadSessions(), loadAgents()]);
     await loadSettingsIntoUI();
     renderSessions();
     renderAgents();
@@ -460,10 +460,14 @@ async function enterApp() {
     // views survive session deletion. Failures only warn; next boot retries.
     // M3: SERIALIZED background maintenance (still non-blocking): cleanup
     // runs before backfill so backfill never races deletes on the same rows.
-    cleanupOldRecords()
-        .then(() => cleanupOldWinnings())
-        .then(() => backfillDates())
-        .catch((e) => console.warn('background maintenance failed:', e.message));
+    // Pho Oct 28 speed: delay background maintenance so it never competes
+    // with the home counts on a slow line (missed runs retry next boot).
+    setTimeout(() => {
+        cleanupOldRecords()
+            .then(() => cleanupOldWinnings())
+            .then(() => backfillDates())
+            .catch((e) => console.warn('background maintenance failed:', e.message));
+    }, 8000);
     // Realtime: server pushes changes in ~1-2s; refresh ONLY the visible view.
     // No polling loop, no full sync. The transport carries no collection info
     // (see _refreshOnRealtime), so each burst refreshes the current view.
@@ -821,6 +825,8 @@ async function setSetting(key, value) {
  *  Commission/payout must follow the LINK (ID), not spelling alone:
  *  'Kyaw Soe' vs 'kyawsoe' must never change the rates. */
 async function loadAgentLinksAndUsers() {
+    // Pho Oct 28 speed: the two lists are independent — fetch in parallel.
+    const _linksTask = (async () => {
     try {
         // Server-direct (Pho Oct 27): links live in server app_settings.
         const all = await direct.withRetry(() => direct.directList('app_settings', state.tenantPbId));
@@ -830,6 +836,8 @@ async function loadAgentLinksAndUsers() {
         }
         state.agentLinks = links;
     } catch (e) { if (!state.agentLinks) state.agentLinks = {}; }
+    })();
+    const _usersTask = (async () => {
     try {
         let tenantId = state.tenantPbId;
         if (!tenantId && state.user && state.user.tenant) tenantId = typeof state.user.tenant === 'string' ? state.user.tenant : state.user.tenant.id;
@@ -850,6 +858,8 @@ async function loadAgentLinksAndUsers() {
             }).sort((a, b) => (a.num || 999) - (b.num || 999));
         }
     } catch (e) { if (!state.agentUsers) state.agentUsers = []; }
+    })();
+    await Promise.all([_linksTask, _usersTask]);
 }
 
 const _normName = (s) => (s || '').toLowerCase().replace(/\s+/g, '');
@@ -1054,6 +1064,7 @@ function sessionLabel(s) {
     return s.name || s.date || 'ပွဲ';
 }
 
+let _sessCountsToken = 0;
 async function renderSessions() {
     const box = $('sessionList');
     await loadArchivedSessionIds();
@@ -1072,20 +1083,13 @@ async function renderSessions() {
         html += `<button class="btn small gray" id="bulkArchiveBtn">အဟောင်းတွေ ဝှက် (${bulkable.length})</button>`;
     }
     // Server-direct (Pho Oct 27): card counts come from the server, not local DB.
-    // Fetch all cards in parallel (same output order); on failure a card shows 0
-    // and corrects itself on the next load (the old local query had no failure path).
-    const counts = await Promise.all(visible.map(async (s) => {
-        try {
-            return await direct.withRetry(() => direct.directList('lottery_records', state.tenantPbId, { filter: `session = "${s.id}"` }));
-        } catch (e) { return []; }
-    }));
+    // Pho Oct 28 speed: render cards IMMEDIATELY, then fill counts from ONE
+    // tenant-wide list (was: one full list per session, cards waited for all).
     for (let i = 0; i < visible.length; i++) {
         const s = visible[i];
-        const recs = counts[i];
-        const total = recs.reduce((t, r) => t + (Number(r.amount) || 0), 0);
         html += `<div class="card session-card">
             <div class="sname">${escHtml(sessionLabel(s))}</div>
-            <div class="smeta">${recs.length} မှတ်တမ်း · စုစုပေါင်း ${formatMoney(total)}</div>
+            <div class="smeta" data-smeta="${s.id}">… မှတ်တမ်း · စုစုပေါင်း …</div>
             <div class="btn-grid">
                 <button class="btn small" data-act="board" data-id="${s.id}">📝 ထိုးကွက်</button>
                 <button class="btn small gray" data-act="ledger" data-id="${s.id}">📊 လယ်ဂျာ</button>
@@ -1110,6 +1114,29 @@ async function renderSessions() {
     box.querySelectorAll('button[data-act]').forEach((b) => {
         b.addEventListener('click', () => sessionAction(b.dataset.act, b.dataset.id));
     });
+    // Fill counts from one tenant-wide list (non-blocking; stale fills ignored).
+    const myCountToken = ++_sessCountsToken;
+    direct.withRetry(() => direct.directList('lottery_records', state.tenantPbId))
+        .then((all) => {
+            if (myCountToken !== _sessCountsToken) return;
+            const bySession = {};
+            for (const r of all) {
+                const sid = typeof r.session === 'string' ? r.session : (r.session && r.session.id);
+                if (!sid) continue;
+                (bySession[sid] || (bySession[sid] = [])).push(r);
+            }
+            box.querySelectorAll('[data-smeta]').forEach((el) => {
+                const recs = bySession[el.dataset.smeta] || [];
+                const total = recs.reduce((t, r) => t + (Number(r.amount) || 0), 0);
+                el.textContent = `${recs.length} မှတ်တမ်း · စုစုပေါင်း ${formatMoney(total)}`;
+            });
+        })
+        .catch(() => {
+            if (myCountToken !== _sessCountsToken) return;
+            box.querySelectorAll('[data-smeta]').forEach((el) => {
+                el.textContent = `0 မှတ်တမ်း · စုစုပေါင်း ${formatMoney(0)}`;
+            });
+        });
 }
 
 async function sessionAction(act, id) {
@@ -1848,17 +1875,14 @@ async function renderLedger() {
     const limit = sessionLimit(s);
     // Server-direct (Pho Oct 27): ledger records come from the server, not local DB.
     // On a failed read, keep the previous ledger content (never blank it).
-    let recs;
+    // Pho Oct 28 speed: records + wins are independent — fetch in parallel.
+    // On any failure, keep the previous ledger content (never blank it).
+    let recs, wins;
     try {
-        recs = await direct.withRetry(() => direct.directList('lottery_records', state.tenantPbId, { filter: `session = "${s.id}"` }));
-    } catch (e) {
-        showToast('❌ ' + (e.message || e));
-        return;
-    }
-    // On a failed wins read, keep the previous ledger content (never blank it).
-    let wins;
-    try {
-        wins = await _getWins(s.id);
+        [recs, wins] = await Promise.all([
+            direct.withRetry(() => direct.directList('lottery_records', state.tenantPbId, { filter: `session = "${s.id}"` })),
+            _getWins(s.id),
+        ]);
     } catch (e) {
         showToast('❌ ' + (e.message || e));
         return;
@@ -2177,20 +2201,17 @@ async function deleteAgent(id) {
 /* ================= DAILY SUMMARY ================= */
 
 async function openDaily(sessionId) {
-    await loadAgentLinksAndUsers();
     const s = state.sessions.find((x) => x.id === sessionId);
-    // On a failed records read, keep the previous content (never blank it).
-    let recs;
+    // Pho Oct 28 speed: links, records, wins are independent — fetch in
+    // parallel. On any records/wins failure, keep previous content (never
+    // blank it); links never throws (defaults inside).
+    let recs, wins;
     try {
-        recs = await direct.withRetry(() => direct.directList('lottery_records', state.tenantPbId, { filter: `session = "${sessionId}"`, sort: 'created' }));
-    } catch (e) {
-        showToast('❌ ' + (e.message || e));
-        return;
-    }
-    // On a failed wins read, keep the previous content (never blank it).
-    let wins;
-    try {
-        wins = await _getWins(sessionId);
+        [, recs, wins] = await Promise.all([
+            loadAgentLinksAndUsers(),
+            direct.withRetry(() => direct.directList('lottery_records', state.tenantPbId, { filter: `session = "${sessionId}"`, sort: 'created' })),
+            _getWins(sessionId),
+        ]);
     } catch (e) {
         showToast('❌ ' + (e.message || e));
         return;
@@ -2398,7 +2419,6 @@ function shortTimeType(tt) {
 }
 
 async function renderWeekly() {
-    await loadAgentLinksAndUsers();
     const box = $('weeklyContent');
     const offset = state.weeklyOffset || 0;
     const mon = mondayOf(new Date());
@@ -2412,18 +2432,15 @@ async function renderWeekly() {
     state.weeklyMonday = days[0].ds;
     // NOTE: iterate dates (not sessions) so deleted sessions don't hide history.
     // Records/winning numbers carry denormalized session_date/date (see backfillDates).
-    // On a failed records read, keep the previous content (never blank it).
-    let allRecs;
+    // Pho Oct 28 speed: links, records, wins are independent — fetch in
+    // parallel. On any records/wins failure, keep previous content.
+    let allRecs, allWins;
     try {
-        allRecs = await direct.withRetry(() => direct.directList('lottery_records', state.tenantPbId, { sort: 'created' }));
-    } catch (e) {
-        showToast('❌ ' + (e.message || e));
-        return;
-    }
-    // On a failed wins read, keep the previous content (never blank it).
-    let allWins;
-    try {
-        allWins = await direct.withRetry(() => direct.directList('winning_numbers', state.tenantPbId));
+        [, allRecs, allWins] = await Promise.all([
+            loadAgentLinksAndUsers(),
+            direct.withRetry(() => direct.directList('lottery_records', state.tenantPbId, { sort: 'created' })),
+            direct.withRetry(() => direct.directList('winning_numbers', state.tenantPbId)),
+        ]);
     } catch (e) {
         showToast('❌ ' + (e.message || e));
         return;
