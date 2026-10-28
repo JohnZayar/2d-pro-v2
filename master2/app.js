@@ -2867,7 +2867,8 @@ async function openRemaining() {
     // Pho Oct 29 week-split: ကျန်ဂဏန်း = single digits missing from ONE
     // week's 5 days of winning numbers — never the 70-day window.
     // Top (coloured): last week's remainder; below: this week's remainder
-    // (draws so far). Daylines stay, grouped under week headers.
+    // (draws so far). Lines show ONLY the current week (Mon-Fri),
+    // always; older weeks never appear as lines.
     // Mon-Fri ONLY, always: Sat/Sun never shown and never counted; a
     // weekday missing from a week is a holiday (no draw that day).
     const thisMon = mondayOf(new Date());
@@ -2896,25 +2897,26 @@ async function openRemaining() {
         <div class="digit-chips">${remLast.map((d) => `<span class="dchip" style="${prevChipStyle}">${d}</span>`).join('')}</div>
         <div class="small muted" style="margin:10px 0 6px">ယခုအပတ်ကျန် (${remThis.length})</div>
         <div class="digit-chips">${remThis.map((d) => `<span class="dchip">${d}</span>`).join('')}</div>`;
-    let curWeek = null;
-    for (const dateKey of sortedDates.slice(0, 70)) {
+    // Lines: current week only (newest first, as before). The header
+    // names the week Mon-Fri; a missing weekday is a holiday.
+    const thisFri = new Date(thisMon.getFullYear(), thisMon.getMonth(), thisMon.getDate() + 4);
+    html += `<div class="small muted" style="margin:10px 0 2px">တပတ် ${thisMonDs} – ${dsOf(thisFri)}</div>`;
+    let thisWeekLines = 0;
+    for (const dateKey of sortedDates) {
         const d = byDate[dateKey];
         if (!d.am && !d.pm) continue;
         const pd = parseSessionDate(dateKey);
         if (pd && (pd.getDay() === 0 || pd.getDay() === 6)) continue; // Mon-Fri only
-        const mon = pd ? mondayOf(pd) : null;
-        const wk = mon ? dsOf(mon) : null;
-        if (wk && wk !== curWeek) {
-            curWeek = wk;
-            const fri = new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + 4);
-            html += `<div class="small muted" style="margin:10px 0 2px">တပတ် ${wk} – ${dsOf(fri)}</div>`;
-        }
+        const wk = pd ? dsOf(mondayOf(pd)) : null;
+        if (wk !== thisMonDs) continue;
         const [dd, mm, yy] = dateKey.split('.').map(Number);
         const dayName = dayNames[new Date(yy, mm - 1, dd).getDay()];
         html += `<div class="dayline">${dayName} Am ${d.am || '--'} Pm ${d.pm || '--'}</div>`;
+        thisWeekLines++;
     }
+    if (!thisWeekLines) html += `<div class="small muted">ဒီအပတ် ပေါက်သီး မရှိသေးပါ</div>`;
 
-    openGeneric('🔢 ကျန်ဂဏန်း (၁၀ ပတ်)', `<div class="digit-week card">${html}</div>`);
+    openGeneric('🔢 ကျန်ဂဏန်း', `<div class="digit-week card">${html}</div>`);
 }
 
 /* ================= ⚖️ ကြီးငယ် (BIG / SMALL) ================= */
