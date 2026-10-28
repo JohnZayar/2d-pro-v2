@@ -457,6 +457,9 @@ async function updateAgentReminders() {
 // where local reads almost never did. When a fetch fails, refreshSession
 // must NOT treat the result as "no sessions" and clear the agent's session.
 let _sessionsFetchFailed = false;
+// H5: last-known-good archived set. On an archive-read blip, dropdowns
+// reuse this instead of showing archived sessions (fail-OPEN before).
+let _lastArchivedSet = null;
 
 async function getAgentSessions() {
     _sessionsFetchFailed = false;
@@ -469,7 +472,15 @@ async function getAgentSessions() {
             for (const r of all) {
                 if (r.key && r.key.indexOf('archived_') === 0) archived.add(r.key.slice(9));
             }
-        } catch (e) { _sessionsFetchFailed = true; }
+            _lastArchivedSet = archived;
+        } catch (e) {
+            _sessionsFetchFailed = true;
+            // H5 fail-CLOSED: never render a list that may contain archived
+            // sessions. Reuse the last-known-good filter; with no prior good
+            // read, show nothing (refreshSession keeps the current session).
+            if (_lastArchivedSet) { archived = new Set(_lastArchivedSet); }
+            else { return []; }
+        }
         const sessions = (await direct.withRetry(() => direct.directList('sessions', tenantId))).filter((s) => !archived.has(s.id));
         // Pho Oct 21: NEVER show two sessions for the same day-part.
         // If a duplicate ever slips in, keep the one holding this agent's
@@ -698,8 +709,9 @@ window.savePlayer = async function savePlayer() {
             showToast('✅ ပြင်ပြီးပြီ');
         } else {
             // created is dropped by directCreate (PB owns it) — field set otherwise exact.
+            const playerId = uid(); // M2: mint ONCE outside withRetry
             await direct.withRetry(() => direct.directCreate('players', {
-                id: uid(),
+                id: playerId,
                 tenant: tenantId,
                 agent_name: agentName,
                 name, phone, commission, multiplier
@@ -1120,7 +1132,7 @@ window.savePendingBatch = async function savePendingBatch() {
         // Roll back this attempt's rows best-effort so a retry never
         // duplicates them; pending is kept for the retry.
         for (const rid of createdIds) {
-            try { await direct.directDelete('lottery_records', rid); } catch (_) { /* best-effort */ }
+            await direct.withRetry(() => direct.directDelete('lottery_records', rid)).catch(() => { /* best-effort */ });
         }
         showToast('❌ သိမ်းမရပါ: ' + e.message);
     } finally {
