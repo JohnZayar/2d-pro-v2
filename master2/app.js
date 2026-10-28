@@ -1292,13 +1292,15 @@ async function openBoard(sessionId) {
     const s = state.sessions.find((x) => x.id === sessionId);
     $('boardTitle').textContent = '📝 ထိုးကွက် — ' + (s ? sessionLabel(s) : '');
     $('boardTargetWrap').style.display = '';
-    $('boardTargetWrap').querySelector('label').textContent = 'ထိုးသား';
-    // Target: registered ထိုးသား + Agent (no akan mixing; entry board is incoming-only)
+    $('boardTargetWrap').querySelector('label').textContent = 'လူ';
+    // Merged board (Pho Oct 28, 3D style): bettors + Agents + akan persons in ONE
+    // list — akan names RED with an (အကန်) suffix so they can't be mistaken.
+    // (Suffix is the guarantee: phone dropdowns may ignore option colors.)
     const sel = $('boardTarget');
     let opts = '';
     for (const a of state.agents) {
-        if ((a.person_type || 'agent') === 'akan') continue;
-        opts += `<option value="${escHtml(a.id)}">${escHtml(a.name)}</option>`;
+        const isAkan = (a.person_type || 'agent') === 'akan';
+        opts += `<option value="${escHtml(a.id)}"${isAkan ? ' style="color:#ff5a5a"' : ''}>${escHtml(a.name)}${isAkan ? ' (အကန်)' : ''}</option>`;
     }
     sel.innerHTML = opts;
     $('boardText').value = '';
@@ -1376,12 +1378,15 @@ async function saveBoard() {
         renderBoardLineCheck();
     };
 
-    // အကန်ဒိုင် mode → rows land in the OUTGOING pending table, not the entry table.
-    if (state.boardMode === 'akan') {
-        // Board's own bookie selector first (akan mode), main screen's selector as fallback.
-        const bookie = (($('boardTarget') && $('boardTarget').value) || ($('akanBookieSelect') && $('akanBookieSelect').value) || '').trim() || null;
-        if (!bookie) { showToast('❌ ဒိုင် နာမည် ရွေးပါ'); return; }
-        if ($('akanBookieSelect')) $('akanBookieSelect').value = bookie;
+    // Merged board (Pho Oct 28): direction follows the PICKED person, not the mode —
+    // an akan person stages OUTGOING rows, everyone else stages INCOMING rows.
+    // Both existing Save paths are untouched, so money math, hot limits and the
+    // blocked-number filter (incoming only, as before) are all preserved.
+    const target = $('boardTarget').value;
+    const picked = state.agents.find((a) => a.id === target);
+    if (!picked) { showToast('❌ အမည် ရွေးပါ (မရွေးရင် တင်မရ)'); return; }
+    if ((picked.person_type || 'agent') === 'akan') {
+        const bookie = (picked.name || '').trim();
         okItems.forEach((it) => {
             addAkanUnique(bookie, it.number, it.amount);
         });
@@ -1398,8 +1403,7 @@ async function saveBoard() {
         return;
     }
 
-    const target = $('boardTarget').value;
-    const agent = state.agents.find((a) => a.id === target);
+    const agent = picked;
     const personName = agent ? agent.name : '';
     const boardPersonId = agent ? agent.id : '';
     if (!personName) { showToast('❌ အမည် ရွေးပါ (မရွေးရင် တင်မရ)'); return; }
@@ -1808,28 +1812,14 @@ window.openEntryBoard = function openEntryBoard() {
     openBoard(state.activeSessionId);
 };
 
-/** 📋 button in akandain screen → board feeds the OUTGOING pending table. */
-window.openAkanBoard = async function openAkanBoard() {
+/** 📋 button in akandain screen → opens the SAME merged board as entry.
+    The target list already includes red akan persons; direction follows the
+    picked person, so no separate akan board is needed anymore. */
+window.openAkanBoard = function openAkanBoard() {
     state.boardMode = 'akan';
     openBoard(state.activeSessionId);
-    // Akan mode: the board gets its OWN bookie selector (no longer hidden) —
-    // start from the main screen's options, then refresh from the server.
-    const wrap = $('boardTargetWrap');
-    wrap.style.display = '';
-    wrap.querySelector('label').textContent = 'အကန်ဒိုင်';
-    const sel = $('boardTarget');
-    const mainSel = $('akanBookieSelect');
-    if (mainSel) { sel.innerHTML = mainSel.innerHTML; if (mainSel.value) sel.value = mainSel.value; }
     const s = state.sessions.find((x) => x.id === state.activeSessionId);
     $('boardTitle').textContent = '🔄 အကန်ဒိုင် (အထွက်) — ' + (s ? sessionLabel(s) : '');
-    try {
-        const names = await getAkanBookieNames();
-        const prev = sel.value;
-        sel.innerHTML = '<option value="">-- အကန်ဒိုင်ရွေးရန် --</option>' +
-            names.map((k) => '<option value="' + escHtml(k) + '">' + escHtml(k) + '</option>').join('');
-        if (prev && names.includes(prev)) sel.value = prev;
-        else if (mainSel && mainSel.value && names.includes(mainSel.value)) sel.value = mainSel.value;
-    } catch (e) { /* keep the main screen's options copied above */ }
 };
 
 /* ================= LEDGER ================= */
@@ -3584,7 +3574,7 @@ function renderAkanTable() {
     }
     tbody.innerHTML = akanPending.map((e, i) =>
         '<tr>' +
-            '<td class="cell-out">⬆️ ' + escHtml(e.player_name || '—') + '</td>' +
+            '<td class="cell-out" style="color:#ff5a5a">⬆️ ' + escHtml(e.player_name || '—') + '</td>' +
             '<td class="cell-no">' + escHtml(String(e.number)) + '</td>' +
             '<td class="cell-amt out-amt">' + formatMoney(e.amount) + '</td>' +
             '<td class="cell-del"><button class="rec-del" onclick="akanDeleteRow(' + i + ')" title="ဖျက်မည်">🗑️</button></td>' +
