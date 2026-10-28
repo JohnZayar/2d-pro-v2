@@ -1,5 +1,5 @@
 /**
- * app.js — 2D Agent Pro v2 (local-first, v1-style entry)
+ * app.js — 2D Agent Pro v2 (server-direct, v1-style entry)
  *
  * Screens (home menu):
  *  - entry   : 📝 စာရင်းသွင်းရန် — v1 POS style (boxes + color keypad + numpad + ထည့်မည်)
@@ -12,9 +12,8 @@
  * Batches keep entry order — never re-sorted — so they match what was sent.
  */
 
-import * as db from '../shared/db.js?v=3';
 import * as pb from '../shared/pb.js?v=4';
-import * as sync from '../shared/sync-simple.js?v=11';
+import * as direct from '../shared/direct.js?v=1';
 import { parseBoardReport, parseLine } from '../shared/parser.js?v=18';
 
 // Global safety net: log unhandled promise rejections instead of failing silently.
@@ -58,12 +57,14 @@ function lineHasFormula(line) {
 
 /** Check hot-number limits for this agent: cumulative per (number, session), excluding formula-derived entries. Returns error message or null. */
 async function checkAgentLimits() {
+    // Server-direct (Pho Oct 27): a failed limits read MUST propagate — the
+    // save gate blocks the save on it (fail-closed). Silently skipping limits
+    // on a read failure could let an over-limit batch through if the network
+    // recovers before the creates run.
     let myLimits = {};
-    try {
-        const agents = await db.getAll('agents');
-        const me = (agents || []).find((a) => (a.name || '') === agentName);
-        myLimits = (me && me.limits) || {};
-    } catch (e) { /* ignore */ }
+    const agents = await direct.withRetry(() => direct.directList('agents', tenantId));
+    const me = (agents || []).find((a) => (a.name || '') === agentName);
+    myLimits = (me && me.limits) || {};
     const limitNums = Object.keys(myLimits).filter((n) => Number(myLimits[n]) > 0);
     if (!limitNums.length || !currentSessionId) return null;
 
@@ -77,9 +78,10 @@ async function checkAgentLimits() {
     });
     if (!Object.keys(pendTotals).length) return null;
 
-    // Existing saved records for this agent + session
-    let existing = [];
-    try { existing = await db.query('lottery_records', 'by_session', currentSessionId); } catch (e) { /* ignore */ }
+    // Existing saved records for this agent + session (server-direct;
+    // getSessionRecords already filters to this agent — the filter below
+    // stays for exactness). A failed read propagates to the save gate.
+    const existing = await getSessionRecords(currentSessionId);
     const existTotals = {};
     existing.forEach((r) => {
         if ((r.agent_name || '') !== agentName) return;
@@ -102,7 +104,7 @@ async function checkAgentLimits() {
 /** Get blocked numbers for a session (synced from Master via PocketBase). */
 async function getAgentBlocked(sessionId) {
     try {
-        const s = await db.get('sessions', sessionId);
+        const s = await direct.withRetry(() => direct.directGet('sessions', sessionId));
         if (s && s.blocked_numbers) {
             const arr = JSON.parse(s.blocked_numbers);
             if (Array.isArray(arr)) return arr.filter((n) => /^\d{2}$/.test(n));
@@ -112,28 +114,32 @@ async function getAgentBlocked(sessionId) {
 }
 
 /** Session lock: 11:55 AM / 3:55 PM cutoff + lock after winning numbers. */
+// Server-direct (Pho Oct 27): this MUST throw on a failed read, not fail open.
+// The old local-first catch-all ({locked:false} on any error) was never exercised
+// locally, but server reads fail on line blips — and a failed lock check must
+// never silently pass. Callers handle the throw: savePendingBatch blocks the
+// save (fail-closed, the enforcement point); submitEntry/saveBoard only stage
+// pending entries, so they proceed and let the save gate enforce.
 async function isAgentSessionLocked(sessionId) {
-    try {
-        const s = await db.get('sessions', sessionId);
-        if (!s) return { locked: false };
-        // manually closed by bookie → locked
-        if (s.closed) return { locked: true, reason: 'အချိန်ပြည့်လို့ပိတ်သွားပါပြီ' };
-        const wins = await _getWins(sessionId);
-        if (wins && wins.length) return { locked: true, reason: 'ပေါက်ဂဏန်း ထည့်ပြီးပြီ' };
-        if (s.date) {
-            const isAM = (s.timeType || '') === 'မနက်ပိုင်း';
-            const [hh, mm] = isAM ? [11, 55] : [15, 55];
-            // s.date is DD.MM.YYYY — parse properly (new Date("08.10.2026T11:55:00") is Invalid)
-            const parts = String(s.date).split('.');
-            let cutoff;
-            if (parts.length === 3) {
-                cutoff = new Date(Number(parts[2]), Number(parts[1]) - 1, Number(parts[0]), hh, mm, 0);
-            } else {
-                cutoff = new Date(s.date + `T${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}:00`);
-            }
-            if (!isNaN(cutoff.getTime()) && new Date() > cutoff) return { locked: true, reason: 'ထိုးခွင့် ပိတ်ပြီ' };
+    const s = await direct.withRetry(() => direct.directGet('sessions', sessionId));
+    if (!s) return { locked: false };
+    // manually closed by bookie → locked
+    if (s.closed) return { locked: true, reason: 'အချိန်ပြည့်လို့ပိတ်သွားပါပြီ' };
+    const wins = await _getWins(sessionId);
+    if (wins && wins.length) return { locked: true, reason: 'ပေါက်ဂဏန်း ထည့်ပြီးပြီ' };
+    if (s.date) {
+        const isAM = (s.timeType || '') === 'မနက်ပိုင်း';
+        const [hh, mm] = isAM ? [11, 55] : [15, 55];
+        // s.date is DD.MM.YYYY — parse properly (new Date("08.10.2026T11:55:00") is Invalid)
+        const parts = String(s.date).split('.');
+        let cutoff;
+        if (parts.length === 3) {
+            cutoff = new Date(Number(parts[2]), Number(parts[1]) - 1, Number(parts[0]), hh, mm, 0);
+        } else {
+            cutoff = new Date(s.date + `T${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}:00`);
         }
-    } catch (e) {}
+        if (!isNaN(cutoff.getTime()) && new Date() > cutoff) return { locked: true, reason: 'ထိုးခွင့် ပိတ်ပြီ' };
+    }
     return { locked: false };
 }
 
@@ -141,13 +147,11 @@ async function isAgentSessionLocked(sessionId) {
 
 document.addEventListener('DOMContentLoaded', init);
 
-/** Robust winning-number lookup: matches by local session ID or server _pbId, no index dependency. */
+/** Server-direct winning-number lookup: session id IS the server id
+ * (no _pbId fallback needed — that was a local-first artifact). */
 async function _getWins(sessionId) {
     try {
-        const all = await db.getAll('winning_numbers');
-        let pbId = null;
-        try { const s = await db.get('sessions', sessionId); if (s) pbId = s._pbId; } catch (e) {}
-        return all.filter((w) => w.session === sessionId || (pbId && w.session === pbId));
+        return await direct.withRetry(() => direct.directList('winning_numbers', tenantId, { filter: `session = "${sessionId}"` }));
     } catch (e) { return []; }
 }
 
@@ -207,62 +211,30 @@ async function init() {
             autoLoginError = e.message || String(e);
         }
     }
-    try {
-        await db.openDB();
-    } catch (e) {
-        showToast('❌ Local DB ဖွင့်မရပါ: ' + e.message);
-        return;
-    }
-
+    // Server-direct (Pho Oct 27): no local DB to open — PocketBase is the source of truth.
     const savedCode = localStorage.getItem(LS_TENANT) || '';
     const parsedCode = parseAgentCode(savedCode);
     tenantId = parsedCode ? parsedCode.tenantId : savedCode;
     agentName = localStorage.getItem(LS_AGENT_NAME) || '';
     currentSessionId = localStorage.getItem(LS_SESSION) || '';
 
-/** After each background sync: if anything arrived, refresh the UI so
- *  winning numbers / sessions appear without navigating away. */
-async function autoSyncRefresh(res) {
-    updateSyncPill();
-    const pulled = (res && res.pull && res.pull.pulled) || 0;
-    if (pulled > 0) {
-        await refreshSession();
-        refreshActiveScreen();
-    }
-}
-
     if (tenantId && agentName && !autoLoginFailed) {
         showApp();
         await refreshSession();
-        // Background sync (non-blocking) — refreshes UI when new data arrives
-        sync.startAutoSync(60000, autoSyncRefresh);
-        // Realtime: winning numbers / session changes arrive in ~1-2s (60s poll stays as backup)
+        // Realtime: winning numbers / session / record / player changes arrive
+        // in ~1-2s and refresh only the visible view (no poll, no sync queue).
+        // pb.js fires onEvent with no arguments, so the handler is
+        // collection-agnostic by design — refreshCurrentTab decides by view.
         try {
-            pb.realtimeSubscribe(
-                ['winning_numbers', 'sessions', 'lottery_records'],
-                () => { sync.syncNow().then((res) => autoSyncRefresh(res)).catch(() => updateSyncPill()); }
+            direct.directSubscribe(
+                ['winning_numbers', 'sessions', 'lottery_records', 'players'],
+                () => { refreshCurrentTab(); }
             );
-        } catch (e) { /* realtime optional — poll covers it */ }
+        } catch (e) { /* realtime optional — visibility/online refresh covers it */ }
         // ⏰ Session-close countdown, every 30s
         updateAgentReminders().catch(() => {});
         setInterval(() => { updateAgentReminders().catch(() => {}); }, 30000);
-        sync.syncNow().then(async () => {
-            updateSyncPill();
-            await refreshSession();
-            refreshActiveScreen();
-            // Repair `created` wiped by old sync pulls — AFTER sync to avoid races.
-            // Visible result so the user can confirm it worked.
-            try {
-                const res = await sync.repairMissingCreated();
-                if (res.fixed > 0) {
-                    showToast('🔧 ရက်စွဲ ' + res.fixed + ' ခု ပြန်ဖြည့်ပြီးပြီ');
-                    await refreshSession();
-                    refreshActiveScreen();
-                } else if (res.broken > 0) {
-                    showToast('⚠️ ရက်စွဲ ဖြည့်မရပါ — Sync နှိပ်ပြီး app ပြန်ဖွင့်ကြည့်ပါ');
-                }
-            } catch (e) {}
-        }).catch(() => updateSyncPill());
+        refreshActiveScreen();
     } else {
         showLinkScreen();
         // Pho Oct 19: If auto-login failed, pre-fill the dead code and show the error
@@ -277,13 +249,15 @@ async function autoSyncRefresh(res) {
         }
     }
     updateSyncPill();
-    window.addEventListener('online', updateSyncPill);
+    // Server-direct backups (no polling): line back + foreground return
+    // refresh the current view so stale data doesn't linger.
+    window.addEventListener('online', () => { if (pb.isLoggedIn()) refreshCurrentTab(); });
     window.addEventListener('offline', updateSyncPill);
-    // Phone sleep → foreground: sync immediately so stale data doesn't linger
+    // Phone sleep → foreground: refresh immediately
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible' && pb.isLoggedIn()) {
             checkAgentDisabled().then((disabled) => {
-                if (!disabled) sync.syncNow().then((res) => autoSyncRefresh(res)).catch(() => updateSyncPill());
+                if (!disabled) refreshCurrentTab();
             });
         }
     });
@@ -322,21 +296,9 @@ window.connectAgent = async function connectAgent() {
         const parsed = parseAgentCode(code);
         if (!parsed) return showLinkError('Code မှားနေတယ်');
         const tid = parsed.tenantId;
-        // Verify tenant exists: try local DB first, then PocketBase (if logged in).
-        let tenant = await db.get('tenants', tid);
-        if (!tenant && pb.isLoggedIn()) {
-            try {
-                const pbTenant = await pb.getOne('tenants', tid);
-                tenant = { id: pbTenant.id, name: pbTenant.name };
-                await db.put('tenants', tenant);
-            } catch (e) { /* not found remotely either */ }
-        }
-        // Local-first: accept the code even if unverified (works offline).
-        if (!tenant) {
-            tenant = { id: tid, name: 'Main (' + tid.slice(0, 6) + '…)' };
-            await db.put('tenants', tenant);
-        }
-
+        // Server-direct: no local tenant cache to verify against. Login
+        // below IS the verification — a bad code fails login and is removed,
+        // exactly as before (the old 'Main (xxxx…)' display name was unused).
         tenantId = tid;
         agentName = name;
         // Pho Oct 19: Save code optimistically for loginAsTenantAgent() to read,
@@ -367,9 +329,13 @@ window.connectAgent = async function connectAgent() {
         // Login succeeded — code stays saved
 
         showApp();
-        await refreshSession();
-        sync.startAutoSync(60000, autoSyncRefresh);
-        sync.syncNow().then((res) => autoSyncRefresh(res)).catch(() => {});
+        try {
+            direct.directSubscribe(
+                ['winning_numbers', 'sessions', 'lottery_records', 'players'],
+                () => { refreshCurrentTab(); }
+            );
+        } catch (e) { /* realtime optional — visibility/online refresh covers it */ }
+        refreshCurrentTab();
         showToast('✅ ချိတ်ဆက်ပြီးပြီ');
     } catch (e) {
         showLinkError('ချိတ်မရပါ: ' + e.message);
@@ -390,15 +356,9 @@ window.disconnectAgent = async function disconnectAgent() {
     localStorage.removeItem(LS_TENANT);
     localStorage.removeItem(LS_AGENT_NAME);
     localStorage.removeItem(LS_SESSION);
-    // Clear IndexedDB so the next tenant doesn't see previous tenant's data.
-    // Pho Oct 19: Close DB + await deletion (same race fix as resetApp).
-    try { db.closeDB(); } catch (e) { /* ignore */ }
-    try {
-        await new Promise((resolve) => {
-            const req = indexedDB.deleteDatabase('2dProV2');
-            req.onsuccess = req.onerror = req.onblocked = () => resolve();
-        });
-    } catch (e) { /* ignore */ }
+    // Server-direct (Pho Oct 27): do NOT touch the shared '2dProV2' IndexedDB —
+    // the live agent app on the same origin still uses it, and this app reads
+    // nothing from it. Next login reads its own tenant data from the server.
     location.reload();
 };
 
@@ -408,10 +368,16 @@ window.disconnectAgent = async function disconnectAgent() {
 async function refreshSession() {
     try {
         const sessions = await getAgentSessions();
+        // Fetch failed (line blip) — keep the previous session, do NOT clear.
+        if (_sessionsFetchFailed) return;
         const open = sessions.filter((s) => s.is_open !== false);
         const pick = open[0] || sessions[0] || null;
 
-        if (pick && pick.id !== currentSessionId) {
+        // H2 fix (Oct 28): never move the working session while unsaved
+        // pending entries exist — a realtime flip must not redirect a batch
+        // the agent typed for another session. (The banner still shows pick,
+        // the newest session; only the save target is preserved.)
+        if (pick && pick.id !== currentSessionId && !pendingEntries.length) {
             currentSessionId = pick.id;
             localStorage.setItem(LS_SESSION, pick.id);
         }
@@ -449,7 +415,17 @@ async function updateAgentReminders() {
     const bar = document.getElementById('reminderBar');
     if (!bar || !currentSessionId) { if (bar) bar.style.display = 'none'; return; }
     try {
-        const s = await db.get('sessions', currentSessionId);
+        // Server-direct (Pho Oct 27): directGet throws on 404, where the old
+        // db.get returned null — map 404 to the same hide-the-bar path. Any
+        // other read failure falls through to the outer catch, which leaves
+        // the bar exactly as it was (previous content kept).
+        let s;
+        try {
+            s = await direct.withRetry(() => direct.directGet('sessions', currentSessionId));
+        } catch (e) {
+            if (e && (e.code === 404 || /not found/i.test(e.message || ''))) { bar.style.display = 'none'; }
+            return;
+        }
         if (!s || !s.date || s.closed) { bar.style.display = 'none'; return; }
         const now = new Date();
         const isAM = (s.timeType || '') === 'မနက်ပိုင်း';
@@ -477,18 +453,35 @@ async function updateAgentReminders() {
     } catch (e) { /* ignore */ }
 }
 
+// Server-direct guard (Oct 27 rebuild): server reads can fail on line blips
+// where local reads almost never did. When a fetch fails, refreshSession
+// must NOT treat the result as "no sessions" and clear the agent's session.
+let _sessionsFetchFailed = false;
+// H5: last-known-good archived set. On an archive-read blip, dropdowns
+// reuse this instead of showing archived sessions (fail-OPEN before).
+let _lastArchivedSet = null;
+
 async function getAgentSessions() {
+    _sessionsFetchFailed = false;
     try {
         // Pho Oct 27: Master-archived sessions never appear in Agent lists.
-        // Archive rows sync via app_settings (key 'archived_<sessionId>').
+        // Archive rows read from the server (app_settings key 'archived_<sessionId>').
         let archived = new Set();
         try {
-            const all = await db.getAll('app_settings');
+            const all = await direct.withRetry(() => direct.directList('app_settings', tenantId));
             for (const r of all) {
                 if (r.key && r.key.indexOf('archived_') === 0) archived.add(r.key.slice(9));
             }
-        } catch (e) { /* ignore */ }
-        const sessions = (await db.query('sessions', 'by_tenant', tenantId)).filter((s) => !archived.has(s.id));
+            _lastArchivedSet = archived;
+        } catch (e) {
+            _sessionsFetchFailed = true;
+            // H5 fail-CLOSED: never render a list that may contain archived
+            // sessions. Reuse the last-known-good filter; with no prior good
+            // read, show nothing (refreshSession keeps the current session).
+            if (_lastArchivedSet) { archived = new Set(_lastArchivedSet); }
+            else { return []; }
+        }
+        const sessions = (await direct.withRetry(() => direct.directList('sessions', tenantId))).filter((s) => !archived.has(s.id));
         // Pho Oct 21: NEVER show two sessions for the same day-part.
         // If a duplicate ever slips in, keep the one holding this agent's
         // records (tie: the earliest created) and hide the twin.
@@ -504,13 +497,17 @@ async function getAgentSessions() {
             let best = grp[0], bestCount = -1;
             for (const s of grp) {
                 let cnt = 0;
-                try { cnt = (await db.query('lottery_records', 'by_session', s.id)).length; } catch (e) {}
+                try { cnt = (await direct.withRetry(() => direct.directList('lottery_records', tenantId, { filter: `session = "${s.id}"` }))).length; } catch (e) { _sessionsFetchFailed = true; }
                 if (cnt > bestCount || (cnt === bestCount && (s.created || 0) < (best.created || 0))) { best = s; bestCount = cnt; }
             }
             out.push(best);
         }
-        return out.sort((a, b) => (b.created || 0) - (a.created || 0));
+        // PB created is an ISO string: subtraction = NaN (no-op sort), so the
+        // banner auto-pick took the oldest session. String compare orders
+        // newest first, so the banner picks the newest open session.
+        return out.sort((a, b) => String(b.created || '').localeCompare(String(a.created || '')));
     } catch (e) {
+        _sessionsFetchFailed = true;
         return [];
     }
 }
@@ -518,7 +515,7 @@ async function getAgentSessions() {
 /** This agent's records in a session, entry order (oldest first). */
 async function getSessionRecords(sessId) {
     try {
-        const recs = await db.query('lottery_records', 'by_session', sessId);
+        const recs = await direct.withRetry(() => direct.directList('lottery_records', tenantId, { filter: `session = "${sessId}"`, sort: 'created' }));
         return recs
             .filter((r) => (r.agent_name || '') === agentName)
             .sort((a, b) => (a.created || 0) - (b.created || 0));
@@ -584,6 +581,34 @@ window.addEventListener('scroll', () => {
     if (btn) btn.hidden = window.scrollY < 300;
 }, { passive: true });
 
+/** Server-direct (Pho Oct 27): on a realtime event, refresh the session
+ *  banner + ONLY the currently visible view — never a full sync, never a
+ *  reload. Burst-coalesced: while a refresh runs, further events queue
+ *  exactly one follow-up run. Entry view keeps typed input safe:
+ *  refreshEntryScreen never touches the number/amount boxes, and a failed
+ *  sessions read skips the entry rebuild so a line blip cannot blank the
+ *  session dropdown (memory state stays intact either way).
+ *  TOP-LEVEL on purpose: connectAgent calls this too, and a function nested
+ *  inside init() would be invisible there (the old app's autoSyncRefresh had
+ *  exactly that latent first-link bug — see report). */
+let _rtRunning = false, _rtPending = false;
+async function refreshCurrentTab() {
+    if (_rtRunning) { _rtPending = true; return; }
+    _rtRunning = true;
+    try {
+        await refreshSession();
+        if (activeScreen === 'home') { await updateMenuSubs(); }
+        else if (activeScreen === 'entry') { if (!_sessionsFetchFailed) await refreshEntryScreen(); }
+        else if (activeScreen === 'records') { await renderRecordsView(); }
+        else if (activeScreen === 'players') { await renderPlayers(); }
+        else if (activeScreen === 'daily') { await renderDaily(); }
+        else if (activeScreen === 'weekly') { await renderWeekly(); }
+    } finally {
+        _rtRunning = false;
+        if (_rtPending) { _rtPending = false; refreshCurrentTab(); }
+    }
+}
+
 /** Re-render whichever screen is currently visible. */
 function refreshActiveScreen() {
     if (activeScreen === 'home') { updateMenuSubs(); }
@@ -606,13 +631,20 @@ async function updateMenuSubs() {
 
 let editingPlayerId = null;
 
+// Server-direct fetch-failure flag (Oct 27 rebuild): getPlayers keeps its
+// catch → [] contract for its callers, but views that must not blank on a
+// failed read (renderPlayers) check this flag instead of trusting [].
+let _playersFetchFailed = false;
+
 async function getPlayers() {
+    _playersFetchFailed = false;
     try {
-        const all = await db.query('players', 'by_tenant', tenantId);
+        const all = await direct.withRetry(() => direct.directList('players', tenantId));
         return all
             .filter((p) => (p.agent_name || '') === agentName)
             .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
     } catch (e) {
+        _playersFetchFailed = true;
         console.warn('[agent] getPlayers failed', e);
         return [];
     }
@@ -626,14 +658,14 @@ window.openPlayerModal = function openPlayerModal(editId) {
     document.getElementById('playerCommInput').value = '';
     document.getElementById('playerMultInput').value = '';
     if (editId) {
-        db.get('players', editId).then((p) => {
+        direct.directGet('players', editId).then((p) => {
             if (p) {
                 document.getElementById('playerNameInput').value = p.name || '';
                 document.getElementById('playerPhoneInput').value = p.phone || '';
                 document.getElementById('playerCommInput').value = p.commission != null ? p.commission : '';
                 document.getElementById('playerMultInput').value = p.multiplier != null ? p.multiplier : '';
             }
-        });
+        }).catch(() => { /* deleted elsewhere: modal stays blank, save recreates */ });
     }
     document.getElementById('playerModal').hidden = false;
     setTimeout(() => document.getElementById('playerNameInput').focus(), 100);
@@ -643,6 +675,19 @@ window.closePlayerModal = function closePlayerModal() {
     document.getElementById('playerModal').hidden = true;
     editingPlayerId = null;
 };
+
+// Server-direct (Pho Oct 27): PocketBase returns field-level validation
+// detail in e.data.data (e.g. {phone: {message: '...'}}) but its top-level
+// message is just the generic 'Failed to create record.' — surface the
+// field detail so a failed save says WHICH field broke, not just that it did.
+function pbFieldDetail(e) {
+    const fields = e && e.data && e.data.data;
+    if (!fields || typeof fields !== 'object') return '';
+    return Object.keys(fields).map((f) => {
+        const v = fields[f];
+        return f + ': ' + ((v && v.message) ? v.message : 'invalid');
+    }).join(', ');
+}
 
 window.savePlayer = async function savePlayer() {
     const name = document.getElementById('playerNameInput').value.trim();
@@ -654,43 +699,51 @@ window.savePlayer = async function savePlayer() {
     if (!name) { showToast('နာမည် ထည့်ပါ'); return; }
     try {
         if (editingPlayerId) {
-            const existing = (await db.get('players', editingPlayerId)) || {};
-            await sync.mutate('update', 'players', Object.assign({}, existing, {
+            // Server-direct: fetch the server row, merge the form fields, save.
+            // Fallback keeps tenant/agent_name so a 404-recreate stays scoped.
+            const existing = await direct.withRetry(() => direct.directGet('players', editingPlayerId))
+                .catch(() => ({ tenant: tenantId, agent_name: agentName }));
+            await direct.withRetry(() => direct.directSave('players', Object.assign({}, existing, {
                 id: editingPlayerId, name, phone, commission, multiplier
-            }));
+            })));
             showToast('✅ ပြင်ပြီးပြီ');
         } else {
-            await sync.mutate('create', 'players', {
-                id: uid(),
+            // created is dropped by directCreate (PB owns it) — field set otherwise exact.
+            const playerId = uid(); // M2: mint ONCE outside withRetry
+            await direct.withRetry(() => direct.directCreate('players', {
+                id: playerId,
                 tenant: tenantId,
                 agent_name: agentName,
-                name, phone, commission, multiplier,
-                created: Date.now()
-            });
+                name, phone, commission, multiplier
+            }));
             showToast('✅ လူ ထည့်ပြီးပြီ');
         }
         closePlayerModal();
         await renderPlayers();
         updateSyncPill();
     } catch (e) {
-        showToast('❌ သိမ်းမရပါ: ' + e.message);
+        showToast('❌ သိမ်းမရပါ: ' + (pbFieldDetail(e) || e.message));
     }
 };
 
 window.deletePlayer = async function deletePlayer(id) {
-    const p = await db.get('players', id);
+    const p = await direct.directGet('players', id).catch(() => null);
     if (!p) return;
     // Pho Oct 26: refuse when the player still has records — the server
-    // rejects such deletes (required relation) and the queue entry would
-    // stick forever, lighting the red pill in both apps (shared DB).
+    // rejects such deletes (required relation).
     // Records link players by player_name (text), not by id.
     try {
-        const recs = await db.getAll('lottery_records').catch(() => []);
+        const recs = await direct.withRetry(() => direct.directList('lottery_records', tenantId)).catch(() => []);
         const mine = recs.filter(r => r && r.player_name === p.name && (!p.tenant || !r.tenant || r.tenant === p.tenant));
         if (mine.length) { showToast('❌ စာရင်း ရှိသေးလို့ ဖျက်မရဘူး (' + mine.length + ' ကွက်) — စာရင်းတွေ အရင် ဖျက်ပါ'); return; }
-    } catch (e) { /* check failed: fall through — the sync drop covers the server side */ }
+    } catch (e) { /* check failed: fall through — directDelete errors toast below */ }
     if (!confirm('"' + p.name + '" ကို ဖျက်မှာလား?')) return;
-    await sync.mutate('delete', 'players', { id });
+    try {
+        await direct.withRetry(() => direct.directDelete('players', id));
+    } catch (e) {
+        showToast('❌ ဖျက်မရပါ: ' + e.message);
+        return;
+    }
     await renderPlayers();
     showToast('🗑️ ဖျက်ပြီးပြီ');
 };
@@ -699,6 +752,8 @@ async function renderPlayers() {
     const listEl = document.getElementById('playersList');
     const emptyEl = document.getElementById('playersEmpty');
     const players = await getPlayers();
+    // Server-direct: a failed players read must not blank the list.
+    if (_playersFetchFailed) { showToast('❌ ဆာဗာ ဆက်မရပါ'); return; }
 
     let sessRecs = [];
     if (currentSessionId) {
@@ -812,16 +867,15 @@ async function refreshEntryScreen() {
         pSel.value = prevPlayer;
     }
 
-    // Session select
+    // Session select — the dropdown must always show the session saves go
+    // to (currentSessionId). Restoring a stale previous value let the
+    // dropdown and the save target disagree after a realtime flip (H2).
     const sSel = $('entrySessionSelect');
     const sessions = await getAgentSessions();
-    const prevSess = sSel.value;
     sSel.innerHTML = sessions.map((s) =>
         '<option value="' + s.id + '">' + escHtml(s.name || 'Session') + '</option>').join('') ||
         '<option value="">Session မရှိပါ</option>';
-    if (prevSess && Array.from(sSel.options).some((o) => o.value === prevSess)) {
-        sSel.value = prevSess;
-    } else if (currentSessionId) {
+    if (currentSessionId) {
         sSel.value = currentSessionId;
     }
 
@@ -911,7 +965,10 @@ async function getNextBatchNo(playerName) {
  * Nothing is saved yet; press 💾 Save (top button) to store as a new batch.
  */
 window.submitEntry = async function submitEntry() {
-    const lkE = await isAgentSessionLocked(currentSessionId);
+    // Lock-check failure here only stages pending entries — the save gate
+    // (savePendingBatch) enforces the lock fail-closed, so proceed on error.
+    let lkE = { locked: false };
+    try { lkE = await isAgentSessionLocked(currentSessionId); } catch (e) { /* save gate enforces */ }
     if (lkE.locked) { showToast('🔒 ' + lkE.reason + ' — တင် မရပါ'); return; }
     const playerName = $('entryPlayerSelect').value || null;
     if (!playerName) { showToast('❌ အမည် ရွေးပါ (မရွေးရင် တင်မရ)'); return; }
@@ -978,16 +1035,38 @@ window.savePendingBatch = async function savePendingBatch() {
     // Block if any pending entry has no player name
     if (pendingEntries.some((e) => !(e.player_name || '').trim())) { saveInFlight = false; showToast('❌ အမည် မပါ တဲ့ စာရင်း ရှိ — ဖျက် ပြီး ပြန် ထည့်'); return; }
     if (!currentSessionId) { saveInFlight = false; showToast('⚠️ Session မရှိသေးပါ'); return; }
-    // Pho Oct 19 Option B: Verify session actually exists in local DB (not just ID truthy).
+    // Pho Oct 19 Option B: Verify session actually exists on the server (not just ID truthy).
     // Prevents blank/invalid session 400 errors.
-    const sessCheck = await db.get('sessions', currentSessionId);
+    // A throw here must never leave saveInFlight stuck — every failure path resets it.
+    let sessCheck = null;
+    try {
+        sessCheck = await direct.withRetry(() => direct.directGet('sessions', currentSessionId));
+    } catch (e) {
+        if (e && (e.code === 404 || /not found/i.test(e.message || ''))) {
+            sessCheck = null; // genuinely missing → the !sessCheck path below
+        } else {
+            console.error('[agent] savePendingBatch session check failed', e);
+            saveInFlight = false;
+            showToast('❌ ဆာဗာ ဆက်မရပါ: ' + e.message);
+            return;
+        }
+    }
     if (!sessCheck) { saveInFlight = false; showToast('⚠️ Session မတွေ့ပါ — ပြန်ရွေးပါ'); currentSessionId = null; localStorage.removeItem(LS_SESSION); await refreshSession(); return; }
-    const lkS = await isAgentSessionLocked(currentSessionId);
+    let lkS, limitErr;
+    try {
+        lkS = await isAgentSessionLocked(currentSessionId);
+        // Hot-number limits (cumulative per session; formula-derived excluded)
+        limitErr = await checkAgentLimits();
+    } catch (e) {
+        console.error('[agent] savePendingBatch pre-flight failed', e);
+        saveInFlight = false;
+        showToast('❌ ဆာဗာ ဆက်မရပါ: ' + e.message);
+        return;
+    }
     if (lkS.locked) { saveInFlight = false; showToast('🔒 ' + lkS.reason + ' — သိမ်း မရပါ'); return; }
-    // Hot-number limits (cumulative per session; formula-derived excluded)
-    const limitErr = await checkAgentLimits();
     if (limitErr) { saveInFlight = false; showToast('❌ ' + limitErr); return; }
 
+    const createdIds = [];
     try {
         // Group pending by player, preserving first-appearance order
         const order = [];
@@ -1003,8 +1082,9 @@ window.savePendingBatch = async function savePendingBatch() {
         let count = 0;
         for (const k of order) {
             for (const e of byPlayer[k]) {
-                await sync.mutate('create', 'lottery_records', {
-                    id: uid(),
+                const recId = uid();
+                await direct.withRetry(() => direct.directCreate('lottery_records', {
+                    id: recId,
                     tenant: tenantId,
                     session: currentSessionId,
                     number: e.number,
@@ -1016,7 +1096,8 @@ window.savePendingBatch = async function savePendingBatch() {
                     fromFormula: !!e.fromFormula,
                     formula_text: e.formula_text || '',
                     created: Date.now()
-                });
+                }));
+                createdIds.push(recId);
                 count++;
             }
         }
@@ -1024,10 +1105,13 @@ window.savePendingBatch = async function savePendingBatch() {
         await renderEntryTable();
         updateSyncPill();
         showToast('✅ သိမ်းပြီးပြီ');
-        // Push to server immediately so Master sees the numbers within seconds
-        sync.syncNow().catch(() => {});
     } catch (e) {
         console.error('[agent] savePendingBatch failed', e);
+        // Roll back this attempt's rows best-effort so a retry never
+        // duplicates them; pending is kept for the retry.
+        for (const rid of createdIds) {
+            await direct.withRetry(() => direct.directDelete('lottery_records', rid)).catch(() => { /* best-effort */ });
+        }
         showToast('❌ သိမ်းမရပါ: ' + e.message);
     } finally {
         saveInFlight = false;
@@ -1408,10 +1492,18 @@ async function refreshBatchDetail() {
 /* ================= Records: edit / delete ================= */
 
 window.deleteRecord = async function deleteRecord(id) {
-    const rec = await db.get('lottery_records', id);
+    let rec = null;
+    try {
+        rec = await direct.withRetry(() => direct.directGet('lottery_records', id));
+    } catch (e) { return; }
     if (!rec) return;
     if (!confirm(rec.number + ' (' + formatMoney(rec.amount) + ') ဖျက်မှာလား?')) return;
-    await sync.mutate('delete', 'lottery_records', { id });
+    try {
+        await direct.withRetry(() => direct.directDelete('lottery_records', id));
+    } catch (e) {
+        showToast('❌ ဖျက်မရပါ: ' + e.message);
+        return;
+    }
     if (activeScreen === 'records') await renderRecordsView();
     await refreshBatchDetail();
     showToast('🗑️ ဖျက်ပြီးပြီ');
@@ -1420,7 +1512,10 @@ window.deleteRecord = async function deleteRecord(id) {
 let editingRecordId = null;
 
 window.openEditRecord = async function openEditRecord(id) {
-    const rec = await db.get('lottery_records', id);
+    let rec = null;
+    try {
+        rec = await direct.withRetry(() => direct.directGet('lottery_records', id));
+    } catch (e) { return; }
     if (!rec) return;
     editingRecordId = id;
     $('editNumberInput').value = rec.number || '';
@@ -1441,11 +1536,21 @@ window.saveEditRecord = async function saveEditRecord() {
     if (!/^\d{1,2}$/.test(num)) { showToast('နံပါတ် မှန်အောင်ထည့်ပါ (0-99)'); return; }
     if (!amt || amt <= 0) { showToast('ငွေ ထည့်ပါ'); return; }
     try {
-        const existing = (await db.get('lottery_records', editingRecordId)) || {};
-        await sync.mutate('update', 'lottery_records', Object.assign({}, existing, {
+        const existing = (await direct.withRetry(() => direct.directGet('lottery_records', editingRecordId))) || {};
+        // Explicit field pick: server records carry system fields
+        // (collectionId, created, updated) that must not go back in an update.
+        await direct.withRetry(() => direct.directSave('lottery_records', {
             id: editingRecordId,
+            tenant: existing.tenant || tenantId,
+            session: existing.session,
             number: num.padStart(2, '0'),
-            amount: amt
+            amount: amt,
+            agent_name: existing.agent_name,
+            player_name: existing.player_name,
+            record_type: existing.record_type,
+            batch_no: existing.batch_no,
+            fromFormula: existing.fromFormula,
+            formula_text: existing.formula_text
         }));
         closeEditModal();
         if (activeScreen === 'records') await renderRecordsView();
@@ -1540,14 +1645,31 @@ window.saveBoard = async function saveBoard() {
     if (saveInFlight) return;
     // Pho Oct 18: set the guard SYNCHRONOUSLY before any await.
     saveInFlight = true;
-    const lkB = await isAgentSessionLocked(currentSessionId);
+    // Lock-check failure here only stages pending entries — the save gate
+    // (savePendingBatch) enforces the lock fail-closed, so proceed on error.
+    let lkB = { locked: false };
+    try { lkB = await isAgentSessionLocked(currentSessionId); } catch (e) { /* save gate enforces */ }
     if (lkB.locked) { saveInFlight = false; showToast('🔒 ' + lkB.reason + ' — တင် မရပါ'); return; }
     const ta = $('boardTextarea');
     const text = ta.value;
     if (!text.trim()) { saveInFlight = false; showToast('စာရွက် လွတ်နေတယ်'); return; }
     if (!currentSessionId) { saveInFlight = false; showToast('⚠️ Session မရှိသေးပါ'); return; }
-    // Pho Oct 19 Option B: Verify session actually exists in local DB.
-    const sessCheckB = await db.get('sessions', currentSessionId);
+    // Server-direct (Pho Oct 27): verify the session exists on the server.
+    // directGet throws on 404 — map it to the same missing-session path.
+    // Any other read failure fails closed (guard reset + toast) so the
+    // in-flight guard can never get stuck by a throw here.
+    let sessCheckB = null;
+    try {
+        sessCheckB = await direct.withRetry(() => direct.directGet('sessions', currentSessionId));
+    } catch (e) {
+        if (e && (e.code === 404 || /not found/i.test(e.message || ''))) {
+            sessCheckB = null;
+        } else {
+            saveInFlight = false;
+            showToast('❌ ဆာဗာ ဆက်မရပါ: ' + e.message);
+            return;
+        }
+    }
     if (!sessCheckB) { saveInFlight = false; showToast('⚠️ Session မတွေ့ပါ — ပြန်ရွေးပါ'); currentSessionId = null; localStorage.removeItem(LS_SESSION); await refreshSession(); return; }
 
     try {
@@ -1606,8 +1728,9 @@ window.saveBoard = async function saveBoard() {
 /* ================= Settings & sync ================= */
 
 window.openSettings = function openSettings() {
+    // Server-direct: sync.isOnline() was exactly navigator.onLine !== false.
     $('settingsSyncState').textContent =
-        pb.isLoggedIn() ? '✅ ' + (sync.isOnline() ? 'Online' : 'Offline') : '📴 Local only';
+        pb.isLoggedIn() ? '✅ ' + (navigator.onLine !== false ? 'Online' : 'Offline') : '📴 Local only';
     $('settingsModal').hidden = false;
 };
 
@@ -1615,101 +1738,28 @@ window.closeSettings = function closeSettings() {
     $('settingsModal').hidden = true;
 };
 
+/** Server-direct manual refresh (Settings "အခု Sync လုပ်မည်" button):
+ *  session + current view straight from the server. The ↑/↓ counts are
+ *  gone with the queue — the success/failure toasts keep their wording. */
 window.syncNowManual = async function syncNowManual() {
     updateSyncPill('working');
     try {
-        const res = await sync.syncNow();
-        const pushed = (res.push && res.push.pushed) || 0;
-        const pulled = (res.pull && res.pull.pulled) || 0;
-        const pullErr = (res.pull && res.pull.error) ? ' ❌' + res.pull.error : '';
-        showToast('🔄 Sync ပြီးပြီ (↑' + pushed + ' ↓' + pulled + ')' + pullErr);
         await refreshSession();
         refreshActiveScreen();
+        showToast('🔄 Sync ပြီးပြီ');
     } catch (e) {
         showToast('❌ Sync မရပါ: ' + e.message);
     }
     updateSyncPill();
 };
 
-/** Pho Oct 18: Re-queue ALL local records for push (fixes records saved but never queued). */
-window.repushAllManual = async function repushAllManual() {
-    updateSyncPill('working');
-    try {
-        const res = await sync.repushAll();
-        // Show the ACTUAL push result from repushAll (not a second skipped syncNow)
-        let msg = '📤 ' + (res.queued || 0) + ' ခု queue';
-        msg += '\n✅ ' + (res.pushed || 0) + ' တင်';
-        if (res.failed) msg += ' ❌ ' + res.failed + ' မရ';
-        if (res.errors && res.errors.length) {
-            msg += '\n' + res.errors.slice(0, 5).join('\n');
-        }
-        showToast(msg);
-        await refreshSession();
-        refreshActiveScreen();
-    } catch (e) {
-        showToast('❌ မရပါ: ' + e.message);
-    }
-    updateSyncPill();
-};
-
-/** Diagnose: try pushing ONE queued item and show the exact error. */
-window.diagnosePush = async function diagnosePush() {
-    const q = await db.getAll('sync_queue').catch(() => []);
-    if (!q.length) { showToast('Queue ဗလာ'); return; }
-    const entry = q[0];
-    showToast(`🔍 စမ်း: ${entry.op}:${entry.collection}…`);
-    try {
-        // Use the internal push for one entry (imported via sync module)
-        const res = await sync.testPushOne(entry);
-        showToast(`✅ ရတယ်: ${res}`);
-    } catch (e) {
-        showToast(`❌ Error ${e.code || '?'}: ${e.message || e}`);
-    }
-};
-
+/** Server-direct (Pho Oct 27): no sync queue, no pill state. Every
+ *  existing caller stays harmless — the pills are simply hidden. */
 function updateSyncPill(force) {
     const pill = $('syncPill');
-    if (!pill) return;
-    // Pho Oct 19: Tap pill to see last error (mobile has no hover)
-    if (!pill._errHandler) {
-        pill._errHandler = true;
-        pill.style.cursor = 'pointer';
-        pill.addEventListener('click', () => {
-            const e = (sync.lastPushError && sync.lastPushError()) || (sync.getLastPushError && sync.getLastPushError());
-            if (e) alert('Sync Error:\n' + e);
-            else showToast('✅ Sync OK — error မရှိ');
-        });
-    }
-    pill.classList.remove('online', 'offline', 'working');
+    if (pill) pill.hidden = true;
     const entryPill = $('entrySyncPill');
-    const setPill = (el, cls, txt, title) => {
-        if (!el) return;
-        el.classList.remove('online', 'offline', 'working');
-        el.classList.add(cls);
-        el.textContent = txt;
-        el.title = title;
-    };
-    // Pho Oct 19: Show last push error in title (for debugging)
-    const lastErr = (sync.lastPushError && sync.lastPushError()) || null;
-    if (force === 'working' || sync.isSyncing()) {
-        setPill(pill, 'working', '🟡', 'Syncing…' + (lastErr ? ' | Err: ' + lastErr : ''));
-        setPill(entryPill, 'working', '🟡 REST ပုံစံဖြင့် အလုပ်လုပ်နေသည်', 'Syncing…' + (lastErr ? ' | Err: ' + lastErr : ''));
-    } else if (!sync.isOnline()) {
-        setPill(pill, 'offline', '🔴', 'Offline — local only');
-        setPill(entryPill, 'offline', '🔴', 'Offline');
-    } else if (pb.isLoggedIn()) {
-        // If there's a push error, show red instead of green
-        if (lastErr) {
-            setPill(pill, 'offline', '🔴', 'Push failed: ' + lastErr);
-            setPill(entryPill, 'offline', '🔴 Push failed: ' + lastErr, 'Push failed');
-        } else {
-            setPill(pill, 'online', '🟢', 'Online & synced');
-            setPill(entryPill, 'online', '🟢', 'Online');
-        }
-    } else {
-        setPill(pill, 'offline', '⚪', 'Local only (no sync account)');
-        setPill(entryPill, 'offline', '⚪', 'Local only');
-    }
+    if (entryPill) entryPill.hidden = true;
 }
 
 // Close modals on backdrop tap
@@ -1741,11 +1791,19 @@ function toISODate(d) {
     return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
 }
 
+// Server-direct fetch-failure flag (Oct 27 rebuild): getAgentRecords keeps its
+// catch → [] contract, but daily/weekly views check this flag so a failed read
+// never renders as "no records". sort 'created' keeps entry order, which the
+// views' first-appearance grouping depends on.
+let _agentRecordsFetchFailed = false;
+
 async function getAgentRecords() {
+    _agentRecordsFetchFailed = false;
     try {
-        const all = await db.query('lottery_records', 'by_tenant', tenantId);
+        const all = await direct.withRetry(() => direct.directList('lottery_records', tenantId, { sort: 'created' }));
         return all.filter((r) => (r.agent_name || '') === agentName);
     } catch (e) {
+        _agentRecordsFetchFailed = true;
         return [];
     }
 }
@@ -1768,11 +1826,19 @@ window.renderDaily = async function renderDaily() {
     }
 
     let recs = (await getAgentRecords()).filter((r) => dateKey(r.created) === key);
+    // Server-direct: a failed records read must not render as "no records".
+    if (_agentRecordsFetchFailed) { showToast('❌ ဆာဗာ ဆက်မရပါ'); return; }
     const selPlayer = playerSel.value;
     if (selPlayer !== '__all') {
         recs = recs.filter((r) => (r.player_name || '') === selPlayer);
     }
-    content.innerHTML = await renderDailyTable(recs, key);
+    try {
+        content.innerHTML = await renderDailyTable(recs, key);
+    } catch (e) {
+        // renderDailyTable throws only when its players read fails, so the
+        // commission math never silently runs on default rates.
+        showToast('❌ ဆာဗာ ဆက်မရပါ');
+    }
 };
 
 /**
@@ -1783,6 +1849,10 @@ async function renderDailyTable(recs, dateKeyStr) {
 
     // Player info for commission/multiplier
     const players = await getPlayers().catch(() => []);
+    // Server-direct: a failed players read must not silently run the totals
+    // on default commission/multiplier rates — the caller toasts and keeps
+    // the previous content instead.
+    if (_playersFetchFailed) throw new Error('players fetch failed');
     const playerInfo = {};
     players.forEach((p) => {
         playerInfo[p.name || ''] = {
@@ -1883,6 +1953,10 @@ async function renderPlayerGroups(recs, emptyMsg) {
 
     // Build player info map: name → {commission, multiplier}
     const players = await getPlayers().catch(() => []);
+    // Server-direct: same guard as renderDailyTable — never run totals on
+    // default rates after a failed players read (no callers today, but the
+    // function must stay correct if reactivated).
+    if (_playersFetchFailed) throw new Error('players fetch failed');
     const playerInfo = {};
     players.forEach((p) => {
         playerInfo[p.name || ''] = {
@@ -1987,8 +2061,13 @@ window.renderWeekly = async function renderWeekly() {
     label.textContent = formatDateStr(monday) + ' – ' + formatDateStr(sunday);
 
     const recs = await getAgentRecords();
+    // Server-direct: a failed records read must not render as "no records".
+    if (_agentRecordsFetchFailed) { showToast('❌ ဆာဗာ ဆက်မရပါ'); return; }
     // Player info for commission/multiplier
     const players = await getPlayers().catch(() => []);
+    // Server-direct: a failed players read must not silently run the totals
+    // on default commission/multiplier rates.
+    if (_playersFetchFailed) { showToast('❌ ဆာဗာ ဆက်မရပါ'); return; }
     const playerInfo = {};
     players.forEach((p) => {
         playerInfo[p.name || ''] = {
@@ -2069,13 +2148,9 @@ window.renderWeekly = async function renderWeekly() {
 /* 🔄 App Reset: clear all local data and reload */
 window.resetAgentApp = async function resetAgentApp() {
     if (!confirm('App data အကုန် ရှင်း မလား? (code ပြန် ထည့် ရ မယ်)')) return;
-    // Pho Oct 19: Nuclear reset — clear each store directly.
-    try {
-        const stores = ['tenants', 'sessions', 'lottery_records', 'winning_numbers', 'agents', 'app_settings', 'players', 'sync_queue'];
-        for (const s of stores) {
-            try { await db.clear(s); } catch (e) { /* ignore */ }
-        }
-    } catch (e) { /* ignore */ }
+    // Server-direct (Pho Oct 27): no local DB to wipe — storage clear +
+    // reload is the whole reset (login screen, nothing remains). Stale
+    // IndexedDB bytes, if any, stay on disk unread by this app.
     try { localStorage.clear(); } catch (e) { /* ignore */ }
     try { sessionStorage.clear(); } catch (e) { /* ignore */ }
     location.reload();
@@ -2181,7 +2256,13 @@ window.resetAgentApp = async function resetAgentApp() {
     window.openEditRecord = async function(rid) {
         closeEditDeleteMenu();
         try {
-            const r = await db.get('lottery_records', rid);
+            let r = null;
+            try {
+                r = await direct.withRetry(() => direct.directGet('lottery_records', rid));
+            } catch (ge) {
+                if (ge && ge.code === 404) { alert('မတွေ့ပါ'); return; }
+                throw ge;
+            }
             if (!r) { alert('မတွေ့ပါ'); return; }
             const modal = document.createElement('div');
             modal.id = 'editRecordModal';
@@ -2206,12 +2287,24 @@ window.resetAgentApp = async function resetAgentApp() {
         const amt = Number(document.getElementById('editAmt').value);
         if (!num || !(amt > 0)) { alert('မှန်ကန်စွာ ဖြည့်ပါ'); return; }
         try {
-            const r = await db.get('lottery_records', rid);
+            const r = await direct.withRetry(() => direct.directGet('lottery_records', rid));
             if (!r) return;
-            r.number = num;
-            r.amount = amt;
-            await db.put('lottery_records', r);
-            await sync.mutate('update', 'lottery_records', { id: rid, number: num, amount: amt });
+            // Explicit field pick: server records carry system fields
+            // (collectionId, created, updated) that must not go back in an update.
+            // NOTE: no number padding here — preserved exactly as before.
+            await direct.withRetry(() => direct.directSave('lottery_records', {
+                id: rid,
+                tenant: r.tenant || tenantId,
+                session: r.session,
+                number: num,
+                amount: amt,
+                agent_name: r.agent_name,
+                player_name: r.player_name,
+                record_type: r.record_type,
+                batch_no: r.batch_no,
+                fromFormula: r.fromFormula,
+                formula_text: r.formula_text
+            }));
             closeEditDeleteMenu();
             if (window.renderRecordsView) await window.renderRecordsView();
         } catch (e) { alert('Error: ' + e.message); }
@@ -2221,8 +2314,7 @@ window.resetAgentApp = async function resetAgentApp() {
         closeEditDeleteMenu();
         if (!confirm('ဖျက်မလား?')) return;
         try {
-            await db.del('lottery_records', rid);
-            await sync.mutate('delete', 'lottery_records', { id: rid });
+            await direct.withRetry(() => direct.directDelete('lottery_records', rid));
             if (window.renderRecordsView) await window.renderRecordsView();
         } catch (e) { alert('Error: ' + e.message); }
     };
@@ -2260,7 +2352,10 @@ window.resetAgentApp = async function resetAgentApp() {
         if (old) old.remove();
         const recs = [];
         for (const id of _grpIds) {
-            const r = await db.get('lottery_records', id);
+            let r = null;
+            try {
+                r = await direct.withRetry(() => direct.directGet('lottery_records', id));
+            } catch (e) { /* missing → skipped, as before */ }
             if (r) recs.push(r);
         }
         _grpIds = recs.map((r) => r.id);
@@ -2296,12 +2391,26 @@ window.resetAgentApp = async function resetAgentApp() {
                 const num = numEl.value.trim();
                 const amt = Number(amtEl.value);
                 if (!num || !(amt > 0)) { alert('မှန်ကန်စွာ ဖြည့်ပါ'); return; }
-                const r = await db.get('lottery_records', id);
+                let r = null;
+                try {
+                    r = await direct.withRetry(() => direct.directGet('lottery_records', id));
+                } catch (e) { continue; }
                 if (!r) continue;
                 if (String(r.number) !== num || Number(r.amount) !== amt) {
-                    r.number = num; r.amount = amt;
-                    await db.put('lottery_records', r);
-                    await sync.mutate('update', 'lottery_records', { id, number: num, amount: amt });
+                    // NOTE: no number padding here — preserved exactly as before.
+                    await direct.withRetry(() => direct.directSave('lottery_records', {
+                        id,
+                        tenant: r.tenant || tenantId,
+                        session: r.session,
+                        number: num,
+                        amount: amt,
+                        agent_name: r.agent_name,
+                        player_name: r.player_name,
+                        record_type: r.record_type,
+                        batch_no: r.batch_no,
+                        fromFormula: r.fromFormula,
+                        formula_text: r.formula_text
+                    }));
                 }
             }
             closeEditDeleteMenu();
@@ -2311,8 +2420,7 @@ window.resetAgentApp = async function resetAgentApp() {
     window.deleteOneInGroup = async function(rid) {
         if (!confirm('ဒီ ၁ ကွက် ဖျက်မလား?')) return;
         try {
-            await db.del('lottery_records', rid);
-            await sync.mutate('delete', 'lottery_records', { id: rid });
+            await direct.withRetry(() => direct.directDelete('lottery_records', rid));
             _grpIds = _grpIds.filter((x) => x !== rid);
             if (!_grpIds.length) { closeEditDeleteMenu(); await _grpRefresh(); }
             else await renderGroupModal();
@@ -2323,14 +2431,16 @@ window.resetAgentApp = async function resetAgentApp() {
         const ids = ridsStr.split(',').filter(Boolean);
         let total = 0;
         for (const id of ids) {
-            const r = await db.get('lottery_records', id);
+            let r = null;
+            try {
+                r = await direct.withRetry(() => direct.directGet('lottery_records', id));
+            } catch (e) { /* missing → skipped, as before */ }
             if (r) total += Number(r.amount) || 0;
         }
         if (!confirm(ids.length + ' ကွက် လုံး ဖျက်မလား? (စုစုပေါင်း ' + total + ')')) return;
         try {
             for (const id of ids) {
-                await db.del('lottery_records', id);
-                await sync.mutate('delete', 'lottery_records', { id });
+                await direct.withRetry(() => direct.directDelete('lottery_records', id));
             }
             await _grpRefresh();
         } catch (e) { alert('Error: ' + e.message); }
