@@ -373,7 +373,11 @@ async function refreshSession() {
         const open = sessions.filter((s) => s.is_open !== false);
         const pick = open[0] || sessions[0] || null;
 
-        if (pick && pick.id !== currentSessionId) {
+        // H2 fix (Oct 28): never move the working session while unsaved
+        // pending entries exist — a realtime flip must not redirect a batch
+        // the agent typed for another session. (The banner still shows pick,
+        // the newest session; only the save target is preserved.)
+        if (pick && pick.id !== currentSessionId && !pendingEntries.length) {
             currentSessionId = pick.id;
             localStorage.setItem(LS_SESSION, pick.id);
         }
@@ -873,16 +877,15 @@ async function refreshEntryScreen() {
         pSel.value = prevPlayer;
     }
 
-    // Session select
+    // Session select — the dropdown must always show the session saves go
+    // to (currentSessionId). Restoring a stale previous value let the
+    // dropdown and the save target disagree after a realtime flip (H2).
     const sSel = $('entrySessionSelect');
     const sessions = await getAgentSessions();
-    const prevSess = sSel.value;
     sSel.innerHTML = sessions.map((s) =>
         '<option value="' + s.id + '">' + escHtml(s.name || 'Session') + '</option>').join('') ||
         '<option value="">Session မရှိပါ</option>';
-    if (prevSess && Array.from(sSel.options).some((o) => o.value === prevSess)) {
-        sSel.value = prevSess;
-    } else if (currentSessionId) {
+    if (currentSessionId) {
         sSel.value = currentSessionId;
     }
 
