@@ -3610,6 +3610,9 @@ window.saveAkanBatch = async function saveAkanBatch() {
     if (lkA2.locked) { showToast('🔒 ' + lkA2.reason + ' — သိမ်း မရပါ'); return; }
 
     akanSaveInFlight = true;
+    // H1 fix (Oct 28): track this attempt's rows so a failure can roll them
+    // back and a retry can never duplicate them (same pattern as entry save).
+    const savedIds = [];
     try {
         // Group by bookie, preserving first-appearance order
         const order = [];
@@ -3630,7 +3633,10 @@ window.saveAkanBatch = async function saveAkanBatch() {
                 // and the server sets created/updated itself. withRetry retries
                 // line blips; a persistent failure lands in the catch below —
                 // pending is NOT cleared and no false success is shown.
-                await direct.withRetry(() => direct.directCreate('lottery_records', {
+                // H1 fix (Oct 28): build the record (with its id) ONCE
+                // outside withRetry — a lost-response retry must reuse the
+                // same id so directCreate's duplicate protection holds.
+                const rec = {
                     id: uid(),
                     tenant: state.tenantPbId,
                     session: state.activeSessionId,
@@ -3642,7 +3648,9 @@ window.saveAkanBatch = async function saveAkanBatch() {
                     player_name: e.player_name || '',
                     record_type: 'akan',
                     batch_no: batchNo,
-                }));
+                };
+                await direct.withRetry(() => direct.directCreate('lottery_records', rec));
+                savedIds.push(rec.id);
                 count++;
             }
         }
@@ -3653,6 +3661,11 @@ window.saveAkanBatch = async function saveAkanBatch() {
         renderSessions();
         renderLedger();
     } catch (e) {
+        // Roll back this attempt's rows (best-effort) so the pending table
+        // stays intact and a retry saves a clean batch.
+        for (const id of savedIds) {
+            try { await direct.directDelete('lottery_records', id); } catch (_) { /* keep going */ }
+        }
         showToast('သိမ်းမရပါ: ' + e.message);
     } finally {
         akanSaveInFlight = false;
