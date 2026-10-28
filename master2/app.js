@@ -152,7 +152,6 @@ function bindUI() {
     $('voucherShareBtn').addEventListener('click', shareVoucher);
     $('wkPrev').addEventListener('click', () => { state.weeklyOffset = (state.weeklyOffset || 0) - 1; renderWeekly(); });
     $('wkNext').addEventListener('click', () => { state.weeklyOffset = (state.weeklyOffset || 0) + 1; renderWeekly(); });
-    $('overSession').addEventListener('change', () => { state.overSessionId = $('overSession').value; renderOverlimit(); });
     $('overCopyBtn').addEventListener('click', copyOverlimit);
     $('overToAkanBtn').addEventListener('click', sendOverToAkan);
     $('akanBookieSelect').addEventListener('change', () => {
@@ -3357,14 +3356,12 @@ async function calcOverlimit(sessionId) {
 }
 
 async function renderOverlimit() {
-    const sessSel = $('overSession');
-    if (!state.overSessionId || !state.sessions.find((s) => s.id === state.overSessionId)) {
-        state.overSessionId = state.activeSessionId;
-    }
-    fillSessionSelect(sessSel, state.overSessionId);
-
-    const sid = sessSel.value;
+    // Over-limit follows the ACTIVE session — no dropdown (Pho Oct 28: no mis-pick).
+    const sid = state.activeSessionId;
     state.overSessionId = sid;
+    const s = state.sessions.find((x) => x.id === sid);
+    const lbl = $('overSessionLabel');
+    if (lbl) lbl.textContent = s ? sessionLabel(s) : 'Session မရှိပါ';
     const box = $('overContent');
     if (!sid) {
         box.innerHTML = '<div class="empty">ပွဲ မရှိသေးပါ</div>';
