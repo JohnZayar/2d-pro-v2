@@ -273,6 +273,23 @@ function showApp() {
     document.getElementById('appScreen').hidden = false;
     document.getElementById('headerAgentName').textContent = agentName;
     document.getElementById('headerTenantName').textContent = '🔗 ' + tenantId;
+    // Pho Oct 28: replace the cryptic tenant id with the shop name when it
+    // can be read — the tenant's buyer user row carries name = shop name
+    // (agent users list is tenant-scoped, so this stays inside the tenant).
+    // Fail-silent: the id stays if the lookup fails. Non-blocking.
+    (async () => {
+        try {
+            const users = await direct.directList('users', tenantId);
+            const rows = users.items || users || [];
+            const buyer = rows.find(u => {
+                const em = (u.email || '');
+                const nm = (u.name || '').trim();
+                return em && !em.includes('agent_') && nm && !nm.toLowerCase().startsWith('agent ');
+            });
+            const el = document.getElementById('headerTenantName');
+            if (buyer && buyer.name && el) el.textContent = '🏪 ' + buyer.name.trim();
+        } catch (e) { /* keep id */ }
+    })();
     // Pho Oct 18: show FULL link code (with -N-SECRET), not just tenantId
     document.getElementById('settingsTenantCode').textContent = localStorage.getItem(LS_TENANT) || tenantId;
     document.getElementById('settingsAgentName').textContent = agentName;
