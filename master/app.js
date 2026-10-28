@@ -267,19 +267,9 @@ async function createBuyerAccount() {
             name: shopName,
             tenant: tenant.id
         });
-        // 3. Create per-tenant agent account #1 (for Agent app sync, tenant-isolated)
-        // Buyer can add up to 4 more via Agent management (5 total max)
-        const agentEmail = agentEmailForNum(tenant.id, 1);
-        const agentSecret1 = generateAgentSecret();
-        const agentPass = agentPasswordForNum(tenant.id, 1, agentSecret1);
-        const agentCode1 = agentCodeFor(tenant.id, 1, agentSecret1);
-        await pb.create('users', {
-            email: agentEmail,
-            password: agentPass,
-            passwordConfirm: agentPass,
-            name: `Agent 1 (${shopName})`,
-            tenant: tenant.id
-        });
+        // Pho Oct 28: NO auto Agent 1. Buyer creates their own agents when
+        // needed (up to 5 via Agent management) — Admin must never have to
+        // remember/relay an agent code for a buyer.
         resultEl.style.display = '';
         resultEl.innerHTML =
             '<div style="background:#052e16;border:1px solid #16a34a;border-radius:8px;padding:10px;margin-top:8px">' +
@@ -287,7 +277,6 @@ async function createBuyerAccount() {
             '<div class="mt">Email: <b>' + escHtml(email) + '</b></div>' +
             '<div>Temp password: <b style="font-size:16px;letter-spacing:1px">' + escHtml(tmp) + '</b></div>' +
             '<div class="small muted mt">Buyer ကို ပို့ပေးပါ — သူ Settings မှာ password ချိန်းရမယ်</div>' +
-            '<div class="mt" style="border-top:1px solid #16a34a;padding-top:8px">Agent 1 Code: <b style="font-size:14px;letter-spacing:1px">' + escHtml(agentCode1) + '</b><div class="small muted">ကူးယူထားပါ — နောက်မှ ပြန်မရဘူး</div></div>' +
             '</div>';
         emailEl.value = '';
         shopEl.value = '';
