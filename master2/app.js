@@ -2864,21 +2864,50 @@ async function openRemaining() {
     }
 
     const dayNames = ['တနင်္ဂနွေ', 'တနင်္လာ', 'အင်္ဂါ', 'ဗုဒ္ဓဟူး', 'ကြာသပတေး', 'သောကြာ', 'စနေ'];
-    let html = '';
-    const allNums = [];
+    // Pho Oct 29 week-split: ကျန်ဂဏန်း = single digits missing from ONE
+    // week's 5 days of winning numbers — never the 70-day window.
+    // Top (coloured): last week's remainder; below: this week's remainder
+    // (draws so far). Daylines stay, grouped under week headers.
+    const thisMon = mondayOf(new Date());
+    const lastMon = new Date(thisMon.getFullYear(), thisMon.getMonth(), thisMon.getDate() - 7);
+    const thisMonDs = dsOf(thisMon);
+    const lastMonDs = dsOf(lastMon);
+    const lastNums = [];
+    const thisNums = [];
+    for (const dateKey of Object.keys(byDate)) {
+        const pd = parseSessionDate(dateKey);
+        if (!pd) continue;
+        const wk = dsOf(mondayOf(pd));
+        const d = byDate[dateKey];
+        const nums = [];
+        if (d.am) nums.push(d.am);
+        if (d.pm) nums.push(d.pm);
+        if (wk === lastMonDs) lastNums.push(...nums);
+        else if (wk === thisMonDs) thisNums.push(...nums);
+    }
+    const remLast = remainingDigits(lastNums);
+    const remThis = remainingDigits(thisNums);
+    const prevChipStyle = 'background:rgba(212,175,55,.18);border-color:#c9a227;color:#d4af37;';
+    let html = `<div class="small muted" style="margin:6px 0">ယခင်အပတ်ကျန် (${remLast.length})</div>
+        <div class="digit-chips">${remLast.map((d) => `<span class="dchip" style="${prevChipStyle}">${d}</span>`).join('')}</div>
+        <div class="small muted" style="margin:10px 0 6px">ယခုအပတ်ကျန် (${remThis.length})</div>
+        <div class="digit-chips">${remThis.map((d) => `<span class="dchip">${d}</span>`).join('')}</div>`;
+    let curWeek = null;
     for (const dateKey of sortedDates.slice(0, 70)) {
         const d = byDate[dateKey];
         if (!d.am && !d.pm) continue;
+        const pd = parseSessionDate(dateKey);
+        const mon = pd ? mondayOf(pd) : null;
+        const wk = mon ? dsOf(mon) : null;
+        if (wk && wk !== curWeek) {
+            curWeek = wk;
+            const fri = new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + 4);
+            html += `<div class="small muted" style="margin:10px 0 2px">တပတ် ${wk} – ${dsOf(fri)}</div>`;
+        }
         const [dd, mm, yy] = dateKey.split('.').map(Number);
         const dayName = dayNames[new Date(yy, mm - 1, dd).getDay()];
-        if (d.am) allNums.push(d.am);
-        if (d.pm) allNums.push(d.pm);
         html += `<div class="dayline">${dayName} Am ${d.am || '--'} Pm ${d.pm || '--'}</div>`;
     }
-
-    const rem = remainingDigits(allNums);
-    html += `<div class="small muted" style="margin:6px 0">ကျန်ဂဏန်း (${rem.length})</div>
-        <div class="digit-chips">${rem.map((d) => `<span class="dchip">${d}</span>`).join('')}</div>`;
 
     openGeneric('🔢 ကျန်ဂဏန်း (၁၀ ပတ်)', `<div class="digit-week card">${html}</div>`);
 }
