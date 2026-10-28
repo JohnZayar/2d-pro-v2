@@ -1517,9 +1517,9 @@ async function renderEntry() {
     renderEntryTable();
 }
 
-/** Name dropdown: everyone mixed — player names from this session's incoming
- *  records + all registered persons (ထိုးသား / Agent / အကန်ဒိုင်).
- *  ထိုးကွက် is incoming-only; outgoing bets go through 🔄 အကန်ဒိုင်. */
+/** Name dropdown (merged, Pho Oct 28, 3D style): all registered persons —
+ *  ထိုးသား / Agent / အကန်ဒိုင် (akan names RED + suffix, same as the board).
+ *  Direction follows the picked person at stage time. */
 async function renderEntryPersonOptions() {
     const pSel = $('entryPlayerSelect');
     const prev = pSel.value;
@@ -1527,19 +1527,18 @@ async function renderEntryPersonOptions() {
     // If duplicate names exist, show phone to distinguish.
     const nameCount = {};
     (state.agents || []).forEach((a) => {
-        if ((a.person_type || 'agent') === 'akan') return;
         const n = (a.name || '').trim();
         if (n) nameCount[n] = (nameCount[n] || 0) + 1;
     });
     let opts = '';
     (state.agents || []).forEach((a) => {
-        if ((a.person_type || 'agent') === 'akan') return;
         const n = (a.name || '').trim();
         if (!n) return;
         const label = (nameCount[n] > 1 && a.phone) ? `${n} (${a.phone})` : n;
-        opts += `<option value="${escHtml(a.id)}">${escHtml(voucherPersonLabel(label))}</option>`;
+        const isAkan = (a.person_type || 'agent') === 'akan';
+        opts += `<option value="${escHtml(a.id)}"${isAkan ? ' style="color:#ff5a5a"' : ''}>${escHtml(voucherPersonLabel(label))}${isAkan ? ' (အကန်)' : ''}</option>`;
     });
-    const ph = '-- ထိုးသား ရွေးပါ --';
+    const ph = '-- လူ ရွေးပါ --';
     pSel.innerHTML = '<option value="">' + escHtml(ph) + '</option>' + opts;
     if (prev && pSel.querySelector(`option[value="${CSS.escape(prev)}"]`)) pSel.value = prev;
 }
@@ -1665,6 +1664,17 @@ window.submitEntryRow = async function submitEntryRow() {
     const validItems = items.filter((it) => /^\d{2}$/.test(String(it.number)));
     if (!validItems.length) {
         showToast('❌ ဖော်မြူလာ မသိပါ (ဂဏန်း မှားနေတယ်)' + (invalidLines.length ? ': ' + invalidLines[0] : ''));
+        return;
+    }
+    // Merged typed entry (Pho Oct 28): an akan person stages OUTGOING rows —
+    // no blocked-number filter for outgoing (same as the merged board).
+    if (selAgent && (selAgent.person_type || 'agent') === 'akan') {
+        validItems.forEach((it) => {
+            addAkanUnique(playerName, it.number, it.amount);
+        });
+        entryClearInputs();
+        showToast('✅ ထည့်ပြီးပြီ (⬆️ အထွက်)');
+        await openAkandain(state.activeSessionId);
         return;
     }
     // 🚫 ဒိုင်ပိတ်: blocked numbers cannot be bet
