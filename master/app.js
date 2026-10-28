@@ -412,11 +412,15 @@ async function changePassword() {
     btn.disabled = true;
     btn.textContent = 'ချိန်းနေတယ်…';
     try {
-        await pb.update('users', state.user.id, {
+        // Pho Oct 28: send current tenant so the users Update rule's
+        // self-branch (body.tenant = data.tenant) passes; without it a
+        // buyer can never update their own row (404).
+        const selfTenant = state.tenantPbId || (state.user && (typeof state.user.tenant === 'string' ? state.user.tenant : (state.user.tenant && state.user.tenant.id)));
+        await pb.update('users', state.user.id, Object.assign({
             oldPassword: oldPw,
             password: newPw,
             passwordConfirm: newPw2
-        });
+        }, selfTenant ? { tenant: selfTenant } : {}));
         oldEl.value = ''; newEl.value = ''; new2El.value = '';
         showToast('✅ Password ချိန်းပြီးပြီ');
     } catch (e) {
