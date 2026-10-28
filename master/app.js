@@ -2319,7 +2319,6 @@ function dailyAggFromRecords(recs, winNum) {
 }
 
 async function renderHomeDaily() {
-    await loadAgentLinksAndUsers();
     const dateInput = $('homeDailyDate');
     if (!_homeDailyDate) {
         const today = new Date();
@@ -2330,11 +2329,27 @@ async function renderHomeDaily() {
     const [y, m, d] = _homeDailyDate.split('-');
     const ds = `${d}.${m}.${y}`; // match session.date format DD.MM.YYYY
 
-    // Get ALL records for this date (works even after session deletion)
-    // On a failed records read, keep the previous body (never blank it).
-    let allRecs;
+    // Get records for this date (works even after session deletion).
+    // Pho Oct 29 speed (Master v213): Daily used to download the ENTIRE
+    // record history, then keep one day. Fetch only this day's sessions
+    // server-side instead — same totals, far less download on a slow line.
+    // SCHEMA NOTE (Oct 29 admin-board check): lottery_records has NO
+    // session_date field and winning_numbers has NO date field, so the
+    // app's date-stamp writes are silently dropped by the server and
+    // filtering by them 400s. Both collections DO have the session
+    // relation, so filter by this day's session ids; the loops below are
+    // unchanged and place every row exactly as before.
+    // Links + records + wins are independent: fetch in parallel.
+    // On any failure, keep the previous body (never blank it).
+    const daySessIds = state.sessions.filter((s) => s.date === ds).map((s) => s.id);
+    const sessFilter = daySessIds.length ? `(${daySessIds.map((id) => `session = "${id}"`).join(' || ')})` : null;
+    let allRecs, allWins;
     try {
-        allRecs = await direct.withRetry(() => direct.directList('lottery_records', state.tenantPbId, { sort: 'created' }));
+        [, allRecs, allWins] = await Promise.all([
+            loadAgentLinksAndUsers(),
+            sessFilter ? direct.withRetry(() => direct.directList('lottery_records', state.tenantPbId, { sort: 'created', filter: sessFilter })) : Promise.resolve([]),
+            sessFilter ? direct.withRetry(() => direct.directList('winning_numbers', state.tenantPbId, { filter: sessFilter })) : Promise.resolve([]),
+        ]);
     } catch (e) {
         showToast('❌ ' + (e.message || e));
         return;
@@ -2351,16 +2366,8 @@ async function renderHomeDaily() {
         return sess && sess.date === ds;
     });
 
-    // Get winning numbers for this date (prefer denormalized w.date so
-    // deleted sessions don't hide them)
-    // On a failed wins read, keep the previous body (never blank it).
-    let allWins;
-    try {
-        allWins = await direct.withRetry(() => direct.directList('winning_numbers', state.tenantPbId));
-    } catch (e) {
-        showToast('❌ ' + (e.message || e));
-        return;
-    }
+    // Winning numbers for this date were fetched above, in parallel with
+    // the records (the loop below is unchanged).
     const dayWins = {};
     for (const w of allWins) {
         const sess = state.sessions.find((s) => s.id === w.session);
@@ -2444,12 +2451,19 @@ async function renderWeekly() {
     // Records/winning numbers carry denormalized session_date/date (see backfillDates).
     // Pho Oct 28 speed: links, records, wins are independent — fetch in
     // parallel. On any records/wins failure, keep previous content.
+    // Pho Oct 29 speed (Master v213): Weekly used to download the ENTIRE
+    // record history, then keep 5 days. Fetch only this week's sessions
+    // server-side instead — same totals, far less download.
+    // (Schema note as in Daily: no session_date/date fields exist, so the
+    // filter uses the session relation; the loops below are unchanged.)
+    const weekSessIds = state.sessions.filter((s) => days.some((d) => d.ds === s.date)).map((s) => s.id);
+    const sessFilter = weekSessIds.length ? `(${weekSessIds.map((id) => `session = "${id}"`).join(' || ')})` : null;
     let allRecs, allWins;
     try {
         [, allRecs, allWins] = await Promise.all([
             loadAgentLinksAndUsers(),
-            direct.withRetry(() => direct.directList('lottery_records', state.tenantPbId, { sort: 'created' })),
-            direct.withRetry(() => direct.directList('winning_numbers', state.tenantPbId)),
+            sessFilter ? direct.withRetry(() => direct.directList('lottery_records', state.tenantPbId, { sort: 'created', filter: sessFilter })) : Promise.resolve([]),
+            sessFilter ? direct.withRetry(() => direct.directList('winning_numbers', state.tenantPbId, { filter: sessFilter })) : Promise.resolve([]),
         ]);
     } catch (e) {
         showToast('❌ ' + (e.message || e));
