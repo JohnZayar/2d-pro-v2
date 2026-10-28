@@ -483,14 +483,23 @@ async function getAgentSessions() {
     try {
         // Pho Oct 27: Master-archived sessions never appear in Agent lists.
         // Archive rows read from the server (app_settings key 'archived_<sessionId>').
+        // Pho Oct 28 speed (Agent v157, Master v211 pattern): the archive
+        // list and the sessions list are independent — fetch in parallel.
+        // H5 fail-CLOSED semantics preserved exactly: an archive-read blip
+        // reuses the last-known-good filter, or shows nothing with no prior
+        // good read; a sessions-read failure still returns [] via the outer
+        // catch (the parallel fetch fires both, the failed result is dropped).
+        const [archRes, sessRes] = await Promise.all([
+            direct.withRetry(() => direct.directList('app_settings', tenantId)).catch(() => null),
+            direct.withRetry(() => direct.directList('sessions', tenantId)).catch(() => null),
+        ]);
         let archived = new Set();
-        try {
-            const all = await direct.withRetry(() => direct.directList('app_settings', tenantId));
-            for (const r of all) {
+        if (archRes) {
+            for (const r of archRes) {
                 if (r.key && r.key.indexOf('archived_') === 0) archived.add(r.key.slice(9));
             }
             _lastArchivedSet = archived;
-        } catch (e) {
+        } else {
             _sessionsFetchFailed = true;
             // H5 fail-CLOSED: never render a list that may contain archived
             // sessions. Reuse the last-known-good filter; with no prior good
@@ -498,7 +507,8 @@ async function getAgentSessions() {
             if (_lastArchivedSet) { archived = new Set(_lastArchivedSet); }
             else { return []; }
         }
-        const sessions = (await direct.withRetry(() => direct.directList('sessions', tenantId))).filter((s) => !archived.has(s.id));
+        if (!sessRes) throw new Error('sessions fetch failed');
+        const sessions = sessRes.filter((s) => !archived.has(s.id));
         // Pho Oct 21: NEVER show two sessions for the same day-part.
         // If a duplicate ever slips in, keep the one holding this agent's
         // records (tie: the earliest created) and hide the twin.
@@ -613,13 +623,22 @@ async function refreshCurrentTab() {
     if (_rtRunning) { _rtPending = true; return; }
     _rtRunning = true;
     try {
-        await refreshSession();
-        if (activeScreen === 'home') { await updateMenuSubs(); }
-        else if (activeScreen === 'entry') { if (!_sessionsFetchFailed) await refreshEntryScreen(); }
-        else if (activeScreen === 'records') { await renderRecordsView(); }
-        else if (activeScreen === 'players') { await renderPlayers(); }
-        else if (activeScreen === 'daily') { await renderDaily(); }
-        else if (activeScreen === 'weekly') { await renderWeekly(); }
+        // Pho Oct 28 speed: on home, the banner refresh and the menu
+        // subtitle (players count) are independent — run in parallel.
+        // Other screens keep the sequential order (entry depends on the
+        // refreshed session via the H2 guard below).
+        if (activeScreen === 'home') {
+            await Promise.all([refreshSession(), updateMenuSubs()]);
+        } else {
+            await refreshSession();
+        }
+        if (activeScreen !== 'home') {
+            if (activeScreen === 'entry') { if (!_sessionsFetchFailed) await refreshEntryScreen(); }
+            else if (activeScreen === 'records') { await renderRecordsView(); }
+            else if (activeScreen === 'players') { await renderPlayers(); }
+            else if (activeScreen === 'daily') { await renderDaily(); }
+            else if (activeScreen === 'weekly') { await renderWeekly(); }
+        }
     } finally {
         _rtRunning = false;
         if (_rtPending) { _rtPending = false; refreshCurrentTab(); }
@@ -768,14 +787,15 @@ window.deletePlayer = async function deletePlayer(id) {
 async function renderPlayers() {
     const listEl = document.getElementById('playersList');
     const emptyEl = document.getElementById('playersEmpty');
-    const players = await getPlayers();
+    // Pho Oct 28 speed: players list + current-session records are
+    // independent — fetch in parallel. The failed-read guard stays: a
+    // failed players read still keeps the previous list.
+    const [players, sessRecs] = await Promise.all([
+        getPlayers(),
+        currentSessionId ? getSessionRecords(currentSessionId) : Promise.resolve([]),
+    ]);
     // Server-direct: a failed players read must not blank the list.
     if (_playersFetchFailed) { showToast('❌ ဆာဗာ ဆက်မရပါ'); return; }
-
-    let sessRecs = [];
-    if (currentSessionId) {
-        sessRecs = (await getSessionRecords(currentSessionId));
-    }
     const totals = {};
     sessRecs.forEach((r) => {
         const k = r.player_name || '';
@@ -877,7 +897,8 @@ async function refreshEntryScreen() {
     // Player select (preserve selection)
     const pSel = $('entryPlayerSelect');
     const prevPlayer = pSel.value;
-    const players = await getPlayers();
+    // Pho Oct 28 speed: player list + session list are independent.
+    const [players, sessions] = await Promise.all([getPlayers(), getAgentSessions()]);
     pSel.innerHTML = '<option value="">-- ထိုးသား ရွေးပါ --</option>' +
         players.map((p) => '<option value="' + escHtml(p.name) + '">' + escHtml(p.name) + '</option>').join('');
     if (prevPlayer && Array.from(pSel.options).some((o) => o.value === prevPlayer)) {
@@ -888,7 +909,6 @@ async function refreshEntryScreen() {
     // to (currentSessionId). Restoring a stale previous value let the
     // dropdown and the save target disagree after a realtime flip (H2).
     const sSel = $('entrySessionSelect');
-    const sessions = await getAgentSessions();
     sSel.innerHTML = sessions.map((s) =>
         '<option value="' + s.id + '">' + escHtml(s.name || 'Session') + '</option>').join('') ||
         '<option value="">Session မရှိပါ</option>';
@@ -1180,8 +1200,8 @@ window.renderRecordsView = async function renderRecordsView() {
     const sessSel = $('recordsSession');
     const content = $('recordsViewContent');
 
-    const players = await getPlayers();
-    const sessions = await getAgentSessions();
+    // Pho Oct 28 speed: player list + session list are independent.
+    const [players, sessions] = await Promise.all([getPlayers(), getAgentSessions()]);
 
     const prevPlayer = playerSel.value;
     const prevSess = sessSel.value;
@@ -1221,12 +1241,14 @@ window.renderRecordsView = async function renderRecordsView() {
         return;
     }
 
-    // Winning numbers for yellow highlight
-    let winNums = new Set();
-    try {
-        const wins = await _getWins(sessId);
-        winNums = new Set(wins.map((w) => String(w.number).padStart(2, '0')));
-    } catch (e) { /* ignore */ }
+    // Pho Oct 28 speed: wins + Master acks are independent (both keyed
+    // only by sessId) — fetch in parallel; each failure still degrades
+    // to its own empty set exactly as before.
+    const [winsRes, ackRes] = await Promise.all([
+        _getWins(sessId).catch(() => []),
+        pb.list('batch_acks', { perPage: 200 }).catch(() => null),
+    ]);
+    let winNums = new Set(winsRes.map((w) => String(w.number).padStart(2, '0')));
 
     // Play a soft beep when Ok appears (Pho's request)
     const playOkSound = () => {
@@ -1242,14 +1264,13 @@ window.renderRecordsView = async function renderRecordsView() {
         } catch (e) { /* ignore */ }
     };
 
-    // Fetch Master acks (for "Ok" badges) - TRUE confirmation only
+    // Master acks (for "Ok" badges) - TRUE confirmation only, fetched above.
     let ackedBatches = new Set();
-    try {
-        const ackRes = await pb.list('batch_acks', { perPage: 200 });
+    if (ackRes) {
         for (const a of (ackRes.items || ackRes)) {
             if (a.batch_key) ackedBatches.add(a.batch_key);
         }
-    } catch (e) { /* ignore */ }
+    }
     const isBatchAcked = (agentName, playerName, batchNo) => {
         const prefix = [agentName, playerName || '', batchNo].join('|') + '|';
         for (const ak of ackedBatches) {
@@ -1833,7 +1854,8 @@ window.renderDaily = async function renderDaily() {
     const key = dateInput.value;
 
     // Populate person dropdown
-    const players = await getPlayers().catch(() => []);
+    // Pho Oct 28 speed: dropdown players + all records are independent.
+    const [players, allRecs] = await Promise.all([getPlayers().catch(() => []), getAgentRecords()]);
     const prevVal = playerSel.value;
     let pHtml = '<option value="__all">-- အားလုံး --</option>';
     pHtml += players.map((p) => '<option value="' + escHtml(p.name) + '">' + escHtml(p.name) + '</option>').join('');
@@ -1842,7 +1864,7 @@ window.renderDaily = async function renderDaily() {
         playerSel.value = prevVal;
     }
 
-    let recs = (await getAgentRecords()).filter((r) => dateKey(r.created) === key);
+    let recs = allRecs.filter((r) => dateKey(r.created) === key);
     // Server-direct: a failed records read must not render as "no records".
     if (_agentRecordsFetchFailed) { showToast('❌ ဆာဗာ ဆက်မရပါ'); return; }
     const selPlayer = playerSel.value;
@@ -1865,7 +1887,8 @@ async function renderDailyTable(recs, dateKeyStr) {
     if (!recs.length) return '<div class="empty-state">ဒီနေ့ စာရင်း မရှိပါ</div>';
 
     // Player info for commission/multiplier
-    const players = await getPlayers().catch(() => []);
+    // Pho Oct 28 speed: players + sessions are independent.
+    const [players, sessions] = await Promise.all([getPlayers().catch(() => []), getAgentSessions().catch(() => [])]);
     // Server-direct: a failed players read must not silently run the totals
     // on default commission/multiplier rates — the caller toasts and keeps
     // the previous content instead.
@@ -1879,19 +1902,17 @@ async function renderDailyTable(recs, dateKeyStr) {
     });
     const getInfo = (name) => playerInfo[name || ''] || { commission: 0, multiplier: 80 };
 
-    // Sessions for names
-    const sessions = await getAgentSessions().catch(() => []);
+    // Sessions for names (fetched above, in parallel with players)
     const sessName = (id) => (sessions.find((s) => s.id === id) || {}).name || '';
 
     // Winning numbers per session
     const sessIds = [...new Set(recs.map((r) => r.session).filter(Boolean))];
+    // Pho Oct 28 speed: one wins lookup per session, all in parallel.
+    const winLists = await Promise.all(sessIds.map((sid) => _getWins(sid).catch(() => [])));
     const winBySess = {};
-    for (const sid of sessIds) {
-        try {
-            const wins = await _getWins(sid);
-            winBySess[sid] = new Set(wins.map((w) => String(w.number).padStart(2, '0')));
-        } catch (e) { winBySess[sid] = new Set(); }
-    }
+    sessIds.forEach((sid, i) => {
+        winBySess[sid] = new Set(winLists[i].map((w) => String(w.number).padStart(2, '0')));
+    });
 
     // Group by session
     const bySess = {};
@@ -2077,11 +2098,11 @@ window.renderWeekly = async function renderWeekly() {
 
     label.textContent = formatDateStr(monday) + ' – ' + formatDateStr(sunday);
 
-    const recs = await getAgentRecords();
+    // Pho Oct 28 speed: records + players are independent.
+    const [recs, players] = await Promise.all([getAgentRecords(), getPlayers().catch(() => [])]);
     // Server-direct: a failed records read must not render as "no records".
     if (_agentRecordsFetchFailed) { showToast('❌ ဆာဗာ ဆက်မရပါ'); return; }
     // Player info for commission/multiplier
-    const players = await getPlayers().catch(() => []);
     // Server-direct: a failed players read must not silently run the totals
     // on default commission/multiplier rates.
     if (_playersFetchFailed) { showToast('❌ ဆာဗာ ဆက်မရပါ'); return; }
@@ -2095,13 +2116,12 @@ window.renderWeekly = async function renderWeekly() {
     const getInfo = (name) => playerInfo[name || ''] || { commission: 0, multiplier: 80 };
     // Winning numbers per session
     const sessIds = [...new Set(recs.map((r) => r.session).filter(Boolean))];
+    // Pho Oct 28 speed: one wins lookup per session, all in parallel.
+    const winLists = await Promise.all(sessIds.map((sid) => _getWins(sid).catch(() => [])));
     const winBySess = {};
-    for (const sid of sessIds) {
-        try {
-            const wins = await _getWins(sid);
-            winBySess[sid] = new Set(wins.map((w) => String(w.number).padStart(2, '0')));
-        } catch (e) { winBySess[sid] = new Set(); }
-    }
+    sessIds.forEach((sid, i) => {
+        winBySess[sid] = new Set(winLists[i].map((w) => String(w.number).padStart(2, '0')));
+    });
     const byDay = {};
     recs.forEach((r) => {
         const k = dateKey(r.created);
