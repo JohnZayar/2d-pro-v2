@@ -1293,6 +1293,7 @@ async function openBoard(sessionId) {
     const s = state.sessions.find((x) => x.id === sessionId);
     $('boardTitle').textContent = '📝 ထိုးကွက် — ' + (s ? sessionLabel(s) : '');
     $('boardTargetWrap').style.display = '';
+    $('boardTargetWrap').querySelector('label').textContent = 'ထိုးသား';
     // Target: registered ထိုးသား + Agent (no akan mixing; entry board is incoming-only)
     const sel = $('boardTarget');
     let opts = '';
@@ -1378,8 +1379,10 @@ async function saveBoard() {
 
     // အကန်ဒိုင် mode → rows land in the OUTGOING pending table, not the entry table.
     if (state.boardMode === 'akan') {
-        const bookie = (($('akanBookieSelect') && $('akanBookieSelect').value) || '').trim() || null;
+        // Board's own bookie selector first (akan mode), main screen's selector as fallback.
+        const bookie = (($('boardTarget') && $('boardTarget').value) || ($('akanBookieSelect') && $('akanBookieSelect').value) || '').trim() || null;
         if (!bookie) { showToast('❌ ဒိုင် နာမည် ရွေးပါ'); return; }
+        if ($('akanBookieSelect')) $('akanBookieSelect').value = bookie;
         okItems.forEach((it) => {
             addAkanUnique(bookie, it.number, it.amount);
         });
@@ -1807,13 +1810,27 @@ window.openEntryBoard = function openEntryBoard() {
 };
 
 /** 📋 button in akandain screen → board feeds the OUTGOING pending table. */
-window.openAkanBoard = function openAkanBoard() {
+window.openAkanBoard = async function openAkanBoard() {
     state.boardMode = 'akan';
     openBoard(state.activeSessionId);
-    // Bookie is chosen on the akandain screen — hide the board's target row.
-    $('boardTargetWrap').style.display = 'none';
+    // Akan mode: the board gets its OWN bookie selector (no longer hidden) —
+    // start from the main screen's options, then refresh from the server.
+    const wrap = $('boardTargetWrap');
+    wrap.style.display = '';
+    wrap.querySelector('label').textContent = 'အကန်ဒိုင်';
+    const sel = $('boardTarget');
+    const mainSel = $('akanBookieSelect');
+    if (mainSel) { sel.innerHTML = mainSel.innerHTML; if (mainSel.value) sel.value = mainSel.value; }
     const s = state.sessions.find((x) => x.id === state.activeSessionId);
     $('boardTitle').textContent = '🔄 အကန်ဒိုင် (အထွက်) — ' + (s ? sessionLabel(s) : '');
+    try {
+        const names = await getAkanBookieNames();
+        const prev = sel.value;
+        sel.innerHTML = '<option value="">-- အကန်ဒိုင်ရွေးရန် --</option>' +
+            names.map((k) => '<option value="' + escHtml(k) + '">' + escHtml(k) + '</option>').join('');
+        if (prev && names.includes(prev)) sel.value = prev;
+        else if (mainSel && mainSel.value && names.includes(mainSel.value)) sel.value = mainSel.value;
+    } catch (e) { /* keep the main screen's options copied above */ }
 };
 
 /* ================= LEDGER ================= */
@@ -3355,6 +3372,17 @@ async function renderOverlimit() {
         state.lastOverText = '';
         return;
     }
+    // Over-limit card's own bookie selector (same list as the akan screen).
+    const overSel = $('overBookieSelect');
+    if (overSel) {
+        const prevOver = overSel.value;
+        try {
+            const overNames = await getAkanBookieNames();
+            overSel.innerHTML = '<option value="">-- အကန်ဒိုင်ရွေးရန် --</option>' +
+                overNames.map((k) => '<option value="' + escHtml(k) + '">' + escHtml(k) + '</option>').join('');
+            if (prevOver && overNames.includes(prevOver)) overSel.value = prevOver;
+        } catch (e) { /* keep previous options on a failed read */ }
+    }
     // On a failed read, keep the previous content (never blank it).
     let limit, over;
     try {
@@ -3397,8 +3425,11 @@ async function sendOverToAkan() {
     const { items } = parseBoardReport(t);
     const validItems = items.filter((it) => /^\d{2}$/.test(String(it.number)));
     if (!validItems.length) { showToast('ထည့်တာ မမှန်ပါ'); return; }
-    const bookie = (($('akanBookieSelect') && $('akanBookieSelect').value) || '').trim() || null;
+    // Over-limit card's own bookie selector first, main screen's selector as fallback.
+    const bookie = (($('overBookieSelect') && $('overBookieSelect').value) || ($('akanBookieSelect') && $('akanBookieSelect').value) || '').trim() || null;
     if (!bookie) { showToast('❌ ဒိုင် နာမည် ရွေးပါ'); return; }
+    // Keep the akan screen on the same bookie when we navigate there.
+    if ($('akanBookieSelect')) $('akanBookieSelect').value = bookie;
     validItems.forEach((it) => {
         addAkanUnique(bookie, it.number, it.amount);
     });
@@ -3504,34 +3535,40 @@ async function renderAkandain() {
 
 /** Bookie dropdown options: prior OUTGOING (akan) bookies from all sessions,
  *  plus registered အကန်ဒိုင် persons. Native <select> — reliable on phones. */
-async function renderAkanBookieOptions() {
-    const sel = $('akanBookieSelect');
-    const prev = sel.value;
-    // Bookie suggestions: distinct bookie names from prior OUTGOING (akan) bets, all sessions,
-    // plus registered အကန်ဒိုင် persons.
-    const seen = new Set();
-    const order = [];
+/** Bookie names for the akan selectors: distinct names from prior OUTGOING
+    (akan) bets, all sessions, plus registered အကန်ဒိုင် persons.
+    Throws on a failed read — callers keep their previous options. */
+async function getAkanBookieNames() {
     // Server-direct (Pho Oct 27): bookie names come from the server, not local DB.
     // Per-session loop preserved so the dropdown order (first-appearance, session
-    // order) matches the old local query. On a failed read, keep the previous
-    // dropdown options (never blank it) — same precedent as the ledger.
-    try {
-        for (const sess of state.sessions) {
-            const recs = await direct.withRetry(() => direct.directList('lottery_records', state.tenantPbId, { filter: `session = "${sess.id}"`, sort: 'created' }));
-            for (const r of recs) {
-                if (r.record_type !== 'akan') continue;
-                const k = (r.player_name || r.agent_name || '').trim();
-                if (k && !seen.has(k)) { seen.add(k); order.push(k); }
-            }
+    // order) matches the old local query.
+    const seen = new Set();
+    const order = [];
+    for (const sess of state.sessions) {
+        const recs = await direct.withRetry(() => direct.directList('lottery_records', state.tenantPbId, { filter: `session = "${sess.id}"`, sort: 'created' }));
+        for (const r of recs) {
+            if (r.record_type !== 'akan') continue;
+            const k = (r.player_name || r.agent_name || '').trim();
+            if (k && !seen.has(k)) { seen.add(k); order.push(k); }
         }
-    } catch (e) {
-        showToast('❌ ' + (e.message || e));
-        return;
     }
     for (const a of state.agents || []) {
         if ((a.person_type || 'agent') !== 'akan') continue;
         const k = (a.name || '').trim();
         if (k && !seen.has(k)) { seen.add(k); order.push(k); }
+    }
+    return order;
+}
+
+async function renderAkanBookieOptions() {
+    const sel = $('akanBookieSelect');
+    const prev = sel.value;
+    let order;
+    try {
+        order = await getAkanBookieNames();
+    } catch (e) {
+        showToast('❌ ' + (e.message || e));
+        return;
     }
     sel.innerHTML = '<option value="">-- အကန်ဒိုင်ရွေးရန် --</option>' +
         order.map((k) => '<option value="' + escHtml(k) + '">' + escHtml(k) + '</option>').join('');
