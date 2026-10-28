@@ -437,6 +437,16 @@ async function enterApp() {
     // first login (fixes the "login twice" issue where an empty view rendered
     // before data arrived).
     showPage('page-main');
+    // Pho Oct 28: tenant/shop name chip in the topbar — always visible so
+    // the signed-in account can never be mistaken (buyer user.name = shop name).
+    try {
+        const chip = $('shopChip');
+        const shopName = (state.user && state.user.name || '').trim();
+        if (chip) {
+            if (shopName) { chip.textContent = '🏪 ' + shopName; chip.style.display = ''; }
+            else chip.style.display = 'none';
+        }
+    } catch (e) { /* never block boot on the chip */ }
     const sessionList = $('sessionList');
     if (sessionList) sessionList.innerHTML = '<div class="empty">⏳ တင်နေတယ်… ခနစောင့်ပါ</div>';
     // Server-direct (Pho Oct 27): load straight from the server, no sync step.
