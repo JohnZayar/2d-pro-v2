@@ -465,9 +465,12 @@ async function enterApp() {
     // Background maintenance (not awaited): old-record/winnings cleanup
     // (>2 weeks / >10 weeks, same rules as before) + date backfill so history
     // views survive session deletion. Failures only warn; next boot retries.
-    cleanupOldRecords().catch((e) => console.warn('cleanupOldRecords failed:', e.message));
-    cleanupOldWinnings().catch((e) => console.warn('cleanupOldWinnings failed:', e.message));
-    backfillDates().catch((e) => console.warn('backfillDates failed:', e.message));
+    // M3: SERIALIZED background maintenance (still non-blocking): cleanup
+    // runs before backfill so backfill never races deletes on the same rows.
+    cleanupOldRecords()
+        .then(() => cleanupOldWinnings())
+        .then(() => backfillDates())
+        .catch((e) => console.warn('background maintenance failed:', e.message));
     // Realtime: server pushes changes in ~1-2s; refresh ONLY the visible view.
     // No polling loop, no full sync. The transport carries no collection info
     // (see _refreshOnRealtime), so each burst refreshes the current view.
@@ -814,7 +817,8 @@ async function setSetting(key, value) {
     if (rec) {
         await direct.withRetry(() => direct.directSave('app_settings', Object.assign({}, rec, { value: String(value) })));
     } else {
-        await direct.withRetry(() => direct.directCreate('app_settings', { id: uid(), tenant: state.tenantPbId, key, value: String(value) }));
+        const settingId = uid(); // M2: mint ONCE outside withRetry so a lost-response retry re-sends the same id
+        await direct.withRetry(() => direct.directCreate('app_settings', { id: settingId, tenant: state.tenantPbId, key, value: String(value) }));
     }
 }
 
@@ -1186,8 +1190,9 @@ async function saveSession() {
     } catch (e) { /* fall through to create */ }
     let s;
     try {
+        const newSessionId = uid(); // M2: mint ONCE outside withRetry
         s = await direct.withRetry(() => direct.directCreate('sessions', {
-            id: uid(), tenant: state.tenantPbId,
+            id: newSessionId, tenant: state.tenantPbId,
             name, date: dateStr, timeType, is_open: true, limit: 50000,
         }));
     } catch (e) {
@@ -1808,7 +1813,7 @@ window.saveEntryBatch = async function saveEntryBatch() {
         // Roll back this attempt's rows (best-effort) so the pending table stays
         // intact and a retry saves a clean batch — never a false partial success.
         for (const id of savedIds) {
-            try { await direct.directDelete('lottery_records', id); } catch (_) { /* keep going */ }
+            await direct.withRetry(() => direct.directDelete('lottery_records', id)).catch(() => { /* keep going */ });
         }
         showToast('သိမ်းမရပါ: ' + e.message);
     } finally {
@@ -1947,7 +1952,8 @@ async function saveWinning() {
             if (_wTT && !existing[0].timeType) existing[0].timeType = _wTT;
             await direct.withRetry(() => direct.directSave('winning_numbers', existing[0]));
         } else {
-            await direct.withRetry(() => direct.directCreate('winning_numbers', { id: uid(), tenant: state.tenantPbId, session: sessionId, number: num, week_monday: weekMonday, date: _wDate, timeType: _wTT }));
+            const winId = uid(); // M2: mint ONCE outside withRetry
+            await direct.withRetry(() => direct.directCreate('winning_numbers', { id: winId, tenant: state.tenantPbId, session: sessionId, number: num, week_monday: weekMonday, date: _wDate, timeType: _wTT }));
         }
         closeModal('modal-winning');
         showToast('🏆 ပေါက်သီး ' + num + ' သိမ်းပြီးပြီ');
@@ -2134,7 +2140,8 @@ async function saveAgent() {
             await direct.withRetry(() => direct.directSave('agents', Object.assign({}, a, data)));
             if (a) Object.assign(a, data);
         } else {
-            const created = await direct.withRetry(() => direct.directCreate('agents', { id: uid(), tenant: state.tenantPbId, ...data }));
+            const agentId = uid(); // M2: mint ONCE outside withRetry
+            const created = await direct.withRetry(() => direct.directCreate('agents', { id: agentId, tenant: state.tenantPbId, ...data }));
             personId = created && created.id;
         }
     } catch (e) {
@@ -2710,6 +2717,7 @@ async function backfillDates() {
 // sync queue; with no local DB the same rule runs tenant-wide at boot.
 // Rows older than 2 weeks (by session_date DD.MM.YYYY, else created) go away.
 async function cleanupOldRecords() {
+    if (!state.tenantPbId) { console.warn('cleanupOldRecords skipped: no tenant'); return; }
     try {
         const all = await direct.withRetry(() => direct.directList('lottery_records', state.tenantPbId));
         const twoWeeksAgo = new Date();
@@ -2732,6 +2740,7 @@ async function cleanupOldRecords() {
 
 // Auto-delete winning numbers older than 10 weeks
 async function cleanupOldWinnings() {
+    if (!state.tenantPbId) { console.warn('cleanupOldWinnings skipped: no tenant'); return; }
     try {
         const all = await direct.withRetry(() => direct.directList('winning_numbers', state.tenantPbId));
         const tenWeeksAgo = new Date();
@@ -3698,7 +3707,7 @@ window.saveAkanBatch = async function saveAkanBatch() {
         // Roll back this attempt's rows (best-effort) so the pending table
         // stays intact and a retry saves a clean batch.
         for (const id of savedIds) {
-            try { await direct.directDelete('lottery_records', id); } catch (_) { /* keep going */ }
+            await direct.withRetry(() => direct.directDelete('lottery_records', id)).catch(() => { /* keep going */ });
         }
         showToast('သိမ်းမရပါ: ' + e.message);
     } finally {
