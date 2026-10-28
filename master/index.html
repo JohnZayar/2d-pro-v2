@@ -147,7 +147,7 @@ window.addEventListener('load', () => {
 
         <div class="entry-playerbar">
           <select id="entryPlayerSelect" class="field-input player-select">
-            <option value="">-- ထိုးသား ရွေးပါ --</option>
+            <option value="">-- လူ ရွေးပါ --</option>
           </select>
           <button class="top-btn kb-toggle-btn" id="entryKbToggle" type="button" onclick="toggleEntryKeyboard()" title="ကီးဘုတ် ဖွင့်/ပိတ်">⌨️</button>
           <button class="top-btn" type="button" onclick="openEntryBoard()" title="Digital Board">📋</button>
@@ -259,7 +259,11 @@ window.addEventListener('load', () => {
           <div class="small muted mt">Limit ကျော်တဲ့ ဂဏန်းတွေ — ပိုနေတာကို တခြားဒိုင်မှာ သွားကန်ဖို့</div>
           <div class="field mt">
             <label>ပွဲ</label>
-            <select id="overSession"></select>
+            <div id="overSessionLabel" class="sess-label">Session</div>
+          </div>
+          <div class="field mt">
+            <label>အကန်ဒိုင်</label>
+            <select id="overBookieSelect"><option value="">-- အကန်ဒိုင်ရွေးရန် --</option></select>
           </div>
           <div class="btn-grid">
             <button class="btn small gray" id="overCopyBtn">📋 အကျွံစာရင်း ကူးရန်</button>
@@ -363,7 +367,7 @@ window.addEventListener('load', () => {
           <button id="nuclearWipeBtn" class="btn red block">🗑️ အကုန်ရှင်း (Server + App)</button>
           <div class="small muted" style="margin-top:6px">Server + ဖုန်း ၂ ခုလုံး အကုန် ဖျက် — ပြန်မရဘူး</div>
         </div>
-        <div class="small muted" style="text-align:center;margin-top:8px"><b>v207</b></div>
+        <div class="small muted" style="text-align:center;margin-top:8px"><b>v208</b></div>
       </section>
     </main>
   </div>
@@ -573,6 +577,6 @@ window.addEventListener('load', () => {
 
 
 </div>
-<script type="module" src="app.js?v=207"></script>
+<script type="module" src="app.js?v=v208"></script>
 </body>
 </html>
