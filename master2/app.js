@@ -2441,12 +2441,26 @@ async function renderWeekly() {
     const agg = {};
     const rowOrder = [];
     const blankCell = () => ({ bet: 0, win: 0, winDeduct: 0, has: false });
+    // Weekly fix (Oct 28): Daily-style session fallback — a record/win
+    // missing its denormalized stamps still counts via its session, so
+    // Weekly can never go blind while Daily shows the same records.
+    const sessById = new Map((state.sessions || []).map((s) => [s.id, s]));
     for (let dayIdx = 0; dayIdx < 5; dayIdx++) {
         const ds = days[dayIdx].ds;
         for (const tt of ['မနက်ပိုင်း', 'ညနေပိုင်း']) {
         const isAM = tt === 'မနက်ပိုင်း';
-        const recs = allRecs.filter((r) => r.session_date === ds && (r.session_timeType || '') === tt);
-        const _w = allWins.find((x) => (x.date || '') === ds && ((x.timeType || '') === tt));
+        const recs = allRecs.filter((r) => {
+            const rs = sessById.get(r.session);
+            const rDate = r.session_date || (rs ? rs.date : '');
+            const rTT = r.session_timeType || (rs ? rs.timeType : '');
+            return rDate === ds && rTT === tt;
+        });
+        const _w = allWins.find((x) => {
+            const ws = sessById.get(x.session);
+            const wDate = x.date || (ws ? ws.date : '');
+            const wTT = x.timeType || (ws ? ws.timeType : '');
+            return wDate === ds && wTT === tt;
+        });
         const wins = _w ? [_w] : [];
         const winNum = wins.length ? String(wins[0].number).padStart(2, '0') : null;
         for (const r of recs) {
@@ -2689,22 +2703,24 @@ async function backfillDates() {
             await direct.directSave('winning_numbers', w);
         }
     }
-    // lottery_records missing session_date (old records) — server-direct.
-    // Selection logic unchanged: only rows missing session_date are stamped,
-    // from the session when present, else the row's own timestamp (server rows
-    // carry ISO `created`/`updated`; local `_updated` kept as a fallback).
+    // lottery_records missing stamps (old records) — server-direct.
+    // Rows missing session_date are stamped from the session when present,
+    // else the row's own timestamp; rows that already have a date but lack
+    // session_timeType get the timeType from their session (Weekly fix:
+    // date-only rows were skipped forever, leaving Weekly blind).
     // Per-row failures are logged and skipped so one bad row never aborts the
-    // repair; the next boot retries it (already-stamped rows are skipped).
+    // repair; the next boot retries it (fully-stamped rows are skipped).
     const recs = await direct.withRetry(() => direct.directList('lottery_records', state.tenantPbId));
     for (const r of recs) {
-        if (r.session_date) continue;
+        if (r.session_date && r.session_timeType) continue;
         const sess = sessById.get(r.session);
-        let d = sess ? sess.date : null;
+        let d = r.session_date || (sess ? sess.date : null);
         let tt = sess ? (sess.timeType || '') : '';
         if (!d) d = dateOf(r.created || r.updated || r._updated);
-        if (d) {
-            r.session_date = d;
-            if (!r.session_timeType) r.session_timeType = tt;
+        let changed = false;
+        if (!r.session_date && d) { r.session_date = d; changed = true; }
+        if (!r.session_timeType && tt) { r.session_timeType = tt; changed = true; }
+        if (changed) {
             try {
                 await direct.directSave('lottery_records', r);
             } catch (e) { console.warn('backfillDates record failed:', r.id, e.message); }
