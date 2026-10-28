@@ -3372,16 +3372,19 @@ async function renderOverlimit() {
         state.lastOverText = '';
         return;
     }
-    // Over-limit card's own bookie selector (same list as the akan screen).
+    // Over-limit card's own bookie selector fills in the BACKGROUND — the
+    // table below must not wait for it (speed fix, Pho Oct 28). A current
+    // selection always wins over a stale in-flight fill.
     const overSel = $('overBookieSelect');
     if (overSel) {
         const prevOver = overSel.value;
-        try {
-            const overNames = await getAkanBookieNames();
+        getAkanBookieNames().then((overNames) => {
+            const cur = overSel.value;
             overSel.innerHTML = '<option value="">-- အကန်ဒိုင်ရွေးရန် --</option>' +
                 overNames.map((k) => '<option value="' + escHtml(k) + '">' + escHtml(k) + '</option>').join('');
-            if (prevOver && overNames.includes(prevOver)) overSel.value = prevOver;
-        } catch (e) { /* keep previous options on a failed read */ }
+            if (cur && overNames.includes(cur)) overSel.value = cur;
+            else if (prevOver && overNames.includes(prevOver)) overSel.value = prevOver;
+        }).catch(() => { /* keep previous options on a failed read */ });
     }
     // On a failed read, keep the previous content (never blank it).
     let limit, over;
@@ -3539,18 +3542,15 @@ async function renderAkandain() {
     (akan) bets, all sessions, plus registered အကန်ဒိုင် persons.
     Throws on a failed read — callers keep their previous options. */
 async function getAkanBookieNames() {
-    // Server-direct (Pho Oct 27): bookie names come from the server, not local DB.
-    // Per-session loop preserved so the dropdown order (first-appearance, session
-    // order) matches the old local query.
+    // Speed fix (Pho Oct 28): ONE query for all OUTGOING (akan) bets, not one
+    // request per session — the per-session loop got slower as sessions piled up.
+    // Order is first-appearance by record creation, same as before for a dropdown.
     const seen = new Set();
     const order = [];
-    for (const sess of state.sessions) {
-        const recs = await direct.withRetry(() => direct.directList('lottery_records', state.tenantPbId, { filter: `session = "${sess.id}"`, sort: 'created' }));
-        for (const r of recs) {
-            if (r.record_type !== 'akan') continue;
-            const k = (r.player_name || r.agent_name || '').trim();
-            if (k && !seen.has(k)) { seen.add(k); order.push(k); }
-        }
+    const recs = await direct.withRetry(() => direct.directList('lottery_records', state.tenantPbId, { filter: 'record_type = "akan"', sort: 'created' }));
+    for (const r of recs) {
+        const k = (r.player_name || r.agent_name || '').trim();
+        if (k && !seen.has(k)) { seen.add(k); order.push(k); }
     }
     for (const a of state.agents || []) {
         if ((a.person_type || 'agent') !== 'akan') continue;
