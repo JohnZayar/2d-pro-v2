@@ -368,7 +368,7 @@ window.addEventListener('load', () => {
           <button id="nuclearWipeBtn" class="btn red block">🗑️ အကုန်ရှင်း (Server + App)</button>
           <div class="small muted" style="margin-top:6px">Server + ဖုန်း ၂ ခုလုံး အကုန် ဖျက် — ပြန်မရဘူး</div>
         </div>
-        <div class="small muted" style="text-align:center;margin-top:8px"><b>TEST12</b></div>
+        <div class="small muted" style="text-align:center;margin-top:8px"><b>TEST13</b></div>
       </section>
     </main>
   </div>
@@ -461,9 +461,15 @@ window.addEventListener('load', () => {
       </div>
       <div class="field"><label>ကော်မရှင် %</label><input id="agComm" type="number" inputmode="decimal" value="0"></div>
       <div class="field"><label>အလျော်နှုန်း</label><input id="agPayout" type="number" inputmode="numeric" value="80"></div>
+      <div class="field"><label>ဟော့ဂဏန်း</label>
+        <select id="agHotOpen" class="field-input">
+          <option value="">ပိတ်</option>
+          <option value="1">ဖွင့်</option>
+        </select>
+      </div>
       <div class="field"><label>ဟော့ဂဏန်း တကွက်စာ limit (ပိတ်ဂဏန်း အကုန်)</label>
         <input id="agLimitAmt" type="number" inputmode="numeric" placeholder="ပမာဏ">
-        <div class="small muted">မထည့်ရင် ဟော့ဂဏန်း လုံးဝ ပိတ်မယ် · ကျန်ဂဏန်း လီမစ်မရှိ</div>
+        <div class="small muted">ပိတ်ရင် မရ · ဖွင့်ပြီး cap မရှိရင် အကန့်အသတ်မရှိ · ကျန်ဂဏန်း လီမစ်မရှိ</div>
       </div>
       <button id="agSave" class="btn block green">သိမ်းမည်</button>
     </div>
@@ -574,6 +580,6 @@ window.addEventListener('load', () => {
 
 
 </div>
-<script type="module" src="app.js?v=t13"></script>
+<script type="module" src="app.js?v=t14"></script>
 </body>
 </html>
