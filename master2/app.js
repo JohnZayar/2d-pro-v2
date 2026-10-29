@@ -1355,8 +1355,9 @@ async function openBoard(sessionId) {
 /** Strict per-line check: parse must succeed AND every number must be 2-digit. Never guesses. */
 /* Pho Oct 29 limit redesign: formula-derived lines are EXEMPT from the
    hot-number cap — only pure direct numbers are capped (အကြွေမရ,
-   ဖော်မြူလာနဲ့ဆိုရ, အပူးလဲ ရ). Same list as Agent. */
-const FORMULA_KEYWORDS = ['ပါ', 'ပူး', 'ခွေ', 'ပတ်', 'နက္ခတ်', 'ထိုင်းနက္ခတ်', 'ညီအစ်ကို', 'စုံမ', 'မစုံ', 'ထိပ်', 'နောက်', 'ဘရိတ်', 'ပွင့်', 'ပါဝါ', 'အာ', 'စုံစုံ', 'မမ'];
+   ဖော်မြူလာနဲ့ဆိုရ, အပူးလဲ ရ). Same list as Agent. အာ is NOT exempt
+   (explicit-list reverse counts as direct, Pho Oct 29 15:06). */
+const FORMULA_KEYWORDS = ['ပါ', 'ပူး', 'ခွေ', 'ပတ်', 'နက္ခတ်', 'ထိုင်းနက္ခတ်', 'ညီအစ်ကို', 'စုံမ', 'မစုံ', 'ထိပ်', 'နောက်', 'ဘရိတ်', 'ပွင့်', 'ပါဝါ', 'စုံစုံ', 'မမ'];
 function lineHasFormula(line) {
     const str = String(line || '');
     return FORMULA_KEYWORDS.some((kw) => str.includes(kw));
