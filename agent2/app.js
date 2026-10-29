@@ -1102,6 +1102,11 @@ window.savePendingBatch = async function savePendingBatch() {
     // Pho Oct 18: set the guard SYNCHRONOUSLY before any await —
     // two rapid taps must not both pass.
     saveInFlight = true;
+    // Pho Oct 29 speed (TEST16): local checks first — no fetch when
+    // there is nothing valid to save.
+    if (!pendingEntries.length) { saveInFlight = false; showToast('စာရင်း မရှိသေးပါ'); return; }
+    if (pendingEntries.some((e) => !(e.player_name || '').trim() || e.player_name === '__new__')) { saveInFlight = false; showToast('❌ အမည် မပါ တဲ့ စာရင်း ရှိ — ဖျက် ပြီး ပြန် ထည့်'); return; }
+    if (!currentSessionId) { saveInFlight = false; showToast('⚠️ Session မရှိသေးပါ'); return; }
     // Pho Oct 29 speed: the three pre-flight reads are independent — run
     // them together instead of one-by-one. Decisions are evaluated in the
     // OLD order (disabled -> session -> lock -> limits) so every toast
@@ -1111,17 +1116,16 @@ window.savePendingBatch = async function savePendingBatch() {
     // Pho Oct 29 speed (TEST15): one shared session fetch feeds both the
     // session check and the lock check (was two identical session gets).
     const sessP = direct.withRetry(() => direct.directGet('sessions', currentSessionId));
-    const [disabledRes, sessRes, lockRes] = await Promise.all([
+    // Pho Oct 29 speed (TEST16): session records join the pre-flight
+    // Promise.all (was a separate hop after it) — 1 hop saved.
+    const [disabledRes, sessRes, lockRes, sessRecsRes] = await Promise.all([
         checkAgentDisabled().then((v) => ({ ok: true, v })).catch((e) => ({ ok: false, e })),
         sessP.then((v) => ({ ok: true, v })).catch((e) => ({ ok: false, e })),
         isAgentSessionLocked(currentSessionId, sessP).then((v) => ({ ok: true, v })).catch((e) => ({ ok: false, e })),
+        getSessionRecords(currentSessionId).then((v) => ({ ok: true, v })).catch((e) => ({ ok: false, e })),
     ]);
     if (!disabledRes.ok) { saveInFlight = false; showToast('❌ ဆာဗာ ဆက်မရပါ: ' + disabledRes.e.message); return; }
     if (disabledRes.v) { saveInFlight = false; return; }
-    if (!pendingEntries.length) { saveInFlight = false; showToast('စာရင်း မရှိသေးပါ'); return; }
-    // Block if any pending entry has no player name
-    if (pendingEntries.some((e) => !(e.player_name || '').trim() || e.player_name === '__new__')) { saveInFlight = false; showToast('❌ အမည် မပါ တဲ့ စာရင်း ရှိ — ဖျက် ပြီး ပြန် ထည့်'); return; }
-    if (!currentSessionId) { saveInFlight = false; showToast('⚠️ Session မရှိသေးပါ'); return; }
     // Session result from the parallel pre-flights above (Pho Oct 19
     // Option B semantics kept: 404 = genuinely missing, other errors fail
     // closed). A throw here must never leave saveInFlight stuck.
@@ -1150,8 +1154,8 @@ window.savePendingBatch = async function savePendingBatch() {
     if (lkS.locked) { saveInFlight = false; showToast('🔒 ' + lkS.reason + ' — သိမ်း မရပါ'); return; }
     // Pho Oct 29 limit redesign: no cumulative save gate — hot numbers are
     // capped per line at stage time by my hot rule. The single
-    // sessRecs fetch stays for batch numbers.
-    const sessRecs = await getSessionRecords(currentSessionId);
+    // sessRecs came from the parallel pre-flight fetch above (batch numbers).
+    const sessRecs = sessRecsRes.v;
 
     const createdIds = [];
     try {
