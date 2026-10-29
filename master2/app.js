@@ -1777,20 +1777,20 @@ window.saveEntryBatch = async function saveEntryBatch() {
     // Block if any entry has no player name
     if (entryPending.some((e) => !(e.player_name || '').trim())) { entrySaveInFlight = false; showToast('❌ အမည် မပါ တဲ့ စာရင်း ရှိ — ဖျက် ပြီး ပြန် ထည့်'); return; }
     if (!state.activeSessionId) { entrySaveInFlight = false; showToast('⚠️ Session မရှိသေးပါ'); return; }
-    const lk = await isSessionLocked(state.activeSessionId);
+    // Pho Oct 29 speed: lock + limits reads are independent — run
+    // together. Evaluated in the OLD order (lock, then limits) with the
+    // same toasts; a failed read still fails closed with the guard reset
+    // (old code let a lock-read throw stick the guard).
+    const [lkRes, limRes] = await Promise.all([
+        isSessionLocked(state.activeSessionId).then((v) => ({ ok: true, v })).catch((e) => ({ ok: false, e })),
+        checkPersonLimits(entryPending, state.activeSessionId).then((v) => ({ ok: true, v })).catch((e) => ({ ok: false, e })),
+    ]);
+    if (!lkRes.ok) { entrySaveInFlight = false; showToast('သိမ်းမရပါ: ' + (lkRes.e.message || lkRes.e)); return; }
+    const lk = lkRes.v;
     if (lk.locked) { entrySaveInFlight = false; showToast('🔒 ' + lk.reason + ' — သိမ်း မရပါ'); return; }
     // Per-person hot-number limits (cumulative per session).
-    // Fail CLOSED on a read failure — but the guard MUST reset, or the next
-    // save would silently no-op at the in-flight check (this call sits
-    // outside the save's try block, so a throw here would otherwise brick it).
-    let limitErr;
-    try {
-        limitErr = await checkPersonLimits(entryPending, state.activeSessionId);
-    } catch (e) {
-        entrySaveInFlight = false;
-        showToast('သိမ်းမရပါ: ' + (e.message || e));
-        return;
-    }
+    if (!limRes.ok) { entrySaveInFlight = false; showToast('သိမ်းမရပါ: ' + (limRes.e.message || limRes.e)); return; }
+    const limitErr = limRes.v;
     if (limitErr) { entrySaveInFlight = false; showToast('❌ ' + limitErr); return; }
 
     // Server-direct (Pho Oct 27): savedIds tracks ONLY this attempt's rows, so a
@@ -1806,14 +1806,15 @@ window.saveEntryBatch = async function saveEntryBatch() {
             byKey[k].push(e);
         });
 
+        // Records built ONCE (same fields, same ids — a lost-response
+        // retry re-sends the same id so duplicate protection holds).
+        const recs = [];
         let count = 0;
         for (const k of order) {
             const batchNo = 'B' + Date.now().toString(36) + count.toString(36);
             for (const e of byKey[k]) {
                 const sess = state.sessions.find((x) => x.id === state.activeSessionId);
-                // Built ONCE outside withRetry: a lost-response retry must re-send
-                // the SAME id (directCreate treats a duplicate id as the landed write).
-                const rec = {
+                recs.push({
                     id: uid(),
                     tenant: state.tenantPbId,
                     session: state.activeSessionId,
@@ -1827,12 +1828,27 @@ window.saveEntryBatch = async function saveEntryBatch() {
                     record_type: e.record_type || 'pos',
                     batch_no: batchNo,
                     formula_text: e.formula_text || '',
-                };
-                const saved = await direct.withRetry(() => direct.directCreate('lottery_records', rec));
-                if (saved && saved.id) savedIds.push(saved.id);
+                });
                 count++;
             }
         }
+
+        // Pho Oct 29 speed: same rows, created in chunks of 5 instead of
+        // one-by-one (phone latency dominates). A chunk failure throws
+        // with the already-created ids tracked, so the catch below rolls
+        // back exactly as before.
+        for (let i = 0; i < recs.length; i += 5) {
+            const chunk = recs.slice(i, i + 5);
+            const results = await Promise.all(chunk.map((rec) =>
+                direct.withRetry(() => direct.directCreate('lottery_records', rec))
+                    .then((saved) => ({ ok: true, id: saved && saved.id ? saved.id : rec.id }))
+                    .catch((e) => ({ ok: false, e }))));
+            for (const r of results) {
+                if (r.ok) savedIds.push(r.id);
+                else throw r.e;
+            }
+        }
+
         entryPending = [];
         renderEntryTable();
         showToast('✅ သိမ်းပြီးပြီ');
@@ -1842,9 +1858,8 @@ window.saveEntryBatch = async function saveEntryBatch() {
     } catch (e) {
         // Roll back this attempt's rows (best-effort) so the pending table stays
         // intact and a retry saves a clean batch — never a false partial success.
-        for (const id of savedIds) {
-            await direct.withRetry(() => direct.directDelete('lottery_records', id)).catch(() => { /* keep going */ });
-        }
+        await Promise.all(savedIds.map((id) =>
+            direct.withRetry(() => direct.directDelete('lottery_records', id)).catch(() => { /* keep going */ })));
         showToast('သိမ်းမရပါ: ' + e.message);
     } finally {
         entrySaveInFlight = false;
@@ -3752,20 +3767,16 @@ window.saveAkanBatch = async function saveAkanBatch() {
             byKey[k].push(e);
         });
 
+        // H1 fix (Oct 28) kept: each record (with its id) is built ONCE
+        // outside withRetry — a lost-response retry reuses the same id so
+        // directCreate's duplicate protection holds.
+        const recs = [];
         let count = 0;
         for (const k of order) {
             const batchNo = 'B' + Date.now().toString(36) + count.toString(36);
             for (const e of byKey[k]) {
                 const sess2 = state.sessions.find((x) => x.id === state.activeSessionId);
-                // Server-direct (Pho Oct 27): same field set createRecord sent
-                // (id + tenant + the akan fields); directCreate strips _updated
-                // and the server sets created/updated itself. withRetry retries
-                // line blips; a persistent failure lands in the catch below —
-                // pending is NOT cleared and no false success is shown.
-                // H1 fix (Oct 28): build the record (with its id) ONCE
-                // outside withRetry — a lost-response retry must reuse the
-                // same id so directCreate's duplicate protection holds.
-                const rec = {
+                recs.push({
                     id: uid(),
                     tenant: state.tenantPbId,
                     session: state.activeSessionId,
@@ -3777,12 +3788,27 @@ window.saveAkanBatch = async function saveAkanBatch() {
                     player_name: e.player_name || '',
                     record_type: 'akan',
                     batch_no: batchNo,
-                };
-                await direct.withRetry(() => direct.directCreate('lottery_records', rec));
-                savedIds.push(rec.id);
+                });
                 count++;
             }
         }
+
+        // Pho Oct 29 speed: same rows, created in chunks of 5 instead of
+        // one-by-one (phone latency dominates). A chunk failure throws
+        // with the already-created ids tracked, so the catch below rolls
+        // back exactly as before.
+        for (let i = 0; i < recs.length; i += 5) {
+            const chunk = recs.slice(i, i + 5);
+            const results = await Promise.all(chunk.map((rec) =>
+                direct.withRetry(() => direct.directCreate('lottery_records', rec))
+                    .then((saved) => ({ ok: true, id: saved && saved.id ? saved.id : rec.id }))
+                    .catch((e) => ({ ok: false, e }))));
+            for (const r of results) {
+                if (r.ok) savedIds.push(r.id);
+                else throw r.e;
+            }
+        }
+
         akanPending = [];
         renderAkanTable();
         showToast('✅ အထွက် သိမ်းပြီးပြီ');
@@ -3792,9 +3818,8 @@ window.saveAkanBatch = async function saveAkanBatch() {
     } catch (e) {
         // Roll back this attempt's rows (best-effort) so the pending table
         // stays intact and a retry saves a clean batch.
-        for (const id of savedIds) {
-            await direct.withRetry(() => direct.directDelete('lottery_records', id)).catch(() => { /* keep going */ });
-        }
+        await Promise.all(savedIds.map((id) =>
+            direct.withRetry(() => direct.directDelete('lottery_records', id)).catch(() => { /* keep going */ })));
         showToast('သိမ်းမရပါ: ' + e.message);
     } finally {
         akanSaveInFlight = false;
