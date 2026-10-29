@@ -1453,10 +1453,11 @@ async function saveBoard() {
     const boardPersonId = agent ? agent.id : '';
     if (!personName) { showToast('❌ အမည် ရွေးပါ (မရွေးရင် တင်မရ)'); return; }
 
-    // Pho Oct 29 limit redesign: session blocked (= hot) numbers are capped
-    // per line by this person's single blocked_limit (0/unset = fully
-    // blocked for hot numbers; non-hot numbers unlimited).
+    // Pho Oct 29 hot toggle: hot numbers follow this person's hot_open
+    // switch — ပိတ် = fully blocked; ဖွင့် + cap = per-line cap; ဖွင့် +
+    // no cap = unlimited. Formula lines exempt; non-hot unlimited.
     const blockedSet2 = new Set(getBlocked(sessionId));
+    const hotOpenB = !!picked.hot_open;
     const capB = Number(picked.blocked_limit) || 0;
     const blockedHit2 = [];
     const overHit2 = [];
@@ -1464,8 +1465,8 @@ async function saveBoard() {
         const nn = String(it.number).padStart(2, '0');
         if (it._fromFormula) return true;
         if (!blockedSet2.has(nn)) return true;
-        if (capB > 0 && (Number(it.amount) || 0) <= capB) return true;
-        if (capB > 0) overHit2.push(nn); else blockedHit2.push(nn);
+        if (hotOpenB && (capB === 0 || (Number(it.amount) || 0) <= capB)) return true;
+        if (hotOpenB) overHit2.push(nn); else blockedHit2.push(nn);
         return false;
     });
     const blkParts2 = [];
@@ -1732,10 +1733,11 @@ window.submitEntryRow = async function submitEntryRow() {
         await openAkandain(state.activeSessionId);
         return;
     }
-    // Pho Oct 29 limit redesign: session blocked (= hot) numbers are capped
-    // per line by this person's single blocked_limit (0/unset = fully
-    // blocked for hot numbers; non-hot numbers unlimited).
+    // Pho Oct 29 hot toggle: hot numbers follow this person's hot_open
+    // switch — ပိတ် = fully blocked; ဖွင့် + cap = per-line cap; ဖွင့် +
+    // no cap = unlimited. Formula lines exempt; non-hot unlimited.
     const blockedSet = new Set(getBlocked(state.activeSessionId));
+    const hotOpenE = !!selAgent.hot_open;
     const capE = Number(selAgent.blocked_limit) || 0;
     const isFormulaEntry = lineHasFormula(line);
     const blockedHit = [];
@@ -1744,8 +1746,8 @@ window.submitEntryRow = async function submitEntryRow() {
         const nn = String(it.number).padStart(2, '0');
         if (isFormulaEntry) return true;
         if (!blockedSet.has(nn)) return true;
-        if (capE > 0 && (Number(it.amount) || 0) <= capE) return true;
-        if (capE > 0) overHit.push(nn); else blockedHit.push(nn);
+        if (hotOpenE && (capE === 0 || (Number(it.amount) || 0) <= capE)) return true;
+        if (hotOpenE) overHit.push(nn); else blockedHit.push(nn);
         return false;
     });
     if (!allowedItems.length) { entryClearInputs(); showToast('🚫 ဒိုင်ပိတ် ဂဏန်းတွေ ချည်း — တင် မရပါ'); return; }
@@ -1774,7 +1776,7 @@ window.saveEntryBatch = async function saveEntryBatch() {
     if (entryPending.some((e) => !(e.player_name || '').trim())) { entrySaveInFlight = false; showToast('❌ အမည် မပါ တဲ့ စာရင်း ရှိ — ဖျက် ပြီး ပြန် ထည့်'); return; }
     if (!state.activeSessionId) { entrySaveInFlight = false; showToast('⚠️ Session မရှိသေးပါ'); return; }
     // Pho Oct 29 limit redesign: no cumulative limits gate — hot numbers
-    // are capped per line at stage time by blocked_limit instead.
+    // are capped per line at stage time by the hot rule instead.
     let lkRes;
     try { lkRes = { ok: true, v: await isSessionLocked(state.activeSessionId) }; }
     catch (e) { lkRes = { ok: false, e }; }
@@ -2070,7 +2072,7 @@ function renderAgents() {
     box.innerHTML = state.agents.map((a) => `
         <div class="agent-row">
             <div><div class="nm">${escHtml(a.name)} <span class="ptype">${escHtml(personTypeLabel(a))}</span>${agentBadgeForPerson(a.id) ? ` <span class="ptype" style="background:#1e3a5f;color:#7dd3fc">${escHtml(agentBadgeForPerson(a.id))}</span>` : ''}</div>
-            <div class="ph">${escHtml(a.phone || '')} · ကော် ${a.commission || 0}% · အလျော် ${a.payout_rate || 80}${(Number(a.blocked_limit) || 0) > 0 ? ' · ပိတ် ' + formatMoney(a.blocked_limit) : ''}</div></div>
+            <div class="ph">${escHtml(a.phone || '')} · ကော် ${a.commission || 0}% · အလျော် ${a.payout_rate || 80}${!a.hot_open ? ' · ဟော့ ပိတ်' : ((Number(a.blocked_limit) || 0) > 0 ? ' · ဟော့ ' + formatMoney(a.blocked_limit) : ' · ဟော့ ဖွင့်')}</div></div>
             <div class="acts">
                 <button class="btn small gray" data-edit="${a.id}">✏️</button>
                 <button class="btn small red" data-delag="${a.id}">🗑️</button>
@@ -2094,6 +2096,7 @@ async function openAgentModal(id) {
     // Pho Oct 29 limit redesign: ONE per-line cap for all hot numbers —
     // no number picking. Old per-number limits data stays on the row but
     // is no longer read or edited.
+    $('agHotOpen').value = (a && a.hot_open) ? '1' : '';
     $('agLimitAmt').value = a ? (a.blocked_limit || '') : '';
     openModal('modal-agent');
     // Pho Oct 21: fill the agent-account link picker (async, modal already open).
@@ -2126,6 +2129,7 @@ async function saveAgent() {
         phone: $('agPhone').value.trim(),
         commission: Number($('agComm').value) || 0,
         payout_rate: Number($('agPayout').value) || 80,
+        hot_open: $('agHotOpen').value === '1',
         blocked_limit: Number($('agLimitAmt').value) || 0,
     };
     let personId = state.editingAgentId;
