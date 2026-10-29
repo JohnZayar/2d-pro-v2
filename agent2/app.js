@@ -57,15 +57,16 @@ function lineHasFormula(line) {
     return FORMULA_KEYWORDS.some((kw) => s.includes(kw));
 }
 
-/* Pho Oct 29 limit redesign: MY single per-line cap for session blocked
-   (= hot) numbers. 0/unset = fully blocked for hot numbers (fail-closed
-   on fetch failure too); non-hot numbers are unlimited. */
-async function getMyBlockedLimit() {
+/* Pho Oct 29 hot toggle: MY hot rule — open flag + single per-line cap.
+   ပိတ် (open false/unset) = fully blocked; ဖွင့် + cap = per-line cap;
+   ဖွင့် + no cap = unlimited. Fail-closed on fetch failure (blocked).
+   Non-hot numbers are unlimited. */
+async function getMyHotRule() {
     try {
         const agents = await direct.withRetry(() => direct.directList('agents', tenantId));
         const me = (agents || []).find((a) => (a.name || '') === agentName);
-        return Number(me && me.blocked_limit) || 0;
-    } catch (e) { return 0; }
+        return { open: !!(me && me.hot_open), cap: Number(me && me.blocked_limit) || 0 };
+    } catch (e) { return { open: false, cap: 0 }; }
 }
 
 /** Get blocked numbers for a session (synced from Master via PocketBase). */
@@ -1005,11 +1006,11 @@ window.submitEntry = async function submitEntry() {
         return;
     }
 
-    // Pho Oct 29 limit redesign: session blocked (= hot) numbers are capped
-    // per line by my single blocked_limit (0/unset = fully blocked for hot
-    // numbers; non-hot numbers unlimited).
+    // Pho Oct 29 hot toggle: session blocked (= hot) numbers follow my
+    // hot_open switch — ပိတ် = fully blocked; ဖွင့် + cap = per-line cap;
+    // ဖွင့် + no cap = unlimited. Non-hot numbers unlimited.
     const blockedSet = new Set(await getAgentBlocked(currentSessionId));
-    const capE = await getMyBlockedLimit();
+    const hotE = await getMyHotRule();
     const isFormulaLine = lineHasFormula(line);
     const blockedHit = [];
     const overHit = [];
@@ -1017,8 +1018,8 @@ window.submitEntry = async function submitEntry() {
         const nn = String(it.number).padStart(2, '0');
         if (isFormulaLine) return true;
         if (!blockedSet.has(nn)) return true;
-        if (capE > 0 && (Number(it.amount) || 0) <= capE) return true;
-        if (capE > 0) overHit.push(nn); else blockedHit.push(nn);
+        if (hotE.open && (hotE.cap === 0 || (Number(it.amount) || 0) <= hotE.cap)) return true;
+        if (hotE.open) overHit.push(nn); else blockedHit.push(nn);
         return false;
     });
     if (!allowedItems.length) { clearInputs(); showToast('🚫 ဒိုင်ပိတ် ဂဏန်းတွေ ချည်း — တင် မရပါ'); return; }
@@ -1032,7 +1033,7 @@ window.submitEntry = async function submitEntry() {
     const skipped = invalidLines.length + (items.length - validItems.length) + blockedHit.length;
     const blkParts = [];
     if (blockedHit.length) blkParts.push([...new Set(blockedHit)].join(',') + ' ပိတ်');
-    if (overHit.length) blkParts.push([...new Set(overHit)].join(',') + ' တကွက် ' + formatMoney(capE) + ' ကျော်');
+    if (overHit.length) blkParts.push([...new Set(overHit)].join(',') + ' တကွက် ' + formatMoney(hotE.cap) + ' ကျော်');
     const blkMsg = blkParts.length ? ' (🚫 ' + blkParts.join(' · ') + ')' : '';
     showToast('✅ ထည့်ပြီးပြီ' +
         (skipped ? ' (⚠️ ' + skipped + ' လိုင်း ကျန်)' : '') + blkMsg);
@@ -1135,7 +1136,7 @@ window.savePendingBatch = async function savePendingBatch() {
     const lkS = lockRes.v;
     if (lkS.locked) { saveInFlight = false; showToast('🔒 ' + lkS.reason + ' — သိမ်း မရပါ'); return; }
     // Pho Oct 29 limit redesign: no cumulative save gate — hot numbers are
-    // capped per line at stage time by my blocked_limit. The single
+    // capped per line at stage time by my hot rule. The single
     // sessRecs fetch stays for batch numbers.
     const sessRecs = await getSessionRecords(currentSessionId);
 
@@ -1971,19 +1972,19 @@ window.saveBoard = async function saveBoard() {
             saveInFlight = false;
             return;
         }
-        // Pho Oct 29 limit redesign: session blocked (= hot) numbers are capped
-        // per line by my single blocked_limit (0/unset = fully blocked for hot
-        // numbers; non-hot numbers unlimited).
+        // Pho Oct 29 hot toggle: session blocked (= hot) numbers follow my
+        // hot_open switch — ပိတ် = fully blocked; ဖွင့် + cap = per-line cap;
+        // ဖွင့် + no cap = unlimited. Non-hot numbers unlimited.
         const blockedSetB = new Set(await getAgentBlocked(currentSessionId));
-        const capB = await getMyBlockedLimit();
+        const hotB = await getMyHotRule();
         const blockedHitB = [];
         const overHitB = [];
         const allowedBoard = okItems.filter((it) => {
             const nn = String(it.number).padStart(2, '0');
             if (it._fromFormula) return true;
             if (!blockedSetB.has(nn)) return true;
-            if (capB > 0 && (Number(it.amount) || 0) <= capB) return true;
-            if (capB > 0) overHitB.push(nn); else blockedHitB.push(nn);
+            if (hotB.open && (hotB.cap === 0 || (Number(it.amount) || 0) <= hotB.cap)) return true;
+            if (hotB.open) overHitB.push(nn); else blockedHitB.push(nn);
             return false;
         });
         if (!allowedBoard.length) { saveInFlight = false; showToast('🚫 ဒိုင်ပိတ် ဂဏန်းတွေ ချည်း — တင် မရပါ'); return; }
@@ -1994,7 +1995,7 @@ window.saveBoard = async function saveBoard() {
         await renderEntryTable();
         const blkPartsB = [];
         if (blockedHitB.length) blkPartsB.push([...new Set(blockedHitB)].join(',') + ' ပိတ်');
-        if (overHitB.length) blkPartsB.push([...new Set(overHitB)].join(',') + ' တကွက် ' + formatMoney(capB) + ' ကျော်');
+        if (overHitB.length) blkPartsB.push([...new Set(overHitB)].join(',') + ' တကွက် ' + formatMoney(hotB.cap) + ' ကျော်');
         const blkMsgB = blkPartsB.length ? ' (🚫 ' + blkPartsB.join(' · ') + ')' : '';
         if (badLines.length) {
             // Keep bad lines on the board for fixing; keep modal open.
