@@ -118,7 +118,7 @@ window.addEventListener('load', () => {
                 <span id="entrySyncPill" class="sync-pill">⚪</span>
             </div>
 
-            <div class="entry-playerbar">
+            <div class="entry-playerbar" style="position:relative;">
                 <select id="entryPlayerSelect" class="field-input player-select" onchange="onEntryPlayerChange(this)" hidden>
                     <option value="">-- ထိုးသား ရွေးပါ --</option>
                 </select>
@@ -126,9 +126,9 @@ window.addEventListener('load', () => {
                 <button class="top-btn kb-toggle-btn" id="entryKbToggle" type="button" onclick="toggleEntryKeyboard()" title="ကီးဘုတ် ဖွင့်/ပိတ်">⌨️</button>
                 <button class="top-btn" onclick="openBoard()" title="Digital Board">📋</button>
                 <button class="top-btn btn-save-top" onclick="savePendingBatch()">💾 Save</button>
+                <div id="entryPlayerPanel" style="display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:50;border:1px solid #334155;border-radius:8px;max-height:120px;overflow-y:auto;background:#0f172a;box-shadow:0 8px 24px rgba(0,0,0,.45);"></div>
             </div>
 
-            <div id="entryPlayerPanel" style="display:none;border:1px solid #334155;border-radius:8px;margin:6px 0 0;max-height:240px;overflow-y:auto;background:#0f172a;"></div>
 
             <div id="newPlayerInline" style="display:none;gap:6px;margin:6px 0 0;">
                 <input id="newPlayerNameInput" class="field-input" placeholder="လူသစ် နာမည်" onkeydown="if(event.key==='Enter')confirmInlinePlayer('entry')" style="flex:1;" />
@@ -318,13 +318,13 @@ window.addEventListener('load', () => {
             <span class="close-x" onclick="closeBoard()">✕</span>
         </div>
 
-        <div class="board-player-row">
+        <div class="board-player-row" style="position:relative;">
             <label class="field-label" for="boardPlayer">🧍 ဘယ်သူ့အတွက်</label>
             <select id="boardPlayer" class="field-input" onchange="onBoardPlayerChange(this)" hidden></select>
             <button type="button" id="boardPlayerField" class="field-input" onclick="toggleBoardPlayerPanel()" style="text-align:left;">-- ထိုးသား ရွေးပါ -- ▾</button>
+            <div id="boardPlayerPanel" style="display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:50;border:1px solid #334155;border-radius:8px;max-height:120px;overflow-y:auto;background:#0f172a;box-shadow:0 8px 24px rgba(0,0,0,.45);"></div>
         </div>
 
-        <div id="boardPlayerPanel" style="display:none;border:1px solid #334155;border-radius:8px;margin:6px 0 0;max-height:240px;overflow-y:auto;background:#0f172a;"></div>
 
         <div id="boardNewPlayerInline" style="display:none;gap:6px;margin:6px 0 0;">
             <input id="boardNewNameInput" class="field-input" placeholder="လူသစ် နာမည်" onkeydown="if(event.key==='Enter')confirmInlinePlayer('board')" style="flex:1;" />
@@ -424,7 +424,7 @@ window.addEventListener('load', () => {
         </div>
         <div class="settings-row">
             <span>App Version</span>
-            <b>TEST8</b>
+            <b>TEST9</b>
         </div>
         <button class="btn-danger-outline" onclick="syncNowManual()">🔄 အခု Sync လုပ်မည်</button>
         <button class="btn-danger-outline" onclick="disconnectAgent()">🚪 ထွက်မည် (unlink)</button>
@@ -433,7 +433,7 @@ window.addEventListener('load', () => {
     </div>
 </div>
 
-<script type="module" src="app.js?v=t9"></script>
+<script type="module" src="app.js?v=t10"></script>
 
 <!-- Floating scroll-to-top button -->
 <button id="scrollTopBtn" class="scroll-top" onclick="scrollToTop()" hidden aria-label="အပေါ်တက်">⬆️</button>
