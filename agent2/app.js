@@ -507,10 +507,17 @@ async function getAgentSessions() {
     }
 }
 
+/** PB filter fragment for this agent only (server-side, so list downloads
+ * carry just this agent's rows instead of the whole tenant/session).
+ * Client-side agent filters stay as-is — same predicate, defense in depth. */
+function agentNameFilter() {
+    return 'agent_name = "' + String(agentName || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
+}
+
 /** This agent's records in a session, entry order (oldest first). */
 async function getSessionRecords(sessId) {
     try {
-        const recs = await direct.withRetry(() => direct.directList('lottery_records', tenantId, { filter: `session = "${sessId}"`, sort: 'created' }));
+        const recs = await direct.withRetry(() => direct.directList('lottery_records', tenantId, { filter: `session = "${sessId}" && ${agentNameFilter()}`, sort: 'created' }));
         return recs
             .filter((r) => (r.agent_name || '') === agentName)
             .sort((a, b) => (a.created || 0) - (b.created || 0));
@@ -643,7 +650,7 @@ let _playersFetchFailed = false;
 async function getPlayers() {
     _playersFetchFailed = false;
     try {
-        const all = await direct.withRetry(() => direct.directList('players', tenantId));
+        const all = await direct.withRetry(() => direct.directList('players', tenantId, { filter: agentNameFilter() }));
         return all
             .filter((p) => (p.agent_name || '') === agentName)
             .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
@@ -2090,7 +2097,7 @@ let _agentRecordsFetchFailed = false;
 async function getAgentRecords() {
     _agentRecordsFetchFailed = false;
     try {
-        const all = await direct.withRetry(() => direct.directList('lottery_records', tenantId, { sort: 'created' }));
+        const all = await direct.withRetry(() => direct.directList('lottery_records', tenantId, { filter: agentNameFilter(), sort: 'created' }));
         return all.filter((r) => (r.agent_name || '') === agentName);
     } catch (e) {
         _agentRecordsFetchFailed = true;
