@@ -14,7 +14,7 @@
 
 import * as pb from '../shared/pb.js?v=4';
 import * as direct from '../shared/direct.js?v=1';
-import { parseBoardReport, parseLine } from '../shared/parser.js?v=18';
+import { parseBoardReport, parseLine } from '../shared/parser.js?v=19';
 
 // Global safety net: log unhandled promise rejections instead of failing silently.
 if (typeof window !== 'undefined') {
@@ -48,57 +48,25 @@ function addPendingUnique(playerName, number, amount, fromFormula, formulaText, 
 /** Formula keywords: board lines containing these expand via formula
  *  — formula-derived numbers are EXCLUDED from hot-number limits.
  *  Exempt (Pho): ပါ/အပါ, ပူး/အပူး, ခွေ/အခွေ, ပတ်/အပတ်, နက္ခတ်/ထိုင်းနက္ခတ်,
- *  ပါဝါ, စုံမ, မစုံ, ထိပ်, နောက်. Only pure direct numbers are blocked. */
-const FORMULA_KEYWORDS = ['ပါ', 'ပူး', 'ခွေ', 'ပတ်', 'နက္ခတ်', 'ထိုင်းနက္ခတ်', 'ညီအစ်ကို', 'စုံမ', 'မစုံ', 'ထိပ်', 'နောက်'];
+ *  ပါဝါ/ထိုင်းပါဝါ, ဘရိတ်/ပွင့်, ညီအစ်ကို, စုံစုံ, မမ, စုံမ, မစုံ,
+ *  ထိပ်, နောက်. Only pure direct numbers are capped. အာ is NOT exempt
+ *  (explicit-list reverse counts as direct, Pho Oct 29 15:06). */
+const FORMULA_KEYWORDS = ['ပါ', 'ပူး', 'ခွေ', 'ပတ်', 'နက္ခတ်', 'ထိုင်းနက္ခတ်', 'ညီအစ်ကို', 'စုံမ', 'မစုံ', 'ထိပ်', 'နောက်', 'ဘရိတ်', 'ပွင့်', 'ပါဝါ', 'စုံစုံ', 'မမ'];
 function lineHasFormula(line) {
     const s = String(line || '');
     return FORMULA_KEYWORDS.some((kw) => s.includes(kw));
 }
 
-/** Check hot-number limits for this agent: cumulative per (number, session), excluding formula-derived entries. Returns error message or null. */
-async function checkAgentLimits() {
-    // Server-direct (Pho Oct 27): a failed limits read MUST propagate — the
-    // save gate blocks the save on it (fail-closed). Silently skipping limits
-    // on a read failure could let an over-limit batch through if the network
-    // recovers before the creates run.
-    let myLimits = {};
-    const agents = await direct.withRetry(() => direct.directList('agents', tenantId));
-    const me = (agents || []).find((a) => (a.name || '') === agentName);
-    myLimits = (me && me.limits) || {};
-    const limitNums = Object.keys(myLimits).filter((n) => Number(myLimits[n]) > 0);
-    if (!limitNums.length || !currentSessionId) return null;
-
-    // Pending totals by number (skip formula-derived)
-    const pendTotals = {};
-    pendingEntries.forEach((e) => {
-        if (e.fromFormula) return;
-        const num = String(e.number).padStart(2, '0');
-        if (!limitNums.includes(num)) return;
-        pendTotals[num] = (pendTotals[num] || 0) + (Number(e.amount) || 0);
-    });
-    if (!Object.keys(pendTotals).length) return null;
-
-    // Existing saved records for this agent + session (server-direct;
-    // getSessionRecords already filters to this agent — the filter below
-    // stays for exactness). A failed read propagates to the save gate.
-    const existing = await getSessionRecords(currentSessionId);
-    const existTotals = {};
-    existing.forEach((r) => {
-        if ((r.agent_name || '') !== agentName) return;
-        if (r.fromFormula) return; // formula-derived excluded
-        const num = String(r.number).padStart(2, '0');
-        if (!limitNums.includes(num)) return;
-        existTotals[num] = (existTotals[num] || 0) + (Number(r.amount) || 0);
-    });
-
-    for (const num of Object.keys(pendTotals)) {
-        const lim = Number(myLimits[num]);
-        const total = (existTotals[num] || 0) + pendTotals[num];
-        if (total > lim) {
-            return `ဟော့ဂဏန်း (${num}) Limite ပြည့်လို့ မရတော့ပါ`;
-        }
-    }
-    return null;
+/* Pho Oct 29 hot toggle: MY hot rule — open flag + single per-line cap.
+   ပိတ် (open false/unset) = fully blocked; ဖွင့် + cap = per-line cap;
+   ဖွင့် + no cap = unlimited. Fail-closed on fetch failure (blocked).
+   Non-hot numbers are unlimited. */
+async function getMyHotRule() {
+    try {
+        const agents = await direct.withRetry(() => direct.directList('agents', tenantId));
+        const me = (agents || []).find((a) => (a.name || '') === agentName);
+        return { open: !!(me && me.hot_open), cap: Number(me && me.blocked_limit) || 0 };
+    } catch (e) { return { open: false, cap: 0 }; }
 }
 
 /** Get blocked numbers for a session (synced from Master via PocketBase). */
@@ -120,12 +88,15 @@ async function getAgentBlocked(sessionId) {
 // never silently pass. Callers handle the throw: savePendingBatch blocks the
 // save (fail-closed, the enforcement point); submitEntry/saveBoard only stage
 // pending entries, so they proceed and let the save gate enforce.
-async function isAgentSessionLocked(sessionId) {
-    const s = await direct.withRetry(() => direct.directGet('sessions', sessionId));
+// Pho Oct 29 speed (TEST15): session + wins in parallel (was sequential).
+async function isAgentSessionLocked(sessionId, sessP) {
+    const [s, wins] = await Promise.all([
+        sessP || direct.withRetry(() => direct.directGet('sessions', sessionId)),
+        _getWins(sessionId),
+    ]);
     if (!s) return { locked: false };
     // manually closed by bookie → locked
     if (s.closed) return { locked: true, reason: 'အချိန်ပြည့်လို့ပိတ်သွားပါပြီ' };
-    const wins = await _getWins(sessionId);
     if (wins && wins.length) return { locked: true, reason: 'ပေါက်ဂဏန်း ထည့်ပြီးပြီ' };
     if (s.date) {
         const isAM = (s.timeType || '') === 'မနက်ပိုင်း';
@@ -539,10 +510,17 @@ async function getAgentSessions() {
     }
 }
 
+/** PB filter fragment for this agent only (server-side, so list downloads
+ * carry just this agent's rows instead of the whole tenant/session).
+ * Client-side agent filters stay as-is — same predicate, defense in depth. */
+function agentNameFilter() {
+    return 'agent_name = "' + String(agentName || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
+}
+
 /** This agent's records in a session, entry order (oldest first). */
 async function getSessionRecords(sessId) {
     try {
-        const recs = await direct.withRetry(() => direct.directList('lottery_records', tenantId, { filter: `session = "${sessId}"`, sort: 'created' }));
+        const recs = await direct.withRetry(() => direct.directList('lottery_records', tenantId, { filter: `session = "${sessId}" && ${agentNameFilter()}`, sort: 'created' }));
         return recs
             .filter((r) => (r.agent_name || '') === agentName)
             .sort((a, b) => (a.created || 0) - (b.created || 0));
@@ -675,7 +653,7 @@ let _playersFetchFailed = false;
 async function getPlayers() {
     _playersFetchFailed = false;
     try {
-        const all = await direct.withRetry(() => direct.directList('players', tenantId));
+        const all = await direct.withRetry(() => direct.directList('players', tenantId, { filter: agentNameFilter() }));
         return all
             .filter((p) => (p.agent_name || '') === agentName)
             .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
@@ -900,7 +878,8 @@ async function refreshEntryScreen() {
     // Pho Oct 28 speed: player list + session list are independent.
     const [players, sessions] = await Promise.all([getPlayers(), getAgentSessions()]);
     pSel.innerHTML = '<option value="">-- ထိုးသား ရွေးပါ --</option>' +
-        players.map((p) => '<option value="' + escHtml(p.name) + '">' + escHtml(p.name) + '</option>').join('');
+        players.map((p) => '<option value="' + escHtml(p.name) + '">' + escHtml(p.name) + '</option>').join('') +
+        '<option value="__new__">+ လူသစ်…</option>';
     if (prevPlayer && Array.from(pSel.options).some((o) => o.value === prevPlayer)) {
         pSel.value = prevPlayer;
     }
@@ -917,6 +896,7 @@ async function refreshEntryScreen() {
     }
 
     await renderEntryTable();
+    renderPlayerPanel('entry');
 }
 
 window.onEntrySessionChange = function onEntrySessionChange(sel) {
@@ -985,8 +965,8 @@ window.deletePendingGroup = function deletePendingGroup(idxList) {
 };
 
 /** Next batch number for (agent, session, player). */
-async function getNextBatchNo(playerName) {
-    const recs = currentSessionId ? await getSessionRecords(currentSessionId) : [];
+async function getNextBatchNo(playerName, preFetched) {
+    const recs = preFetched || (currentSessionId ? await getSessionRecords(currentSessionId) : []);
     let max = 0;
     recs.forEach((r) => {
         if ((r.player_name || '') === (playerName || '')) {
@@ -1008,6 +988,7 @@ window.submitEntry = async function submitEntry() {
     try { lkE = await isAgentSessionLocked(currentSessionId); } catch (e) { /* save gate enforces */ }
     if (lkE.locked) { showToast('🔒 ' + lkE.reason + ' — တင် မရပါ'); return; }
     const playerName = $('entryPlayerSelect').value || null;
+    if (playerName === '__new__') { showToast('❌ လူသစ် နာမည် အရင် ထည့်ပါ'); return; }
     if (!playerName) { showToast('❌ အမည် ရွေးပါ (မရွေးရင် တင်မရ)'); return; }
     const noText = boxNo().value.trim();
     const amtText = boxAmt().value.trim().replace(/[^\d]/g, '');
@@ -1035,17 +1016,24 @@ window.submitEntry = async function submitEntry() {
         return;
     }
 
-    // 🚫 ဒိုင်ပိတ်: blocked numbers cannot be bet
+    // Pho Oct 29 hot toggle: session blocked (= hot) numbers follow my
+    // hot_open switch — ပိတ် = fully blocked; ဖွင့် + cap = per-line cap;
+    // ဖွင့် + no cap = unlimited. Non-hot numbers unlimited.
     const blockedSet = new Set(await getAgentBlocked(currentSessionId));
+    const hotE = await getMyHotRule();
+    const isFormulaLine = lineHasFormula(line);
     const blockedHit = [];
+    const overHit = [];
     const allowedItems = validItems.filter((it) => {
         const nn = String(it.number).padStart(2, '0');
-        if (blockedSet.has(nn)) { blockedHit.push(nn); return false; }
-        return true;
+        if (isFormulaLine) return true;
+        if (!blockedSet.has(nn)) return true;
+        if (hotE.open && (hotE.cap === 0 || (Number(it.amount) || 0) <= hotE.cap)) return true;
+        if (hotE.open) overHit.push(nn); else blockedHit.push(nn);
+        return false;
     });
     if (!allowedItems.length) { clearInputs(); showToast('🚫 ဒိုင်ပိတ် ဂဏန်းတွေ ချည်း — တင် မရပါ'); return; }
     let addedCount = 0;
-    const isFormulaLine = lineHasFormula(line);
     allowedItems.forEach((it) => {
         if (addPendingUnique(playerName, it.number, it.amount, isFormulaLine)) addedCount++;
     });
@@ -1053,7 +1041,10 @@ window.submitEntry = async function submitEntry() {
     clearInputs();
     await renderEntryTable();
     const skipped = invalidLines.length + (items.length - validItems.length) + blockedHit.length;
-    const blkMsg = blockedHit.length ? ' (🚫 ' + [...new Set(blockedHit)].join(',') + ' ပိတ်)' : '';
+    const blkParts = [];
+    if (blockedHit.length) blkParts.push([...new Set(blockedHit)].join(',') + ' ပိတ်');
+    if (overHit.length) blkParts.push([...new Set(overHit)].join(',') + ' တကွက် ' + formatMoney(hotE.cap) + ' ကျော်');
+    const blkMsg = blkParts.length ? ' (🚫 ' + blkParts.join(' · ') + ')' : '';
     showToast('✅ ထည့်ပြီးပြီ' +
         (skipped ? ' (⚠️ ' + skipped + ' လိုင်း ကျန်)' : '') + blkMsg);
 };
@@ -1062,46 +1053,109 @@ window.submitEntry = async function submitEntry() {
  * 💾 Save (top button) — persist all pending entries as NEW batches
  * (one batch number per player), then clear the table and reset the total.
  */
+/* Pho Oct 29 speed: PocketBase batch create — up to 50 records in ONE
+   HTTP request (POST /api/batch). The batch runs transactionally on the
+   server (all-or-nothing), so a failed batch leaves nothing behind and
+   the caller can safely fall back to single creates. Throws on any HTTP
+   failure, unexpected response shape, or any subrequest status >= 400.
+   Auth header format matches pb.js _req (raw token, no Bearer prefix);
+   15s timeout per chunk like _req. Lives here, NOT in shared/direct.js,
+   so the live apps' pinned direct.js is untouched (agent2 imports shared
+   files from the live tree). */
+async function createRecordsBatch(recs, timeoutMs) {
+    const token = pb.getToken();
+    const base = pb.getBaseUrl();
+    const out = [];
+    for (let i = 0; i < recs.length; i += 50) {
+        const chunk = recs.slice(i, i + 50);
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeoutMs || 15000);
+        let res;
+        try {
+            res = await fetch(base + '/api/batch', {
+                method: 'POST',
+                headers: Object.assign({ 'Content-Type': 'application/json' }, token ? { 'Authorization': token } : {}),
+                body: JSON.stringify({ requests: chunk.map((rec) => ({ method: 'POST', url: '/api/collections/lottery_records/records', body: rec })) }),
+                signal: controller.signal
+            });
+        } catch (e) {
+            clearTimeout(timeoutId);
+            const err = new Error(e.name === 'AbortError' ? 'Request timed out' : 'Network unreachable: ' + e.message);
+            err.code = e.name === 'AbortError' ? 'TIMEOUT' : 'NETWORK_ERROR';
+            throw err;
+        }
+        clearTimeout(timeoutId);
+        if (!res.ok) throw new Error('batch HTTP ' + res.status);
+        const arr = await res.json();
+        if (!Array.isArray(arr) || arr.length !== chunk.length) throw new Error('batch shape');
+        for (let j = 0; j < arr.length; j++) {
+            const st = arr[j] && arr[j].status;
+            if (!(st >= 200 && st < 300)) throw new Error('batch subrequest ' + st);
+            out.push(chunk[j].id);
+        }
+    }
+    return out;
+}
+
 window.savePendingBatch = async function savePendingBatch() {
     if (saveInFlight) return;
     // Pho Oct 18: set the guard SYNCHRONOUSLY before any await —
     // two rapid taps must not both pass.
     saveInFlight = true;
-    if (await checkAgentDisabled()) { saveInFlight = false; return; }
+    // Pho Oct 29 speed (TEST16): local checks first — no fetch when
+    // there is nothing valid to save.
     if (!pendingEntries.length) { saveInFlight = false; showToast('စာရင်း မရှိသေးပါ'); return; }
-    // Block if any pending entry has no player name
-    if (pendingEntries.some((e) => !(e.player_name || '').trim())) { saveInFlight = false; showToast('❌ အမည် မပါ တဲ့ စာရင်း ရှိ — ဖျက် ပြီး ပြန် ထည့်'); return; }
+    if (pendingEntries.some((e) => !(e.player_name || '').trim() || e.player_name === '__new__')) { saveInFlight = false; showToast('❌ အမည် မပါ တဲ့ စာရင်း ရှိ — ဖျက် ပြီး ပြန် ထည့်'); return; }
     if (!currentSessionId) { saveInFlight = false; showToast('⚠️ Session မရှိသေးပါ'); return; }
-    // Pho Oct 19 Option B: Verify session actually exists on the server (not just ID truthy).
-    // Prevents blank/invalid session 400 errors.
-    // A throw here must never leave saveInFlight stuck — every failure path resets it.
+    // Pho Oct 29 speed: the three pre-flight reads are independent — run
+    // them together instead of one-by-one. Decisions are evaluated in the
+    // OLD order (disabled -> session -> lock -> limits) so every toast
+    // and fail-closed outcome is identical; only the waiting shrinks.
+    // (Old code let a disabled-check throw stick the guard; a failed
+    // read now fails closed with the guard reset instead.)
+    // Pho Oct 29 speed (TEST15): one shared session fetch feeds both the
+    // session check and the lock check (was two identical session gets).
+    const sessP = direct.withRetry(() => direct.directGet('sessions', currentSessionId));
+    // Pho Oct 29 speed (TEST16): session records join the pre-flight
+    // Promise.all (was a separate hop after it) — 1 hop saved.
+    const [disabledRes, sessRes, lockRes, sessRecsRes] = await Promise.all([
+        checkAgentDisabled().then((v) => ({ ok: true, v })).catch((e) => ({ ok: false, e })),
+        sessP.then((v) => ({ ok: true, v })).catch((e) => ({ ok: false, e })),
+        isAgentSessionLocked(currentSessionId, sessP).then((v) => ({ ok: true, v })).catch((e) => ({ ok: false, e })),
+        getSessionRecords(currentSessionId).then((v) => ({ ok: true, v })).catch((e) => ({ ok: false, e })),
+    ]);
+    if (!disabledRes.ok) { saveInFlight = false; showToast('❌ ဆာဗာ ဆက်မရပါ: ' + disabledRes.e.message); return; }
+    if (disabledRes.v) { saveInFlight = false; return; }
+    // Session result from the parallel pre-flights above (Pho Oct 19
+    // Option B semantics kept: 404 = genuinely missing, other errors fail
+    // closed). A throw here must never leave saveInFlight stuck.
     let sessCheck = null;
-    try {
-        sessCheck = await direct.withRetry(() => direct.directGet('sessions', currentSessionId));
-    } catch (e) {
-        if (e && (e.code === 404 || /not found/i.test(e.message || ''))) {
+    if (!sessRes.ok) {
+        const se = sessRes.e;
+        if (se && (se.code === 404 || /not found/i.test(se.message || ''))) {
             sessCheck = null; // genuinely missing → the !sessCheck path below
         } else {
-            console.error('[agent] savePendingBatch session check failed', e);
+            console.error('[agent] savePendingBatch session check failed', se);
             saveInFlight = false;
-            showToast('❌ ဆာဗာ ဆက်မရပါ: ' + e.message);
+            showToast('❌ ဆာဗာ ဆက်မရပါ: ' + se.message);
             return;
         }
+    } else {
+        sessCheck = sessRes.v;
     }
     if (!sessCheck) { saveInFlight = false; showToast('⚠️ Session မတွေ့ပါ — ပြန်ရွေးပါ'); currentSessionId = null; localStorage.removeItem(LS_SESSION); await refreshSession(); return; }
-    let lkS, limitErr;
-    try {
-        lkS = await isAgentSessionLocked(currentSessionId);
-        // Hot-number limits (cumulative per session; formula-derived excluded)
-        limitErr = await checkAgentLimits();
-    } catch (e) {
-        console.error('[agent] savePendingBatch pre-flight failed', e);
+    if (!lockRes.ok) {
+        console.error('[agent] savePendingBatch pre-flight failed', lockRes.e);
         saveInFlight = false;
-        showToast('❌ ဆာဗာ ဆက်မရပါ: ' + e.message);
+        showToast('❌ ဆာဗာ ဆက်မရပါ: ' + lockRes.e.message);
         return;
     }
+    const lkS = lockRes.v;
     if (lkS.locked) { saveInFlight = false; showToast('🔒 ' + lkS.reason + ' — သိမ်း မရပါ'); return; }
-    if (limitErr) { saveInFlight = false; showToast('❌ ' + limitErr); return; }
+    // Pho Oct 29 limit redesign: no cumulative save gate — hot numbers are
+    // capped per line at stage time by my hot rule. The single
+    // sessRecs came from the parallel pre-flight fetch above (batch numbers).
+    const sessRecs = sessRecsRes.v;
 
     const createdIds = [];
     try {
@@ -1113,15 +1167,19 @@ window.savePendingBatch = async function savePendingBatch() {
             if (!byPlayer[k]) { byPlayer[k] = []; order.push(k); }
             byPlayer[k].push(e);
         });
+        // Pho Oct 29 speed: batch numbers come from the single sessRecs
+        // fetch above (no per-player download). Records are built once
+        // (same fields, same ids) then created via one batch request per
+        // 50 (fallback: chunks of 5): same rows, same batch numbers,
+        // same rollback set — only the wait shrinks.
         const batchNos = {};
-        for (const k of order) batchNos[k] = await getNextBatchNo(k || null);
-
-        let count = 0;
+        const bns = await Promise.all(order.map((k) => getNextBatchNo(k || null, sessRecs)));
+        order.forEach((k, i) => { batchNos[k] = bns[i]; });
+        const recs = [];
         for (const k of order) {
             for (const e of byPlayer[k]) {
-                const recId = uid();
-                await direct.withRetry(() => direct.directCreate('lottery_records', {
-                    id: recId,
+                recs.push({
+                    id: uid(),
                     tenant: tenantId,
                     session: currentSessionId,
                     number: e.number,
@@ -1133,9 +1191,33 @@ window.savePendingBatch = async function savePendingBatch() {
                     fromFormula: !!e.fromFormula,
                     formula_text: e.formula_text || '',
                     created: Date.now()
-                }));
-                createdIds.push(recId);
-                count++;
+                });
+            }
+        }
+        // Pho Oct 29 speed: try the batch path first; ANY batch failure
+        // (endpoint off, bad shape, a subrequest 4xx) falls back to the
+        // proven chunked path — client ids make it duplicate-safe.
+        let batchOk = false;
+        try {
+            // Pho Oct 29 speed (TEST15): one batch attempt, 8s timeout,
+            // no retries — any throw falls back to chunks immediately.
+            const batchIds = await createRecordsBatch(recs, 8000);
+            batchIds.forEach((id) => createdIds.push(id));
+            batchOk = true;
+        } catch (be) {
+            console.warn('[agent] batch create failed, falling back to chunks', be);
+        }
+        if (!batchOk) {
+            for (let i = 0; i < recs.length; i += 5) {
+                const chunk = recs.slice(i, i + 5);
+                const results = await Promise.all(chunk.map((rec) =>
+                    direct.withRetry(() => direct.directCreate('lottery_records', rec))
+                        .then(() => ({ ok: true, id: rec.id }))
+                        .catch((e) => ({ ok: false, e }))));
+                for (const r of results) {
+                    if (r.ok) createdIds.push(r.id);
+                    else throw r.e;
+                }
             }
         }
         pendingEntries = [];
@@ -1146,9 +1228,8 @@ window.savePendingBatch = async function savePendingBatch() {
         console.error('[agent] savePendingBatch failed', e);
         // Roll back this attempt's rows best-effort so a retry never
         // duplicates them; pending is kept for the retry.
-        for (const rid of createdIds) {
-            await direct.withRetry(() => direct.directDelete('lottery_records', rid)).catch(() => { /* best-effort */ });
-        }
+        await Promise.all(createdIds.map((rid) =>
+            direct.withRetry(() => direct.directDelete('lottery_records', rid)).catch(() => { /* best-effort */ })));
         showToast('❌ သိမ်းမရပါ: ' + e.message);
     } finally {
         saveInFlight = false;
@@ -1614,6 +1695,11 @@ window.openBoard = function openBoard() {
         return;
     }
     populateBoardPlayer();
+    const bp = $('boardPlayerPanel');
+    if (bp) bp.style.display = 'none';
+    _inlineShow('board', false);
+    const bni = $('boardNewNameInput');
+    if (bni) bni.value = '';
     $('boardModal').hidden = false;
     $('boardPreview').hidden = true;
     const ta = $('boardTextarea');
@@ -1624,9 +1710,183 @@ window.openBoard = function openBoard() {
 async function populateBoardPlayer() {
     const sel = $('boardPlayer');
     const players = await getPlayers();
-    sel.innerHTML = players.map((p) => '<option value="' + escHtml(p.name) + '">' + escHtml(p.name) + '</option>').join('');
+    sel.innerHTML = players.map((p) => '<option value="' + escHtml(p.name) + '">' + escHtml(p.name) + '</option>').join('') +
+        '<option value="__new__">+ လူသစ်…</option>';
     sel.value = players.length ? players[0].name : '';
+    renderPlayerPanel('board');
 }
+
+
+/* ============ INLINE NEW PERSON (Pho Oct 29, Agent v158) ============
+   "+ လူသစ်…" in the betting dropdowns (typed entry + board) creates the
+   person right there — no trip to the people page. Confirm creates with
+   the people-page defaults (phone '', commission 0, multiplier 80) and
+   selects the new name at once; a trimmed exact-match name selects the
+   existing person instead of a duplicate. '__new__' can never stage or
+   save as a player name (guards in submitEntry / saveBoard /
+   savePendingBatch). Agent only — Master untouched. */
+let _inlinePrev = { entry: '', board: '' };
+
+function _inlineShow(which, show) {
+    const row = $(which === 'board' ? 'boardNewPlayerInline' : 'newPlayerInline');
+    if (row) row.style.display = show ? 'flex' : 'none';
+}
+
+window.onEntryPlayerChange = function onEntryPlayerChange(sel) {
+    if (sel.value === '__new__') {
+        _inlineShow('entry', true);
+        const inp = $('newPlayerNameInput');
+        if (inp) inp.focus();
+        return;
+    }
+    _inlinePrev.entry = sel.value || '';
+    _inlineShow('entry', false);
+};
+
+window.onBoardPlayerChange = function onBoardPlayerChange(sel) {
+    if (sel.value === '__new__') {
+        _inlineShow('board', true);
+        const inp = $('boardNewNameInput');
+        if (inp) inp.focus();
+        return;
+    }
+    _inlinePrev.board = sel.value || '';
+    _inlineShow('board', false);
+};
+
+window.cancelInlinePlayer = function cancelInlinePlayer(which) {
+    const selId = which === 'board' ? 'boardPlayer' : 'entryPlayerSelect';
+    const inputId = which === 'board' ? 'boardNewNameInput' : 'newPlayerNameInput';
+    _inlineShow(which, false);
+    const inp = $(inputId);
+    if (inp) inp.value = '';
+    const sel = $(selId);
+    if (sel) sel.value = _inlinePrev[which] || '';
+    renderPlayerPanel(which);
+};
+
+window.confirmInlinePlayer = async function confirmInlinePlayer(which) {
+    const isBoard = which === 'board';
+    const selId = isBoard ? 'boardPlayer' : 'entryPlayerSelect';
+    const inputId = isBoard ? 'boardNewNameInput' : 'newPlayerNameInput';
+    const name = ((($(inputId) || {}).value) || '').trim();
+    if (!name) { showToast('နာမည် ထည့်ပါ'); return; }
+    // Pho Oct 29 speed: no server re-fetch — this agent's player list is
+    // already in the select (loaded when the screen opened). Only when the
+    // select is empty (never loaded, or genuinely no players yet) fetch
+    // once, fail-closed, exactly like before.
+    const sel0 = $(selId);
+    const optNames = sel0 ? Array.from(sel0.options).map((o) => o.value).filter((v) => v && v !== '__new__') : [];
+    let existing = optNames.includes(name) ? { name } : null;
+    if (!existing && !optNames.length) {
+        const players = await getPlayers();
+        if (_playersFetchFailed) { showToast('❌ လူစာရင်း ဖတ်မရပါ — ပြန်စမ်းပါ'); return; }
+        existing = players.find((p) => (p.name || '').trim() === name) || null;
+    }
+    if (!existing) {
+        try {
+            await direct.withRetry(() => direct.directCreate('players', {
+                id: uid(), tenant: tenantId, agent_name: agentName,
+                name, phone: '', commission: 0, multiplier: 80
+            }));
+        } catch (e) { showToast('❌ သိမ်းမရပါ: ' + (pbFieldDetail(e) || e.message)); return; }
+    }
+    if (!existing) {
+        // Append the new name to both player selects when present (entry
+        // + board share this agent's list), sorted like getPlayers sorts,
+        // keeping '+ လူသစ်…' last. No server round trip.
+        ['entryPlayerSelect', 'boardPlayer'].forEach((id) => {
+            const s = $(id);
+            if (!s) return;
+            if (Array.from(s.options).some((o) => o.value === name)) return;
+            const opt = document.createElement('option');
+            opt.value = name; opt.textContent = name;
+            const opts = Array.from(s.options);
+            const before = opts.find((o) => o.value && o.value !== '__new__' && name.localeCompare(o.value) < 0)
+                || opts.find((o) => o.value === '__new__');
+            if (before) s.insertBefore(opt, before); else s.appendChild(opt);
+        });
+    }
+    const sel = $(selId);
+    if (sel) sel.value = existing ? existing.name : name;
+    renderPlayerPanel(which);
+    if (!isBoard) await renderEntryTable();
+    _inlinePrev[which] = existing ? existing.name : name;
+    _inlineShow(which, false);
+    const inp = $(inputId);
+    if (inp) inp.value = '';
+    showToast(existing ? '✅ ရှိပြီးသား လူကို ရွေးပြီးပြီ' : '✅ လူ ထည့်ပြီးပြီ');
+};
+
+
+/* ============ PC-STYLE DROPDOWN PANELS (Pho Oct 29, TEST8) ============
+   The betting person fields are custom drop-down panels (PC style): tap
+   the field -> the list drops directly UNDER it (in-flow, scrollable)
+   with a "+ လူသစ်…" row on top — not the phone's centered
+   native-select popup. The hidden native <select> stays the single
+   source of truth: every existing reader (submitEntry, savePendingBatch
+   guards, refreshEntryScreen, populateBoardPlayer) keeps working
+   untouched. Panel rows only set the select's value and call the
+   existing onEntry/onBoardPlayerChange handler. */
+function _panelSel(which) { return $(which === 'board' ? 'boardPlayer' : 'entryPlayerSelect'); }
+function _panelField(which) { return $(which === 'board' ? 'boardPlayerField' : 'entryPlayerField'); }
+function _panelEl(which) { return $(which === 'board' ? 'boardPlayerPanel' : 'entryPlayerPanel'); }
+
+function renderPlayerPanel(which) {
+    const sel = _panelSel(which);
+    const field = _panelField(which);
+    const panel = _panelEl(which);
+    if (!sel || !field || !panel) return;
+    const cur = sel.value || '';
+    const curOpt = Array.from(sel.options).find((o) => o.value === cur);
+    field.textContent = ((curOpt && curOpt.value !== '__new__' ? curOpt.textContent : '') || '-- ထိုးသား ရွေးပါ --') + ' \u25be';
+    let html = '<div onclick="pickPanelNew(\'' + which + '\')" style="padding:10px 12px;border-bottom:1px solid #334155;cursor:pointer;font-weight:bold;color:#7dd3fc;">+ \u101c\u1030\u101e\u1005\u103a\u2026</div>';
+    Array.from(sel.options).forEach((o, idx) => {
+        if (!o.value || o.value === '__new__') return;
+        const hl = o.value === cur ? 'background:#1e3a5f;font-weight:bold;' : '';
+        html += '<div onclick="pickPanelPlayer(\'' + which + '\',' + idx + ')" style="padding:10px 12px;border-bottom:1px solid #1e293b;cursor:pointer;' + hl + '">' + escHtml(o.textContent) + '</div>';
+    });
+    panel.innerHTML = html;
+}
+
+function togglePlayerPanel(which) {
+    const panel = _panelEl(which);
+    if (!panel) return;
+    if (panel.style.display === 'block') { panel.style.display = 'none'; return; }
+    renderPlayerPanel(which);
+    panel.style.display = 'block';
+}
+window.toggleEntryPlayerPanel = function toggleEntryPlayerPanel() { togglePlayerPanel('entry'); };
+window.toggleBoardPlayerPanel = function toggleBoardPlayerPanel() { togglePlayerPanel('board'); };
+
+window.pickPanelPlayer = function pickPanelPlayer(which, idx) {
+    const sel = _panelSel(which);
+    if (!sel || !sel.options[idx]) return;
+    sel.value = sel.options[idx].value;
+    if (which === 'board') onBoardPlayerChange(sel); else onEntryPlayerChange(sel);
+    _panelEl(which).style.display = 'none';
+    renderPlayerPanel(which);
+};
+
+window.pickPanelNew = function pickPanelNew(which) {
+    const sel = _panelSel(which);
+    if (!sel) return;
+    sel.value = '__new__';
+    if (which === 'board') onBoardPlayerChange(sel); else onEntryPlayerChange(sel);
+    _panelEl(which).style.display = 'none';
+};
+
+document.addEventListener('click', (ev) => {
+    const t = ev.target;
+    if (!t || !t.closest) return;
+    ['entry', 'board'].forEach((which) => {
+        const panel = _panelEl(which);
+        const field = _panelField(which);
+        if (panel && panel.style.display === 'block' && !panel.contains(t) && field && !field.contains(t)) {
+            panel.style.display = 'none';
+        }
+    });
+});
 
 window.closeBoard = function closeBoard() {
     $('boardModal').hidden = true;
@@ -1712,6 +1972,7 @@ window.saveBoard = async function saveBoard() {
 
     try {
         const playerName = $('boardPlayer').value || null;
+        if (playerName === '__new__') { saveInFlight = false; showToast('❌ လူသစ် နာမည် အရင် ထည့်ပါ'); return; }
         if (!playerName) { saveInFlight = false; showToast('❌ အမည် ရွေးပါ (မရွေးရင် တင်မရ)'); return; }
         // Strict per-line: only fully-valid lines are entered. Bad lines stay
         // on the board for fixing — never guess-entered.
@@ -1730,13 +1991,20 @@ window.saveBoard = async function saveBoard() {
             saveInFlight = false;
             return;
         }
-        // 🚫 ဒိုင်ပိတ်: blocked numbers cannot be bet
+        // Pho Oct 29 hot toggle: session blocked (= hot) numbers follow my
+        // hot_open switch — ပိတ် = fully blocked; ဖွင့် + cap = per-line cap;
+        // ဖွင့် + no cap = unlimited. Non-hot numbers unlimited.
         const blockedSetB = new Set(await getAgentBlocked(currentSessionId));
+        const hotB = await getMyHotRule();
         const blockedHitB = [];
+        const overHitB = [];
         const allowedBoard = okItems.filter((it) => {
             const nn = String(it.number).padStart(2, '0');
-            if (blockedSetB.has(nn)) { blockedHitB.push(nn); return false; }
-            return true;
+            if (it._fromFormula) return true;
+            if (!blockedSetB.has(nn)) return true;
+            if (hotB.open && (hotB.cap === 0 || (Number(it.amount) || 0) <= hotB.cap)) return true;
+            if (hotB.open) overHitB.push(nn); else blockedHitB.push(nn);
+            return false;
         });
         if (!allowedBoard.length) { saveInFlight = false; showToast('🚫 ဒိုင်ပိတ် ဂဏန်းတွေ ချည်း — တင် မရပါ'); return; }
         let addedBoard = 0;
@@ -1744,7 +2012,10 @@ window.saveBoard = async function saveBoard() {
             if (addPendingUnique(playerName, it.number, it.amount, it._fromFormula, it.formula_text, it.line_idx)) addedBoard++;
         });
         await renderEntryTable();
-        const blkMsgB = blockedHitB.length ? ' (🚫 ' + [...new Set(blockedHitB)].join(',') + ' ပိတ်)' : '';
+        const blkPartsB = [];
+        if (blockedHitB.length) blkPartsB.push([...new Set(blockedHitB)].join(',') + ' ပိတ်');
+        if (overHitB.length) blkPartsB.push([...new Set(overHitB)].join(',') + ' တကွက် ' + formatMoney(hotB.cap) + ' ကျော်');
+        const blkMsgB = blkPartsB.length ? ' (🚫 ' + blkPartsB.join(' · ') + ')' : '';
         if (badLines.length) {
             // Keep bad lines on the board for fixing; keep modal open.
             ta.value = badLines.join('\n');
@@ -1838,7 +2109,7 @@ let _agentRecordsFetchFailed = false;
 async function getAgentRecords() {
     _agentRecordsFetchFailed = false;
     try {
-        const all = await direct.withRetry(() => direct.directList('lottery_records', tenantId, { sort: 'created' }));
+        const all = await direct.withRetry(() => direct.directList('lottery_records', tenantId, { filter: agentNameFilter(), sort: 'created' }));
         return all.filter((r) => (r.agent_name || '') === agentName);
     } catch (e) {
         _agentRecordsFetchFailed = true;
@@ -2466,19 +2737,21 @@ window.resetAgentApp = async function resetAgentApp() {
     window.deleteRecordGroup = async function(ridsStr) {
         closeEditDeleteMenu();
         const ids = ridsStr.split(',').filter(Boolean);
+        // Pho Oct 29 speed: totals + deletes run in parallel, not one by
+        // one (a 20-line batch was 40+ sequential trips). Same confirm
+        // text, same totals; a failed delete still alerts (all deletes
+        // are attempted first, unlike before where one failure stopped
+        // the rest).
         let total = 0;
-        for (const id of ids) {
-            let r = null;
-            try {
-                r = await direct.withRetry(() => direct.directGet('lottery_records', id));
-            } catch (e) { /* missing → skipped, as before */ }
-            if (r) total += Number(r.amount) || 0;
-        }
+        const rs = await Promise.all(ids.map((id) =>
+            direct.withRetry(() => direct.directGet('lottery_records', id)).catch(() => null)));
+        rs.forEach((r) => { if (r) total += Number(r.amount) || 0; });
         if (!confirm(ids.length + ' ကွက် လုံး ဖျက်မလား? (စုစုပေါင်း ' + total + ')')) return;
         try {
-            for (const id of ids) {
-                await direct.withRetry(() => direct.directDelete('lottery_records', id));
-            }
+            const dels = await Promise.all(ids.map((id) =>
+                direct.withRetry(() => direct.directDelete('lottery_records', id)).then(() => ({ ok: true })).catch((e) => ({ ok: false, e }))));
+            const failed = dels.find((d) => !d.ok);
+            if (failed) throw failed.e;
             await _grpRefresh();
         } catch (e) { alert('Error: ' + e.message); }
     };
