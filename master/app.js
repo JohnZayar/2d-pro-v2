@@ -5,7 +5,7 @@
  */
 import * as pb from '../shared/pb.js?v=4';
 import * as direct from '../shared/direct.js?v=1';
-import { parseBoard, parseBoardReport, parseLine } from '../shared/parser.js?v=18';
+import { parseBoard, parseBoardReport, parseLine } from '../shared/parser.js?v=19';
 import {
     formatMoney, formatDateStr, getWeekMondayStr, remainingDigits,
     uid, showToast, escHtml, extractDigits, agentEmailFor, agentPasswordFor,
@@ -128,7 +128,6 @@ function bindUI() {
     $('limitSave').addEventListener('click', saveLimit);
     $('addAgentBtn').addEventListener('click', () => openAgentModal(null));
     $('agSave').addEventListener('click', saveAgent);
-    $('agLimitAdd').addEventListener('click', addAgentLimit);
 
     $('syncNowBtn').addEventListener('click', () => manualRefresh());
     $('logoutBtn').addEventListener('click', doLogout);
@@ -1354,6 +1353,16 @@ async function openBoard(sessionId) {
 }
 
 /** Strict per-line check: parse must succeed AND every number must be 2-digit. Never guesses. */
+/* Pho Oct 29 limit redesign: formula-derived lines are EXEMPT from the
+   hot-number cap — only pure direct numbers are capped (အကြွေမရ,
+   ဖော်မြူလာနဲ့ဆိုရ, အပူးလဲ ရ). Same list as Agent. အာ is NOT exempt
+   (explicit-list reverse counts as direct, Pho Oct 29 15:06). */
+const FORMULA_KEYWORDS = ['ပါ', 'ပူး', 'ခွေ', 'ပတ်', 'နက္ခတ်', 'ထိုင်းနက္ခတ်', 'ညီအစ်ကို', 'စုံမ', 'မစုံ', 'ထိပ်', 'နောက်', 'ဘရိတ်', 'ပွင့်', 'ပါဝါ', 'စုံစုံ', 'မမ'];
+function lineHasFormula(line) {
+    const str = String(line || '');
+    return FORMULA_KEYWORDS.some((kw) => str.includes(kw));
+}
+
 function boardLineOk(line) {
     let parsed = [];
     try { parsed = parseLine(line); } catch (e) { parsed = []; }
@@ -1402,7 +1411,8 @@ async function saveBoard() {
         if (!boardLineOk(line)) { badLines.push(line); continue; }
         let parsed = [];
         try { parsed = parseLine(line); } catch (e) { parsed = []; }
-        for (const p of parsed) okItems.push({...p, formula_text: line.trim()});
+        const isF = lineHasFormula(line);
+        for (const p of parsed) okItems.push({...p, formula_text: line.trim(), _fromFormula: isF});
     }
     if (!okItems.length) { showToast('ထည့်တာ မမှန်ပါ — စစ်ပါ'); return; }
     const sessionId = state.boardSessionId;
@@ -1415,8 +1425,8 @@ async function saveBoard() {
 
     // Merged board (Pho Oct 28): direction follows the PICKED person, not the mode —
     // an akan person stages OUTGOING rows, everyone else stages INCOMING rows.
-    // Both existing Save paths are untouched, so money math, hot limits and the
-    // blocked-number filter (incoming only, as before) are all preserved.
+    // Both existing Save paths are untouched, so money math and the
+    // blocked-number per-line cap (incoming only, as before) are preserved.
     const target = $('boardTarget').value;
     const picked = state.agents.find((a) => a.id === target);
     if (!picked) { showToast('❌ အမည် ရွေးပါ (မရွေးရင် တင်မရ)'); return; }
@@ -1443,24 +1453,35 @@ async function saveBoard() {
     const boardPersonId = agent ? agent.id : '';
     if (!personName) { showToast('❌ အမည် ရွေးပါ (မရွေးရင် တင်မရ)'); return; }
 
-    // 🚫 ဒိုင်ပိတ်: blocked numbers cannot be bet (incoming only)
+    // Pho Oct 29 hot toggle: hot numbers follow this person's hot_open
+    // switch — ပိတ် = fully blocked; ဖွင့် + cap = per-line cap; ဖွင့် +
+    // no cap = unlimited. Formula lines exempt; non-hot unlimited.
     const blockedSet2 = new Set(getBlocked(sessionId));
+    const hotOpenB = !!picked.hot_open;
+    const capB = Number(picked.blocked_limit) || 0;
     const blockedHit2 = [];
+    const overHit2 = [];
     const allowedBoard = okItems.filter((it) => {
         const nn = String(it.number).padStart(2, '0');
-        if (blockedSet2.has(nn)) { blockedHit2.push(nn); return false; }
-        return true;
+        if (it._fromFormula) return true;
+        if (!blockedSet2.has(nn)) return true;
+        if (hotOpenB && (capB === 0 || (Number(it.amount) || 0) <= capB)) return true;
+        if (hotOpenB) overHit2.push(nn); else blockedHit2.push(nn);
+        return false;
     });
-    if (blockedHit2.length) showToast('🚫 ဒိုင်ပိတ်: ' + [...new Set(blockedHit2)].join(', ') + ' — တင် မရပါ');
+    const blkParts2 = [];
+    if (blockedHit2.length) blkParts2.push([...new Set(blockedHit2)].join(', ') + ' ပိတ်');
+    if (overHit2.length) blkParts2.push([...new Set(overHit2)].join(', ') + ' တကွက် ' + formatMoney(capB) + ' ကျော်');
+    const blkMsg2 = blkParts2.length ? ' (🚫 ' + blkParts2.join(' · ') + ')' : '';
     allowedBoard.forEach((it) => {
         addEntryUnique(personName || null, it.number, it.amount, 'pos', it.formula_text, undefined, boardPersonId);
     });
     if (badLines.length) {
         keepBadOpen();
-        showToast('✅ ' + allowedBoard.length + ' ကွက် ထည့်ပြီးပြီ · ❌ ' + badLines.length + ' လိုင်း ကျန် — ပြင်ပြီး Save ပြန်နှိပ်');
+        showToast('✅ ' + allowedBoard.length + ' ကွက် ထည့်ပြီးပြီ · ❌ ' + badLines.length + ' လိုင်း ကျန် — ပြင်ပြီး Save ပြန်နှိပ်' + blkMsg2);
         return;
     }
-    showToast('✅ ' + allowedBoard.length + ' ကွက် ထည့်ပြီးပြီ');
+    showToast('✅ ' + allowedBoard.length + ' ကွက် ထည့်ပြီးပြီ' + blkMsg2);
     $('boardText').value = '';
     renderBoardLineCheck();
     closeModal('modal-board');
@@ -1712,13 +1733,22 @@ window.submitEntryRow = async function submitEntryRow() {
         await openAkandain(state.activeSessionId);
         return;
     }
-    // 🚫 ဒိုင်ပိတ်: blocked numbers cannot be bet
+    // Pho Oct 29 hot toggle: hot numbers follow this person's hot_open
+    // switch — ပိတ် = fully blocked; ဖွင့် + cap = per-line cap; ဖွင့် +
+    // no cap = unlimited. Formula lines exempt; non-hot unlimited.
     const blockedSet = new Set(getBlocked(state.activeSessionId));
+    const hotOpenE = !!selAgent.hot_open;
+    const capE = Number(selAgent.blocked_limit) || 0;
+    const isFormulaEntry = lineHasFormula(line);
     const blockedHit = [];
+    const overHit = [];
     const allowedItems = validItems.filter((it) => {
         const nn = String(it.number).padStart(2, '0');
-        if (blockedSet.has(nn)) { blockedHit.push(nn); return false; }
-        return true;
+        if (isFormulaEntry) return true;
+        if (!blockedSet.has(nn)) return true;
+        if (hotOpenE && (capE === 0 || (Number(it.amount) || 0) <= capE)) return true;
+        if (hotOpenE) overHit.push(nn); else blockedHit.push(nn);
+        return false;
     });
     if (!allowedItems.length) { entryClearInputs(); showToast('🚫 ဒိုင်ပိတ် ဂဏန်းတွေ ချည်း — တင် မရပါ'); return; }
     allowedItems.forEach((it) => {
@@ -1727,46 +1757,14 @@ window.submitEntryRow = async function submitEntryRow() {
     entryClearInputs();
     renderEntryTable();
     const skipped = invalidLines.length + (items.length - validItems.length) + blockedHit.length;
-    const blkMsg = blockedHit.length ? ' (🚫 ' + [...new Set(blockedHit)].join(',') + ' ပိတ်)' : '';
+    const blkParts = [];
+    if (blockedHit.length) blkParts.push([...new Set(blockedHit)].join(',') + ' ပိတ်');
+    if (overHit.length) blkParts.push([...new Set(overHit)].join(',') + ' တကွက် ' + formatMoney(capE) + ' ကျော်');
+    const blkMsg = blkParts.length ? ' (🚫 ' + blkParts.join(' · ') + ')' : '';
     showToast(rType === 'akan' ? '✅ ထည့်ပြီးပြီ (⬆️ အထွက်)' : '✅ ထည့်ပြီးပြီ' + (skipped ? ' (⚠️ ' + skipped + ' လိုင်း ကျန်)' : '') + blkMsg);
 };
 
 /** 💾 Save — persist all pending entries as NEW batches (one batch_no per person/type). */
-/** Check per-person per-number limits: cumulative total per (person, number, session) must not exceed the limit. Returns error message or null. */
-async function checkPersonLimits(pending, sessionId) {
-    const pendTotals = {};
-    pending.forEach((e) => {
-        const name = (e.player_name || '').trim();
-        const num = String(e.number).padStart(2, '0');
-        const k = name + '|' + num;
-        pendTotals[k] = (pendTotals[k] || 0) + (Number(e.amount) || 0);
-    });
-    // Server-direct (Pho Oct 27): existing totals come from the server, not local DB.
-    // A failed read must NOT silently skip limit enforcement — the caller treats
-    // a throw as a save failure (guard reset, error toast, pending kept), so no
-    // over-limit batch can slip through and the next save still works.
-    const existing = await direct.withRetry(() => direct.directList('lottery_records', state.tenantPbId, { filter: `session = "${sessionId}"` }));
-    const existTotals = {};
-    existing.forEach((r) => {
-        const name = (r.player_name || r.agent_name || '').trim();
-        const num = String(r.number).padStart(2, '0');
-        const k = name + '|' + num;
-        existTotals[k] = (existTotals[k] || 0) + (Number(r.amount) || 0);
-    });
-    for (const k of Object.keys(pendTotals)) {
-        const sep = k.lastIndexOf('|');
-        const name = k.slice(0, sep), num = k.slice(sep + 1);
-        const person = (state.agents || []).find((a) => a.name === name);
-        const lim = person && person.limits && Number(person.limits[num]);
-        if (lim > 0) {
-            const total = (existTotals[k] || 0) + pendTotals[k];
-            if (total > lim) {
-                return `${name} — ဟော့ဂဏန်း (${num}) Limite ပြည့်လို့ မရတော့ပါ`;
-            }
-        }
-    }
-    return null;
-}
 
 window.saveEntryBatch = async function saveEntryBatch() {
     if (entrySaveInFlight) return;
@@ -1777,21 +1775,14 @@ window.saveEntryBatch = async function saveEntryBatch() {
     // Block if any entry has no player name
     if (entryPending.some((e) => !(e.player_name || '').trim())) { entrySaveInFlight = false; showToast('❌ အမည် မပါ တဲ့ စာရင်း ရှိ — ဖျက် ပြီး ပြန် ထည့်'); return; }
     if (!state.activeSessionId) { entrySaveInFlight = false; showToast('⚠️ Session မရှိသေးပါ'); return; }
-    const lk = await isSessionLocked(state.activeSessionId);
+    // Pho Oct 29 limit redesign: no cumulative limits gate — hot numbers
+    // are capped per line at stage time by the hot rule instead.
+    let lkRes;
+    try { lkRes = { ok: true, v: await isSessionLocked(state.activeSessionId) }; }
+    catch (e) { lkRes = { ok: false, e }; }
+    if (!lkRes.ok) { entrySaveInFlight = false; showToast('သိမ်းမရပါ: ' + (lkRes.e.message || lkRes.e)); return; }
+    const lk = lkRes.v;
     if (lk.locked) { entrySaveInFlight = false; showToast('🔒 ' + lk.reason + ' — သိမ်း မရပါ'); return; }
-    // Per-person hot-number limits (cumulative per session).
-    // Fail CLOSED on a read failure — but the guard MUST reset, or the next
-    // save would silently no-op at the in-flight check (this call sits
-    // outside the save's try block, so a throw here would otherwise brick it).
-    let limitErr;
-    try {
-        limitErr = await checkPersonLimits(entryPending, state.activeSessionId);
-    } catch (e) {
-        entrySaveInFlight = false;
-        showToast('သိမ်းမရပါ: ' + (e.message || e));
-        return;
-    }
-    if (limitErr) { entrySaveInFlight = false; showToast('❌ ' + limitErr); return; }
 
     // Server-direct (Pho Oct 27): savedIds tracks ONLY this attempt's rows, so a
     // failure can roll them back and a retry can never duplicate them.
@@ -1806,14 +1797,15 @@ window.saveEntryBatch = async function saveEntryBatch() {
             byKey[k].push(e);
         });
 
+        // Records built ONCE (same fields, same ids — a lost-response
+        // retry re-sends the same id so duplicate protection holds).
+        const recs = [];
         let count = 0;
         for (const k of order) {
             const batchNo = 'B' + Date.now().toString(36) + count.toString(36);
             for (const e of byKey[k]) {
                 const sess = state.sessions.find((x) => x.id === state.activeSessionId);
-                // Built ONCE outside withRetry: a lost-response retry must re-send
-                // the SAME id (directCreate treats a duplicate id as the landed write).
-                const rec = {
+                recs.push({
                     id: uid(),
                     tenant: state.tenantPbId,
                     session: state.activeSessionId,
@@ -1827,12 +1819,27 @@ window.saveEntryBatch = async function saveEntryBatch() {
                     record_type: e.record_type || 'pos',
                     batch_no: batchNo,
                     formula_text: e.formula_text || '',
-                };
-                const saved = await direct.withRetry(() => direct.directCreate('lottery_records', rec));
-                if (saved && saved.id) savedIds.push(saved.id);
+                });
                 count++;
             }
         }
+
+        // Pho Oct 29 speed: same rows, created in chunks of 5 instead of
+        // one-by-one (phone latency dominates). A chunk failure throws
+        // with the already-created ids tracked, so the catch below rolls
+        // back exactly as before.
+        for (let i = 0; i < recs.length; i += 5) {
+            const chunk = recs.slice(i, i + 5);
+            const results = await Promise.all(chunk.map((rec) =>
+                direct.withRetry(() => direct.directCreate('lottery_records', rec))
+                    .then((saved) => ({ ok: true, id: saved && saved.id ? saved.id : rec.id }))
+                    .catch((e) => ({ ok: false, e }))));
+            for (const r of results) {
+                if (r.ok) savedIds.push(r.id);
+                else throw r.e;
+            }
+        }
+
         entryPending = [];
         renderEntryTable();
         showToast('✅ သိမ်းပြီးပြီ');
@@ -1842,9 +1849,8 @@ window.saveEntryBatch = async function saveEntryBatch() {
     } catch (e) {
         // Roll back this attempt's rows (best-effort) so the pending table stays
         // intact and a retry saves a clean batch — never a false partial success.
-        for (const id of savedIds) {
-            await direct.withRetry(() => direct.directDelete('lottery_records', id)).catch(() => { /* keep going */ });
-        }
+        await Promise.all(savedIds.map((id) =>
+            direct.withRetry(() => direct.directDelete('lottery_records', id)).catch(() => { /* keep going */ })));
         showToast('သိမ်းမရပါ: ' + e.message);
     } finally {
         entrySaveInFlight = false;
@@ -2066,7 +2072,7 @@ function renderAgents() {
     box.innerHTML = state.agents.map((a) => `
         <div class="agent-row">
             <div><div class="nm">${escHtml(a.name)} <span class="ptype">${escHtml(personTypeLabel(a))}</span>${agentBadgeForPerson(a.id) ? ` <span class="ptype" style="background:#1e3a5f;color:#7dd3fc">${escHtml(agentBadgeForPerson(a.id))}</span>` : ''}</div>
-            <div class="ph">${escHtml(a.phone || '')} · ကော် ${a.commission || 0}% · အလျော် ${a.payout_rate || 80}</div></div>
+            <div class="ph">${escHtml(a.phone || '')} · ကော် ${a.commission || 0}% · အလျော် ${a.payout_rate || 80}${!a.hot_open ? ' · ဟော့ ပိတ်' : ((Number(a.blocked_limit) || 0) > 0 ? ' · ဟော့ ' + formatMoney(a.blocked_limit) : ' · ဟော့ ဖွင့်')}</div></div>
             <div class="acts">
                 <button class="btn small gray" data-edit="${a.id}">✏️</button>
                 <button class="btn small red" data-delag="${a.id}">🗑️</button>
@@ -2087,10 +2093,11 @@ async function openAgentModal(id) {
     $('agPhone').value = a ? (a.phone || '') : '';
     $('agComm').value = a ? (a.commission || 0) : 0;
     $('agPayout').value = a ? (a.payout_rate || 80) : 80;
-    state.editingLimits = Object.assign({}, (a && a.limits) || {});
-    $('agLimitNum').value = '';
-    $('agLimitAmt').value = '';
-    renderAgentLimitList();
+    // Pho Oct 29 limit redesign: ONE per-line cap for all hot numbers —
+    // no number picking. Old per-number limits data stays on the row but
+    // is no longer read or edited.
+    $('agHotOpen').value = (a && a.hot_open) ? '1' : '';
+    $('agLimitAmt').value = a ? (a.blocked_limit || '') : '';
     openModal('modal-agent');
     // Pho Oct 21: fill the agent-account link picker (async, modal already open).
     const linkSel = $('agLink');
@@ -2112,39 +2119,6 @@ async function openAgentModal(id) {
     }
 }
 
-/** Render per-number limits in the person modal. */
-function renderAgentLimitList() {
-    const box = $('agLimitList');
-    const keys = Object.keys(state.editingLimits || {});
-    if (!keys.length) {
-        box.innerHTML = '<div class="small muted">ကန့်သတ် မရှိသေးပါ</div>';
-        return;
-    }
-    box.innerHTML = keys.sort().map((num) =>
-        `<div class="row" style="justify-content:space-between;padding:4px 0;border-bottom:1px dashed #ddd">
-            <span><b>${escHtml(num)}</b> → ${formatMoney(state.editingLimits[num])}</span>
-            <button class="btn small red" data-dellimit="${escHtml(num)}" type="button">×</button>
-        </div>`).join('');
-    box.querySelectorAll('[data-dellimit]').forEach((b) =>
-        b.addEventListener('click', () => {
-            delete state.editingLimits[b.dataset.dellimit];
-            renderAgentLimitList();
-        }));
-}
-
-function addAgentLimit() {
-    const raw = $('agLimitNum').value.trim();
-    const amt = Number($('agLimitAmt').value) || 0;
-    // Allow "56" or "56+98+35+69" — each number gets the same limit.
-    const nums = raw.split('+').map((s) => s.trim()).filter(Boolean);
-    if (!nums.length || !nums.every((n) => /^\d{2}$/.test(n))) { showToast('ဂဏန်း ၂ လုံး ထည့်ပါ (56+98 လို့လဲ ရတယ်)'); return; }
-    if (amt <= 0) { showToast('ပမာဏ ထည့်ပါ'); return; }
-    state.editingLimits = state.editingLimits || {};
-    nums.forEach((n) => { state.editingLimits[n] = amt; });
-    $('agLimitNum').value = '';
-    $('agLimitAmt').value = '';
-    renderAgentLimitList();
-}
 
 async function saveAgent() {
     const name = $('agName').value.trim();
@@ -2155,7 +2129,8 @@ async function saveAgent() {
         phone: $('agPhone').value.trim(),
         commission: Number($('agComm').value) || 0,
         payout_rate: Number($('agPayout').value) || 80,
-        limits: Object.assign({}, state.editingLimits || {}),
+        hot_open: $('agHotOpen').value === '1',
+        blocked_limit: Number($('agLimitAmt').value) || 0,
     };
     let personId = state.editingAgentId;
     // Server-direct (Pho Oct 27): writes go to the server, not local DB.
@@ -3234,6 +3209,9 @@ async function renderVouchers() {
     renderVoucherContent();
 }
 
+// Pho Oct 29: voucher edit/delete refresh in place (was location.reload).
+window.refreshVoucherView = renderVouchers;
+
 async function renderVoucherContent() {
     const sid = $('voucherSession').value;
     const sel = $('voucherPerson').value;
@@ -3752,20 +3730,16 @@ window.saveAkanBatch = async function saveAkanBatch() {
             byKey[k].push(e);
         });
 
+        // H1 fix (Oct 28) kept: each record (with its id) is built ONCE
+        // outside withRetry — a lost-response retry reuses the same id so
+        // directCreate's duplicate protection holds.
+        const recs = [];
         let count = 0;
         for (const k of order) {
             const batchNo = 'B' + Date.now().toString(36) + count.toString(36);
             for (const e of byKey[k]) {
                 const sess2 = state.sessions.find((x) => x.id === state.activeSessionId);
-                // Server-direct (Pho Oct 27): same field set createRecord sent
-                // (id + tenant + the akan fields); directCreate strips _updated
-                // and the server sets created/updated itself. withRetry retries
-                // line blips; a persistent failure lands in the catch below —
-                // pending is NOT cleared and no false success is shown.
-                // H1 fix (Oct 28): build the record (with its id) ONCE
-                // outside withRetry — a lost-response retry must reuse the
-                // same id so directCreate's duplicate protection holds.
-                const rec = {
+                recs.push({
                     id: uid(),
                     tenant: state.tenantPbId,
                     session: state.activeSessionId,
@@ -3777,12 +3751,27 @@ window.saveAkanBatch = async function saveAkanBatch() {
                     player_name: e.player_name || '',
                     record_type: 'akan',
                     batch_no: batchNo,
-                };
-                await direct.withRetry(() => direct.directCreate('lottery_records', rec));
-                savedIds.push(rec.id);
+                });
                 count++;
             }
         }
+
+        // Pho Oct 29 speed: same rows, created in chunks of 5 instead of
+        // one-by-one (phone latency dominates). A chunk failure throws
+        // with the already-created ids tracked, so the catch below rolls
+        // back exactly as before.
+        for (let i = 0; i < recs.length; i += 5) {
+            const chunk = recs.slice(i, i + 5);
+            const results = await Promise.all(chunk.map((rec) =>
+                direct.withRetry(() => direct.directCreate('lottery_records', rec))
+                    .then((saved) => ({ ok: true, id: saved && saved.id ? saved.id : rec.id }))
+                    .catch((e) => ({ ok: false, e }))));
+            for (const r of results) {
+                if (r.ok) savedIds.push(r.id);
+                else throw r.e;
+            }
+        }
+
         akanPending = [];
         renderAkanTable();
         showToast('✅ အထွက် သိမ်းပြီးပြီ');
@@ -3792,9 +3781,8 @@ window.saveAkanBatch = async function saveAkanBatch() {
     } catch (e) {
         // Roll back this attempt's rows (best-effort) so the pending table
         // stays intact and a retry saves a clean batch.
-        for (const id of savedIds) {
-            await direct.withRetry(() => direct.directDelete('lottery_records', id)).catch(() => { /* keep going */ });
-        }
+        await Promise.all(savedIds.map((id) =>
+            direct.withRetry(() => direct.directDelete('lottery_records', id)).catch(() => { /* keep going */ })));
         showToast('သိမ်းမရပါ: ' + e.message);
     } finally {
         akanSaveInFlight = false;
