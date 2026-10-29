@@ -132,6 +132,11 @@ export function expandFormula(fullNoText) {
             setNums.add(`${uniqueDigits[i]}${uniqueDigits[i]}`);
         }
         return Array.from(setNums);
+    } else if (cleanText.includes('ထိုင်းပါဝါ')) {
+        // Pho Oct 29 13:59 (CORRECTED canon, image spec 'ဒါအမှန်'):
+        // Thai-power = 13 26 47 58 90 (5, no reverses). Must precede the
+        // generic ပါဝါ branch below (ထိုင်းပါဝါ contains ပါဝါ).
+        return ['13', '26', '47', '58', '90'];
     } else if (cleanText.includes('ပါဝါ') || cleanText === 'ပါဝါ') {
         return ['05', '50', '16', '61', '27', '72', '38', '83', '49', '94'];
     } else if (cleanText.includes('ဘရိတ်') || cleanText.includes('ရိတ်') || /bk/i.test(cleanText) || cleanText.includes('ဘ')) {
@@ -250,6 +255,12 @@ export function expandFormula(fullNoText) {
             }
         }
         return Array.from(setNums);
+    } else if (cleanText.includes('ထိုင်းနက္ခတ်')) {
+        // Pho Oct 29 13:59 (CORRECTED canon, image spec 'ဒါအမှန်'):
+        // Thai-nakhat = 19 23 48 56 70 (5, no reverses). His first statement
+        // (09 13 26 47 58 90 31 62 74 85) was WRONG ('ပထမပြောတာ အမှား') —
+        // that 10-set was Thai-power 5 + their reverses, mislabeled.
+        return ['19', '23', '48', '56', '70'];
     } else if (cleanText.includes('နက္ခတ်')) {
         return ['07', '18', '24', '53', '69', '70', '81', '42', '35', '96'];
     } else if (cleanText.includes('စုံစုံ')) {
