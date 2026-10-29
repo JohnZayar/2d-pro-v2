@@ -48,57 +48,24 @@ function addPendingUnique(playerName, number, amount, fromFormula, formulaText, 
 /** Formula keywords: board lines containing these expand via formula
  *  — formula-derived numbers are EXCLUDED from hot-number limits.
  *  Exempt (Pho): ပါ/အပါ, ပူး/အပူး, ခွေ/အခွေ, ပတ်/အပတ်, နက္ခတ်/ထိုင်းနက္ခတ်,
- *  ပါဝါ, စုံမ, မစုံ, ထိပ်, နောက်. Only pure direct numbers are blocked. */
-const FORMULA_KEYWORDS = ['ပါ', 'ပူး', 'ခွေ', 'ပတ်', 'နက္ခတ်', 'ထိုင်းနက္ခတ်', 'ညီအစ်ကို', 'စုံမ', 'မစုံ', 'ထိပ်', 'နောက်'];
+ *  ပါဝါ/ထိုင်းပါဝါ, ဘရိတ်/ပွင့်, ညီအစ်ကို, စုံစုံ, မမ, စုံမ, မစုံ,
+ *  ထိပ်, နောက်. Only pure direct numbers are capped. အာ is NOT exempt
+ *  (explicit-list reverse counts as direct, Pho Oct 29 15:06). */
+const FORMULA_KEYWORDS = ['ပါ', 'ပူး', 'ခွေ', 'ပတ်', 'နက္ခတ်', 'ထိုင်းနက္ခတ်', 'ညီအစ်ကို', 'စုံမ', 'မစုံ', 'ထိပ်', 'နောက်', 'ဘရိတ်', 'ပွင့်', 'ပါဝါ', 'စုံစုံ', 'မမ'];
 function lineHasFormula(line) {
     const s = String(line || '');
     return FORMULA_KEYWORDS.some((kw) => s.includes(kw));
 }
 
-/** Check hot-number limits for this agent: cumulative per (number, session), excluding formula-derived entries. Returns error message or null. */
-async function checkAgentLimits(preFetched) {
-    // Server-direct (Pho Oct 27): a failed limits read MUST propagate — the
-    // save gate blocks the save on it (fail-closed). Silently skipping limits
-    // on a read failure could let an over-limit batch through if the network
-    // recovers before the creates run.
-    let myLimits = {};
-    const agents = await direct.withRetry(() => direct.directList('agents', tenantId));
-    const me = (agents || []).find((a) => (a.name || '') === agentName);
-    myLimits = (me && me.limits) || {};
-    const limitNums = Object.keys(myLimits).filter((n) => Number(myLimits[n]) > 0);
-    if (!limitNums.length || !currentSessionId) return null;
-
-    // Pending totals by number (skip formula-derived)
-    const pendTotals = {};
-    pendingEntries.forEach((e) => {
-        if (e.fromFormula) return;
-        const num = String(e.number).padStart(2, '0');
-        if (!limitNums.includes(num)) return;
-        pendTotals[num] = (pendTotals[num] || 0) + (Number(e.amount) || 0);
-    });
-    if (!Object.keys(pendTotals).length) return null;
-
-    // Existing saved records for this agent + session (server-direct;
-    // getSessionRecords already filters to this agent — the filter below
-    // stays for exactness). A failed read propagates to the save gate.
-    const existing = preFetched || await getSessionRecords(currentSessionId);
-    const existTotals = {};
-    existing.forEach((r) => {
-        if ((r.agent_name || '') !== agentName) return;
-        if (r.fromFormula) return; // formula-derived excluded
-        const num = String(r.number).padStart(2, '0');
-        if (!limitNums.includes(num)) return;
-        existTotals[num] = (existTotals[num] || 0) + (Number(r.amount) || 0);
-    });
-
-    for (const num of Object.keys(pendTotals)) {
-        const lim = Number(myLimits[num]);
-        const total = (existTotals[num] || 0) + pendTotals[num];
-        if (total > lim) {
-            return `ဟော့ဂဏန်း (${num}) Limite ပြည့်လို့ မရတော့ပါ`;
-        }
-    }
-    return null;
+/* Pho Oct 29 limit redesign: MY single per-line cap for session blocked
+   (= hot) numbers. 0/unset = fully blocked for hot numbers (fail-closed
+   on fetch failure too); non-hot numbers are unlimited. */
+async function getMyBlockedLimit() {
+    try {
+        const agents = await direct.withRetry(() => direct.directList('agents', tenantId));
+        const me = (agents || []).find((a) => (a.name || '') === agentName);
+        return Number(me && me.blocked_limit) || 0;
+    } catch (e) { return 0; }
 }
 
 /** Get blocked numbers for a session (synced from Master via PocketBase). */
@@ -1038,17 +1005,24 @@ window.submitEntry = async function submitEntry() {
         return;
     }
 
-    // 🚫 ဒိုင်ပိတ်: blocked numbers cannot be bet
+    // Pho Oct 29 limit redesign: session blocked (= hot) numbers are capped
+    // per line by my single blocked_limit (0/unset = fully blocked for hot
+    // numbers; non-hot numbers unlimited).
     const blockedSet = new Set(await getAgentBlocked(currentSessionId));
+    const capE = await getMyBlockedLimit();
+    const isFormulaLine = lineHasFormula(line);
     const blockedHit = [];
+    const overHit = [];
     const allowedItems = validItems.filter((it) => {
         const nn = String(it.number).padStart(2, '0');
-        if (blockedSet.has(nn)) { blockedHit.push(nn); return false; }
-        return true;
+        if (isFormulaLine) return true;
+        if (!blockedSet.has(nn)) return true;
+        if (capE > 0 && (Number(it.amount) || 0) <= capE) return true;
+        if (capE > 0) overHit.push(nn); else blockedHit.push(nn);
+        return false;
     });
     if (!allowedItems.length) { clearInputs(); showToast('🚫 ဒိုင်ပိတ် ဂဏန်းတွေ ချည်း — တင် မရပါ'); return; }
     let addedCount = 0;
-    const isFormulaLine = lineHasFormula(line);
     allowedItems.forEach((it) => {
         if (addPendingUnique(playerName, it.number, it.amount, isFormulaLine)) addedCount++;
     });
@@ -1056,7 +1030,10 @@ window.submitEntry = async function submitEntry() {
     clearInputs();
     await renderEntryTable();
     const skipped = invalidLines.length + (items.length - validItems.length) + blockedHit.length;
-    const blkMsg = blockedHit.length ? ' (🚫 ' + [...new Set(blockedHit)].join(',') + ' ပိတ်)' : '';
+    const blkParts = [];
+    if (blockedHit.length) blkParts.push([...new Set(blockedHit)].join(',') + ' ပိတ်');
+    if (overHit.length) blkParts.push([...new Set(overHit)].join(',') + ' တကွက် ' + formatMoney(capE) + ' ကျော်');
+    const blkMsg = blkParts.length ? ' (🚫 ' + blkParts.join(' · ') + ')' : '';
     showToast('✅ ထည့်ပြီးပြီ' +
         (skipped ? ' (⚠️ ' + skipped + ' လိုင်း ကျန်)' : '') + blkMsg);
 };
@@ -1157,21 +1134,10 @@ window.savePendingBatch = async function savePendingBatch() {
     }
     const lkS = lockRes.v;
     if (lkS.locked) { saveInFlight = false; showToast('🔒 ' + lkS.reason + ' — သိမ်း မရပါ'); return; }
-    // Hot-number limits (cumulative per session; formula-derived excluded)
-    // Pho Oct 29 speed: ONE session-records fetch per Save — the limits
-    // check and every player's batch number reuse it (before: limits
-    // fetched it once, then each player fetched it again).
+    // Pho Oct 29 limit redesign: no cumulative save gate — hot numbers are
+    // capped per line at stage time by my blocked_limit. The single
+    // sessRecs fetch stays for batch numbers.
     const sessRecs = await getSessionRecords(currentSessionId);
-    let limitErr = null;
-    try {
-        limitErr = await checkAgentLimits(sessRecs);
-    } catch (e) {
-        console.error('[agent] savePendingBatch limits check failed', e);
-        saveInFlight = false;
-        showToast('❌ ဆာဗာ ဆက်မရပါ: ' + e.message);
-        return;
-    }
-    if (limitErr) { saveInFlight = false; showToast('❌ ' + limitErr); return; }
 
     const createdIds = [];
     try {
@@ -2005,13 +1971,20 @@ window.saveBoard = async function saveBoard() {
             saveInFlight = false;
             return;
         }
-        // 🚫 ဒိုင်ပိတ်: blocked numbers cannot be bet
+        // Pho Oct 29 limit redesign: session blocked (= hot) numbers are capped
+        // per line by my single blocked_limit (0/unset = fully blocked for hot
+        // numbers; non-hot numbers unlimited).
         const blockedSetB = new Set(await getAgentBlocked(currentSessionId));
+        const capB = await getMyBlockedLimit();
         const blockedHitB = [];
+        const overHitB = [];
         const allowedBoard = okItems.filter((it) => {
             const nn = String(it.number).padStart(2, '0');
-            if (blockedSetB.has(nn)) { blockedHitB.push(nn); return false; }
-            return true;
+            if (it._fromFormula) return true;
+            if (!blockedSetB.has(nn)) return true;
+            if (capB > 0 && (Number(it.amount) || 0) <= capB) return true;
+            if (capB > 0) overHitB.push(nn); else blockedHitB.push(nn);
+            return false;
         });
         if (!allowedBoard.length) { saveInFlight = false; showToast('🚫 ဒိုင်ပိတ် ဂဏန်းတွေ ချည်း — တင် မရပါ'); return; }
         let addedBoard = 0;
@@ -2019,7 +1992,10 @@ window.saveBoard = async function saveBoard() {
             if (addPendingUnique(playerName, it.number, it.amount, it._fromFormula, it.formula_text, it.line_idx)) addedBoard++;
         });
         await renderEntryTable();
-        const blkMsgB = blockedHitB.length ? ' (🚫 ' + [...new Set(blockedHitB)].join(',') + ' ပိတ်)' : '';
+        const blkPartsB = [];
+        if (blockedHitB.length) blkPartsB.push([...new Set(blockedHitB)].join(',') + ' ပိတ်');
+        if (overHitB.length) blkPartsB.push([...new Set(overHitB)].join(',') + ' တကွက် ' + formatMoney(capB) + ' ကျော်');
+        const blkMsgB = blkPartsB.length ? ' (🚫 ' + blkPartsB.join(' · ') + ')' : '';
         if (badLines.length) {
             // Keep bad lines on the board for fixing; keep modal open.
             ta.value = badLines.join('\n');
