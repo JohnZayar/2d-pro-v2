@@ -3249,6 +3249,9 @@ async function renderVouchers() {
     renderVoucherContent();
 }
 
+// Pho Oct 29: voucher edit/delete refresh in place (was location.reload).
+window.refreshVoucherView = renderVouchers;
+
 async function renderVoucherContent() {
     const sid = $('voucherSession').value;
     const sel = $('voucherPerson').value;
