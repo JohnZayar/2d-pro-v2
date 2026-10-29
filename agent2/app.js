@@ -56,7 +56,7 @@ function lineHasFormula(line) {
 }
 
 /** Check hot-number limits for this agent: cumulative per (number, session), excluding formula-derived entries. Returns error message or null. */
-async function checkAgentLimits() {
+async function checkAgentLimits(preFetched) {
     // Server-direct (Pho Oct 27): a failed limits read MUST propagate — the
     // save gate blocks the save on it (fail-closed). Silently skipping limits
     // on a read failure could let an over-limit batch through if the network
@@ -81,7 +81,7 @@ async function checkAgentLimits() {
     // Existing saved records for this agent + session (server-direct;
     // getSessionRecords already filters to this agent — the filter below
     // stays for exactness). A failed read propagates to the save gate.
-    const existing = await getSessionRecords(currentSessionId);
+    const existing = preFetched || await getSessionRecords(currentSessionId);
     const existTotals = {};
     existing.forEach((r) => {
         if ((r.agent_name || '') !== agentName) return;
@@ -987,8 +987,8 @@ window.deletePendingGroup = function deletePendingGroup(idxList) {
 };
 
 /** Next batch number for (agent, session, player). */
-async function getNextBatchNo(playerName) {
-    const recs = currentSessionId ? await getSessionRecords(currentSessionId) : [];
+async function getNextBatchNo(playerName, preFetched) {
+    const recs = preFetched || (currentSessionId ? await getSessionRecords(currentSessionId) : []);
     let max = 0;
     recs.forEach((r) => {
         if ((r.player_name || '') === (playerName || '')) {
@@ -1065,22 +1065,65 @@ window.submitEntry = async function submitEntry() {
  * 💾 Save (top button) — persist all pending entries as NEW batches
  * (one batch number per player), then clear the table and reset the total.
  */
+/* Pho Oct 29 speed: PocketBase batch create — up to 50 records in ONE
+   HTTP request (POST /api/batch). The batch runs transactionally on the
+   server (all-or-nothing), so a failed batch leaves nothing behind and
+   the caller can safely fall back to single creates. Throws on any HTTP
+   failure, unexpected response shape, or any subrequest status >= 400.
+   Auth header format matches pb.js _req (raw token, no Bearer prefix);
+   15s timeout per chunk like _req. Lives here, NOT in shared/direct.js,
+   so the live apps' pinned direct.js is untouched (agent2 imports shared
+   files from the live tree). */
+async function createRecordsBatch(recs) {
+    const token = pb.getToken();
+    const base = pb.getBaseUrl();
+    const out = [];
+    for (let i = 0; i < recs.length; i += 50) {
+        const chunk = recs.slice(i, i + 50);
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000);
+        let res;
+        try {
+            res = await fetch(base + '/api/batch', {
+                method: 'POST',
+                headers: Object.assign({ 'Content-Type': 'application/json' }, token ? { 'Authorization': token } : {}),
+                body: JSON.stringify({ requests: chunk.map((rec) => ({ method: 'POST', url: '/api/collections/lottery_records/records', body: rec })) }),
+                signal: controller.signal
+            });
+        } catch (e) {
+            clearTimeout(timeoutId);
+            const err = new Error(e.name === 'AbortError' ? 'Request timed out' : 'Network unreachable: ' + e.message);
+            err.code = e.name === 'AbortError' ? 'TIMEOUT' : 'NETWORK_ERROR';
+            throw err;
+        }
+        clearTimeout(timeoutId);
+        if (!res.ok) throw new Error('batch HTTP ' + res.status);
+        const arr = await res.json();
+        if (!Array.isArray(arr) || arr.length !== chunk.length) throw new Error('batch shape');
+        for (let j = 0; j < arr.length; j++) {
+            const st = arr[j] && arr[j].status;
+            if (!(st >= 200 && st < 300)) throw new Error('batch subrequest ' + st);
+            out.push(chunk[j].id);
+        }
+    }
+    return out;
+}
+
 window.savePendingBatch = async function savePendingBatch() {
     if (saveInFlight) return;
     // Pho Oct 18: set the guard SYNCHRONOUSLY before any await —
     // two rapid taps must not both pass.
     saveInFlight = true;
-    // Pho Oct 29 speed: the four pre-flight reads are independent — run
+    // Pho Oct 29 speed: the three pre-flight reads are independent — run
     // them together instead of one-by-one. Decisions are evaluated in the
     // OLD order (disabled -> session -> lock -> limits) so every toast
     // and fail-closed outcome is identical; only the waiting shrinks.
     // (Old code let a disabled-check throw stick the guard; a failed
     // read now fails closed with the guard reset instead.)
-    const [disabledRes, sessRes, lockRes, limitRes] = await Promise.all([
+    const [disabledRes, sessRes, lockRes] = await Promise.all([
         checkAgentDisabled().then((v) => ({ ok: true, v })).catch((e) => ({ ok: false, e })),
         direct.withRetry(() => direct.directGet('sessions', currentSessionId)).then((v) => ({ ok: true, v })).catch((e) => ({ ok: false, e })),
         isAgentSessionLocked(currentSessionId).then((v) => ({ ok: true, v })).catch((e) => ({ ok: false, e })),
-        checkAgentLimits().then((v) => ({ ok: true, v })).catch((e) => ({ ok: false, e })),
     ]);
     if (!disabledRes.ok) { saveInFlight = false; showToast('❌ ဆာဗာ ဆက်မရပါ: ' + disabledRes.e.message); return; }
     if (disabledRes.v) { saveInFlight = false; return; }
@@ -1106,17 +1149,28 @@ window.savePendingBatch = async function savePendingBatch() {
         sessCheck = sessRes.v;
     }
     if (!sessCheck) { saveInFlight = false; showToast('⚠️ Session မတွေ့ပါ — ပြန်ရွေးပါ'); currentSessionId = null; localStorage.removeItem(LS_SESSION); await refreshSession(); return; }
-    if (!lockRes.ok || !limitRes.ok) {
-        const le = lockRes.e || limitRes.e;
-        console.error('[agent] savePendingBatch pre-flight failed', le);
+    if (!lockRes.ok) {
+        console.error('[agent] savePendingBatch pre-flight failed', lockRes.e);
         saveInFlight = false;
-        showToast('❌ ဆာဗာ ဆက်မရပါ: ' + le.message);
+        showToast('❌ ဆာဗာ ဆက်မရပါ: ' + lockRes.e.message);
         return;
     }
     const lkS = lockRes.v;
-    // Hot-number limits (cumulative per session; formula-derived excluded)
-    const limitErr = limitRes.v;
     if (lkS.locked) { saveInFlight = false; showToast('🔒 ' + lkS.reason + ' — သိမ်း မရပါ'); return; }
+    // Hot-number limits (cumulative per session; formula-derived excluded)
+    // Pho Oct 29 speed: ONE session-records fetch per Save — the limits
+    // check and every player's batch number reuse it (before: limits
+    // fetched it once, then each player fetched it again).
+    const sessRecs = await getSessionRecords(currentSessionId);
+    let limitErr = null;
+    try {
+        limitErr = await checkAgentLimits(sessRecs);
+    } catch (e) {
+        console.error('[agent] savePendingBatch limits check failed', e);
+        saveInFlight = false;
+        showToast('❌ ဆာဗာ ဆက်မရပါ: ' + e.message);
+        return;
+    }
     if (limitErr) { saveInFlight = false; showToast('❌ ' + limitErr); return; }
 
     const createdIds = [];
@@ -1129,12 +1183,13 @@ window.savePendingBatch = async function savePendingBatch() {
             if (!byPlayer[k]) { byPlayer[k] = []; order.push(k); }
             byPlayer[k].push(e);
         });
-        // Pho Oct 29 speed: batch numbers are independent per player —
-        // fetch together. Records are built once (same fields, same ids)
-        // then created in chunks of 5 instead of one-by-one: same rows,
-        // same batch numbers, same rollback set — only the wait shrinks.
+        // Pho Oct 29 speed: batch numbers come from the single sessRecs
+        // fetch above (no per-player download). Records are built once
+        // (same fields, same ids) then created via one batch request per
+        // 50 (fallback: chunks of 5): same rows, same batch numbers,
+        // same rollback set — only the wait shrinks.
         const batchNos = {};
-        const bns = await Promise.all(order.map((k) => getNextBatchNo(k || null)));
+        const bns = await Promise.all(order.map((k) => getNextBatchNo(k || null, sessRecs)));
         order.forEach((k, i) => { batchNos[k] = bns[i]; });
         const recs = [];
         for (const k of order) {
@@ -1155,15 +1210,28 @@ window.savePendingBatch = async function savePendingBatch() {
                 });
             }
         }
-        for (let i = 0; i < recs.length; i += 5) {
-            const chunk = recs.slice(i, i + 5);
-            const results = await Promise.all(chunk.map((rec) =>
-                direct.withRetry(() => direct.directCreate('lottery_records', rec))
-                    .then(() => ({ ok: true, id: rec.id }))
-                    .catch((e) => ({ ok: false, e }))));
-            for (const r of results) {
-                if (r.ok) createdIds.push(r.id);
-                else throw r.e;
+        // Pho Oct 29 speed: try the batch path first; ANY batch failure
+        // (endpoint off, bad shape, a subrequest 4xx) falls back to the
+        // proven chunked path — client ids make it duplicate-safe.
+        let batchOk = false;
+        try {
+            const batchIds = await direct.withRetry(() => createRecordsBatch(recs));
+            batchIds.forEach((id) => createdIds.push(id));
+            batchOk = true;
+        } catch (be) {
+            console.warn('[agent] batch create failed, falling back to chunks', be);
+        }
+        if (!batchOk) {
+            for (let i = 0; i < recs.length; i += 5) {
+                const chunk = recs.slice(i, i + 5);
+                const results = await Promise.all(chunk.map((rec) =>
+                    direct.withRetry(() => direct.directCreate('lottery_records', rec))
+                        .then(() => ({ ok: true, id: rec.id }))
+                        .catch((e) => ({ ok: false, e }))));
+                for (const r of results) {
+                    if (r.ok) createdIds.push(r.id);
+                    else throw r.e;
+                }
             }
         }
         pendingEntries = [];
@@ -1717,9 +1785,18 @@ window.confirmInlinePlayer = async function confirmInlinePlayer(which) {
     const inputId = isBoard ? 'boardNewNameInput' : 'newPlayerNameInput';
     const name = ((($(inputId) || {}).value) || '').trim();
     if (!name) { showToast('နာမည် ထည့်ပါ'); return; }
-    const players = await getPlayers();
-    if (_playersFetchFailed) { showToast('❌ လူစာရင်း ဖတ်မရပါ — ပြန်စမ်းပါ'); return; }
-    const existing = players.find((p) => (p.name || '').trim() === name);
+    // Pho Oct 29 speed: no server re-fetch — this agent's player list is
+    // already in the select (loaded when the screen opened). Only when the
+    // select is empty (never loaded, or genuinely no players yet) fetch
+    // once, fail-closed, exactly like before.
+    const sel0 = $(selId);
+    const optNames = sel0 ? Array.from(sel0.options).map((o) => o.value).filter((v) => v && v !== '__new__') : [];
+    let existing = optNames.includes(name) ? { name } : null;
+    if (!existing && !optNames.length) {
+        const players = await getPlayers();
+        if (_playersFetchFailed) { showToast('❌ လူစာရင်း ဖတ်မရပါ — ပြန်စမ်းပါ'); return; }
+        existing = players.find((p) => (p.name || '').trim() === name) || null;
+    }
     if (!existing) {
         try {
             await direct.withRetry(() => direct.directCreate('players', {
@@ -1728,8 +1805,26 @@ window.confirmInlinePlayer = async function confirmInlinePlayer(which) {
             }));
         } catch (e) { showToast('❌ သိမ်းမရပါ: ' + (pbFieldDetail(e) || e.message)); return; }
     }
-    if (isBoard) await populateBoardPlayer(); else await refreshEntryScreen();
-    $(selId).value = existing ? existing.name : name;
+    if (!existing) {
+        // Append the new name to both player selects when present (entry
+        // + board share this agent's list), sorted like getPlayers sorts,
+        // keeping '+ လူသစ်…' last. No server round trip.
+        ['entryPlayerSelect', 'boardPlayer'].forEach((id) => {
+            const s = $(id);
+            if (!s) return;
+            if (Array.from(s.options).some((o) => o.value === name)) return;
+            const opt = document.createElement('option');
+            opt.value = name; opt.textContent = name;
+            const opts = Array.from(s.options);
+            const before = opts.find((o) => o.value && o.value !== '__new__' && name.localeCompare(o.value) < 0)
+                || opts.find((o) => o.value === '__new__');
+            if (before) s.insertBefore(opt, before); else s.appendChild(opt);
+        });
+    }
+    const sel = $(selId);
+    if (sel) sel.value = existing ? existing.name : name;
+    renderPlayerPanel(which);
+    if (!isBoard) await renderEntryTable();
     _inlinePrev[which] = existing ? existing.name : name;
     _inlineShow(which, false);
     const inp = $(inputId);
@@ -2646,19 +2741,21 @@ window.resetAgentApp = async function resetAgentApp() {
     window.deleteRecordGroup = async function(ridsStr) {
         closeEditDeleteMenu();
         const ids = ridsStr.split(',').filter(Boolean);
+        // Pho Oct 29 speed: totals + deletes run in parallel, not one by
+        // one (a 20-line batch was 40+ sequential trips). Same confirm
+        // text, same totals; a failed delete still alerts (all deletes
+        // are attempted first, unlike before where one failure stopped
+        // the rest).
         let total = 0;
-        for (const id of ids) {
-            let r = null;
-            try {
-                r = await direct.withRetry(() => direct.directGet('lottery_records', id));
-            } catch (e) { /* missing → skipped, as before */ }
-            if (r) total += Number(r.amount) || 0;
-        }
+        const rs = await Promise.all(ids.map((id) =>
+            direct.withRetry(() => direct.directGet('lottery_records', id)).catch(() => null)));
+        rs.forEach((r) => { if (r) total += Number(r.amount) || 0; });
         if (!confirm(ids.length + ' ကွက် လုံး ဖျက်မလား? (စုစုပေါင်း ' + total + ')')) return;
         try {
-            for (const id of ids) {
-                await direct.withRetry(() => direct.directDelete('lottery_records', id));
-            }
+            const dels = await Promise.all(ids.map((id) =>
+                direct.withRetry(() => direct.directDelete('lottery_records', id)).then(() => ({ ok: true })).catch((e) => ({ ok: false, e }))));
+            const failed = dels.find((d) => !d.ok);
+            if (failed) throw failed.e;
             await _grpRefresh();
         } catch (e) { alert('Error: ' + e.message); }
     };
