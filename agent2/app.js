@@ -273,6 +273,23 @@ function showApp() {
     document.getElementById('appScreen').hidden = false;
     document.getElementById('headerAgentName').textContent = agentName;
     document.getElementById('headerTenantName').textContent = '🔗 ' + tenantId;
+    // Pho Oct 28: replace the cryptic tenant id with the shop name when it
+    // can be read — the tenant's buyer user row carries name = shop name
+    // (agent users list is tenant-scoped, so this stays inside the tenant).
+    // Fail-silent: the id stays if the lookup fails. Non-blocking.
+    (async () => {
+        try {
+            const users = await direct.directList('users', tenantId);
+            const rows = users.items || users || [];
+            const buyer = rows.find(u => {
+                const em = (u.email || '');
+                const nm = (u.name || '').trim();
+                return em && !em.includes('agent_') && nm && !nm.toLowerCase().startsWith('agent ');
+            });
+            const el = document.getElementById('headerTenantName');
+            if (buyer && buyer.name && el) el.textContent = '🏪 ' + buyer.name.trim();
+        } catch (e) { /* keep id */ }
+    })();
     // Pho Oct 18: show FULL link code (with -N-SECRET), not just tenantId
     document.getElementById('settingsTenantCode').textContent = localStorage.getItem(LS_TENANT) || tenantId;
     document.getElementById('settingsAgentName').textContent = agentName;
@@ -466,14 +483,23 @@ async function getAgentSessions() {
     try {
         // Pho Oct 27: Master-archived sessions never appear in Agent lists.
         // Archive rows read from the server (app_settings key 'archived_<sessionId>').
+        // Pho Oct 28 speed (Agent v157, Master v211 pattern): the archive
+        // list and the sessions list are independent — fetch in parallel.
+        // H5 fail-CLOSED semantics preserved exactly: an archive-read blip
+        // reuses the last-known-good filter, or shows nothing with no prior
+        // good read; a sessions-read failure still returns [] via the outer
+        // catch (the parallel fetch fires both, the failed result is dropped).
+        const [archRes, sessRes] = await Promise.all([
+            direct.withRetry(() => direct.directList('app_settings', tenantId)).catch(() => null),
+            direct.withRetry(() => direct.directList('sessions', tenantId)).catch(() => null),
+        ]);
         let archived = new Set();
-        try {
-            const all = await direct.withRetry(() => direct.directList('app_settings', tenantId));
-            for (const r of all) {
+        if (archRes) {
+            for (const r of archRes) {
                 if (r.key && r.key.indexOf('archived_') === 0) archived.add(r.key.slice(9));
             }
             _lastArchivedSet = archived;
-        } catch (e) {
+        } else {
             _sessionsFetchFailed = true;
             // H5 fail-CLOSED: never render a list that may contain archived
             // sessions. Reuse the last-known-good filter; with no prior good
@@ -481,7 +507,8 @@ async function getAgentSessions() {
             if (_lastArchivedSet) { archived = new Set(_lastArchivedSet); }
             else { return []; }
         }
-        const sessions = (await direct.withRetry(() => direct.directList('sessions', tenantId))).filter((s) => !archived.has(s.id));
+        if (!sessRes) throw new Error('sessions fetch failed');
+        const sessions = sessRes.filter((s) => !archived.has(s.id));
         // Pho Oct 21: NEVER show two sessions for the same day-part.
         // If a duplicate ever slips in, keep the one holding this agent's
         // records (tie: the earliest created) and hide the twin.
@@ -596,13 +623,22 @@ async function refreshCurrentTab() {
     if (_rtRunning) { _rtPending = true; return; }
     _rtRunning = true;
     try {
-        await refreshSession();
-        if (activeScreen === 'home') { await updateMenuSubs(); }
-        else if (activeScreen === 'entry') { if (!_sessionsFetchFailed) await refreshEntryScreen(); }
-        else if (activeScreen === 'records') { await renderRecordsView(); }
-        else if (activeScreen === 'players') { await renderPlayers(); }
-        else if (activeScreen === 'daily') { await renderDaily(); }
-        else if (activeScreen === 'weekly') { await renderWeekly(); }
+        // Pho Oct 28 speed: on home, the banner refresh and the menu
+        // subtitle (players count) are independent — run in parallel.
+        // Other screens keep the sequential order (entry depends on the
+        // refreshed session via the H2 guard below).
+        if (activeScreen === 'home') {
+            await Promise.all([refreshSession(), updateMenuSubs()]);
+        } else {
+            await refreshSession();
+        }
+        if (activeScreen !== 'home') {
+            if (activeScreen === 'entry') { if (!_sessionsFetchFailed) await refreshEntryScreen(); }
+            else if (activeScreen === 'records') { await renderRecordsView(); }
+            else if (activeScreen === 'players') { await renderPlayers(); }
+            else if (activeScreen === 'daily') { await renderDaily(); }
+            else if (activeScreen === 'weekly') { await renderWeekly(); }
+        }
     } finally {
         _rtRunning = false;
         if (_rtPending) { _rtPending = false; refreshCurrentTab(); }
@@ -748,39 +784,18 @@ window.deletePlayer = async function deletePlayer(id) {
     showToast('🗑️ ဖျက်ပြီးပြီ');
 };
 
-// TEMPORARY test cleanup (Pho Oct 27): delete ALL players in this tenant
-// + their records. Pho removes this button when it is no longer needed.
-window.cleanupTestPlayers = async function cleanupTestPlayers() {
-    try {
-        const players = await direct.withRetry(() => direct.directList('players', tenantId));
-        const names = new Set(players.map((p) => p.name || ''));
-        const recs = await direct.withRetry(() => direct.directList('lottery_records', tenantId));
-        const mine = recs.filter((r) => names.has(r.player_name || ''));
-        if (!players.length && !mine.length) { showToast('ဖျက်စရာ မရှိပါ'); return; }
-        if (!confirm(players.length + ' လူ + ' + mine.length + ' စာရင်း အကုန် ဖျက်မှာလား? (ပြန်မရဘူး)')) return;
-        try { localStorage.setItem('cleanup_backup_' + Date.now(), JSON.stringify({ players, records: mine })); } catch (e) {}
-        let delRecs = 0, delPlayers = 0;
-        for (const r of mine) { try { await direct.withRetry(() => direct.directDelete('lottery_records', r.id)); delRecs++; } catch (e) {} }
-        for (const p of players) { try { await direct.withRetry(() => direct.directDelete('players', p.id)); delPlayers++; } catch (e) {} }
-        await renderPlayers();
-        updateSyncPill();
-        showToast('🗑️ ' + delPlayers + ' လူ + ' + delRecs + ' စာရင်း ဖျက်ပြီးပြီ');
-    } catch (e) {
-        showToast('❌ ဖျက်မရပါ: ' + (e.message || e));
-    }
-};
-
 async function renderPlayers() {
     const listEl = document.getElementById('playersList');
     const emptyEl = document.getElementById('playersEmpty');
-    const players = await getPlayers();
+    // Pho Oct 28 speed: players list + current-session records are
+    // independent — fetch in parallel. The failed-read guard stays: a
+    // failed players read still keeps the previous list.
+    const [players, sessRecs] = await Promise.all([
+        getPlayers(),
+        currentSessionId ? getSessionRecords(currentSessionId) : Promise.resolve([]),
+    ]);
     // Server-direct: a failed players read must not blank the list.
     if (_playersFetchFailed) { showToast('❌ ဆာဗာ ဆက်မရပါ'); return; }
-
-    let sessRecs = [];
-    if (currentSessionId) {
-        sessRecs = (await getSessionRecords(currentSessionId));
-    }
     const totals = {};
     sessRecs.forEach((r) => {
         const k = r.player_name || '';
@@ -882,9 +897,11 @@ async function refreshEntryScreen() {
     // Player select (preserve selection)
     const pSel = $('entryPlayerSelect');
     const prevPlayer = pSel.value;
-    const players = await getPlayers();
+    // Pho Oct 28 speed: player list + session list are independent.
+    const [players, sessions] = await Promise.all([getPlayers(), getAgentSessions()]);
     pSel.innerHTML = '<option value="">-- ထိုးသား ရွေးပါ --</option>' +
-        players.map((p) => '<option value="' + escHtml(p.name) + '">' + escHtml(p.name) + '</option>').join('');
+        players.map((p) => '<option value="' + escHtml(p.name) + '">' + escHtml(p.name) + '</option>').join('') +
+        '<option value="__new__">+ လူသစ်…</option>';
     if (prevPlayer && Array.from(pSel.options).some((o) => o.value === prevPlayer)) {
         pSel.value = prevPlayer;
     }
@@ -893,7 +910,6 @@ async function refreshEntryScreen() {
     // to (currentSessionId). Restoring a stale previous value let the
     // dropdown and the save target disagree after a realtime flip (H2).
     const sSel = $('entrySessionSelect');
-    const sessions = await getAgentSessions();
     sSel.innerHTML = sessions.map((s) =>
         '<option value="' + s.id + '">' + escHtml(s.name || 'Session') + '</option>').join('') ||
         '<option value="">Session မရှိပါ</option>';
@@ -993,6 +1009,7 @@ window.submitEntry = async function submitEntry() {
     try { lkE = await isAgentSessionLocked(currentSessionId); } catch (e) { /* save gate enforces */ }
     if (lkE.locked) { showToast('🔒 ' + lkE.reason + ' — တင် မရပါ'); return; }
     const playerName = $('entryPlayerSelect').value || null;
+    if (playerName === '__new__') { showToast('❌ လူသစ် နာမည် အရင် ထည့်ပါ'); return; }
     if (!playerName) { showToast('❌ အမည် ရွေးပါ (မရွေးရင် တင်မရ)'); return; }
     const noText = boxNo().value.trim();
     const amtText = boxAmt().value.trim().replace(/[^\d]/g, '');
@@ -1055,7 +1072,7 @@ window.savePendingBatch = async function savePendingBatch() {
     if (await checkAgentDisabled()) { saveInFlight = false; return; }
     if (!pendingEntries.length) { saveInFlight = false; showToast('စာရင်း မရှိသေးပါ'); return; }
     // Block if any pending entry has no player name
-    if (pendingEntries.some((e) => !(e.player_name || '').trim())) { saveInFlight = false; showToast('❌ အမည် မပါ တဲ့ စာရင်း ရှိ — ဖျက် ပြီး ပြန် ထည့်'); return; }
+    if (pendingEntries.some((e) => !(e.player_name || '').trim() || e.player_name === '__new__')) { saveInFlight = false; showToast('❌ အမည် မပါ တဲ့ စာရင်း ရှိ — ဖျက် ပြီး ပြန် ထည့်'); return; }
     if (!currentSessionId) { saveInFlight = false; showToast('⚠️ Session မရှိသေးပါ'); return; }
     // Pho Oct 19 Option B: Verify session actually exists on the server (not just ID truthy).
     // Prevents blank/invalid session 400 errors.
@@ -1185,8 +1202,8 @@ window.renderRecordsView = async function renderRecordsView() {
     const sessSel = $('recordsSession');
     const content = $('recordsViewContent');
 
-    const players = await getPlayers();
-    const sessions = await getAgentSessions();
+    // Pho Oct 28 speed: player list + session list are independent.
+    const [players, sessions] = await Promise.all([getPlayers(), getAgentSessions()]);
 
     const prevPlayer = playerSel.value;
     const prevSess = sessSel.value;
@@ -1226,12 +1243,14 @@ window.renderRecordsView = async function renderRecordsView() {
         return;
     }
 
-    // Winning numbers for yellow highlight
-    let winNums = new Set();
-    try {
-        const wins = await _getWins(sessId);
-        winNums = new Set(wins.map((w) => String(w.number).padStart(2, '0')));
-    } catch (e) { /* ignore */ }
+    // Pho Oct 28 speed: wins + Master acks are independent (both keyed
+    // only by sessId) — fetch in parallel; each failure still degrades
+    // to its own empty set exactly as before.
+    const [winsRes, ackRes] = await Promise.all([
+        _getWins(sessId).catch(() => []),
+        pb.list('batch_acks', { perPage: 200 }).catch(() => null),
+    ]);
+    let winNums = new Set(winsRes.map((w) => String(w.number).padStart(2, '0')));
 
     // Play a soft beep when Ok appears (Pho's request)
     const playOkSound = () => {
@@ -1247,14 +1266,13 @@ window.renderRecordsView = async function renderRecordsView() {
         } catch (e) { /* ignore */ }
     };
 
-    // Fetch Master acks (for "Ok" badges) - TRUE confirmation only
+    // Master acks (for "Ok" badges) - TRUE confirmation only, fetched above.
     let ackedBatches = new Set();
-    try {
-        const ackRes = await pb.list('batch_acks', { perPage: 200 });
+    if (ackRes) {
         for (const a of (ackRes.items || ackRes)) {
             if (a.batch_key) ackedBatches.add(a.batch_key);
         }
-    } catch (e) { /* ignore */ }
+    }
     const isBatchAcked = (agentName, playerName, batchNo) => {
         const prefix = [agentName, playerName || '', batchNo].join('|') + '|';
         for (const ak of ackedBatches) {
@@ -1608,9 +1626,84 @@ window.openBoard = function openBoard() {
 async function populateBoardPlayer() {
     const sel = $('boardPlayer');
     const players = await getPlayers();
-    sel.innerHTML = players.map((p) => '<option value="' + escHtml(p.name) + '">' + escHtml(p.name) + '</option>').join('');
+    sel.innerHTML = players.map((p) => '<option value="' + escHtml(p.name) + '">' + escHtml(p.name) + '</option>').join('') +
+        '<option value="__new__">+ လူသစ်…</option>';
     sel.value = players.length ? players[0].name : '';
 }
+
+
+/* ============ INLINE NEW PERSON (Pho Oct 29, Agent v158) ============
+   "+ လူသစ်…" in the betting dropdowns (typed entry + board) creates the
+   person right there — no trip to the people page. Confirm creates with
+   the people-page defaults (phone '', commission 0, multiplier 80) and
+   selects the new name at once; a trimmed exact-match name selects the
+   existing person instead of a duplicate. '__new__' can never stage or
+   save as a player name (guards in submitEntry / saveBoard /
+   savePendingBatch). Agent only — Master untouched. */
+let _inlinePrev = { entry: '', board: '' };
+
+function _inlineShow(which, show) {
+    const row = $(which === 'board' ? 'boardNewPlayerInline' : 'newPlayerInline');
+    if (row) row.style.display = show ? 'flex' : 'none';
+}
+
+window.onEntryPlayerChange = function onEntryPlayerChange(sel) {
+    if (sel.value === '__new__') {
+        _inlineShow('entry', true);
+        const inp = $('newPlayerNameInput');
+        if (inp) inp.focus();
+        return;
+    }
+    _inlinePrev.entry = sel.value || '';
+    _inlineShow('entry', false);
+};
+
+window.onBoardPlayerChange = function onBoardPlayerChange(sel) {
+    if (sel.value === '__new__') {
+        _inlineShow('board', true);
+        const inp = $('boardNewNameInput');
+        if (inp) inp.focus();
+        return;
+    }
+    _inlinePrev.board = sel.value || '';
+    _inlineShow('board', false);
+};
+
+window.cancelInlinePlayer = function cancelInlinePlayer(which) {
+    const selId = which === 'board' ? 'boardPlayer' : 'entryPlayerSelect';
+    const inputId = which === 'board' ? 'boardNewNameInput' : 'newPlayerNameInput';
+    _inlineShow(which, false);
+    const inp = $(inputId);
+    if (inp) inp.value = '';
+    const sel = $(selId);
+    if (sel) sel.value = _inlinePrev[which] || '';
+};
+
+window.confirmInlinePlayer = async function confirmInlinePlayer(which) {
+    const isBoard = which === 'board';
+    const selId = isBoard ? 'boardPlayer' : 'entryPlayerSelect';
+    const inputId = isBoard ? 'boardNewNameInput' : 'newPlayerNameInput';
+    const name = ((($(inputId) || {}).value) || '').trim();
+    if (!name) { showToast('နာမည် ထည့်ပါ'); return; }
+    const players = await getPlayers();
+    if (_playersFetchFailed) { showToast('❌ လူစာရင်း ဖတ်မရပါ — ပြန်စမ်းပါ'); return; }
+    const existing = players.find((p) => (p.name || '').trim() === name);
+    if (!existing) {
+        try {
+            await direct.withRetry(() => direct.directCreate('players', {
+                id: uid(), tenant: tenantId, agent_name: agentName,
+                name, phone: '', commission: 0, multiplier: 80
+            }));
+        } catch (e) { showToast('❌ သိမ်းမရပါ: ' + (pbFieldDetail(e) || e.message)); return; }
+    }
+    if (isBoard) await populateBoardPlayer(); else await refreshEntryScreen();
+    $(selId).value = existing ? existing.name : name;
+    _inlinePrev[which] = existing ? existing.name : name;
+    _inlineShow(which, false);
+    const inp = $(inputId);
+    if (inp) inp.value = '';
+    showToast(existing ? '✅ ရှိပြီးသား လူကို ရွေးပြီးပြီ' : '✅ လူ ထည့်ပြီးပြီ');
+};
 
 window.closeBoard = function closeBoard() {
     $('boardModal').hidden = true;
@@ -1696,6 +1789,7 @@ window.saveBoard = async function saveBoard() {
 
     try {
         const playerName = $('boardPlayer').value || null;
+        if (playerName === '__new__') { saveInFlight = false; showToast('❌ လူသစ် နာမည် အရင် ထည့်ပါ'); return; }
         if (!playerName) { saveInFlight = false; showToast('❌ အမည် ရွေးပါ (မရွေးရင် တင်မရ)'); return; }
         // Strict per-line: only fully-valid lines are entered. Bad lines stay
         // on the board for fixing — never guess-entered.
@@ -1838,7 +1932,8 @@ window.renderDaily = async function renderDaily() {
     const key = dateInput.value;
 
     // Populate person dropdown
-    const players = await getPlayers().catch(() => []);
+    // Pho Oct 28 speed: dropdown players + all records are independent.
+    const [players, allRecs] = await Promise.all([getPlayers().catch(() => []), getAgentRecords()]);
     const prevVal = playerSel.value;
     let pHtml = '<option value="__all">-- အားလုံး --</option>';
     pHtml += players.map((p) => '<option value="' + escHtml(p.name) + '">' + escHtml(p.name) + '</option>').join('');
@@ -1847,7 +1942,7 @@ window.renderDaily = async function renderDaily() {
         playerSel.value = prevVal;
     }
 
-    let recs = (await getAgentRecords()).filter((r) => dateKey(r.created) === key);
+    let recs = allRecs.filter((r) => dateKey(r.created) === key);
     // Server-direct: a failed records read must not render as "no records".
     if (_agentRecordsFetchFailed) { showToast('❌ ဆာဗာ ဆက်မရပါ'); return; }
     const selPlayer = playerSel.value;
@@ -1870,7 +1965,8 @@ async function renderDailyTable(recs, dateKeyStr) {
     if (!recs.length) return '<div class="empty-state">ဒီနေ့ စာရင်း မရှိပါ</div>';
 
     // Player info for commission/multiplier
-    const players = await getPlayers().catch(() => []);
+    // Pho Oct 28 speed: players + sessions are independent.
+    const [players, sessions] = await Promise.all([getPlayers().catch(() => []), getAgentSessions().catch(() => [])]);
     // Server-direct: a failed players read must not silently run the totals
     // on default commission/multiplier rates — the caller toasts and keeps
     // the previous content instead.
@@ -1884,19 +1980,17 @@ async function renderDailyTable(recs, dateKeyStr) {
     });
     const getInfo = (name) => playerInfo[name || ''] || { commission: 0, multiplier: 80 };
 
-    // Sessions for names
-    const sessions = await getAgentSessions().catch(() => []);
+    // Sessions for names (fetched above, in parallel with players)
     const sessName = (id) => (sessions.find((s) => s.id === id) || {}).name || '';
 
     // Winning numbers per session
     const sessIds = [...new Set(recs.map((r) => r.session).filter(Boolean))];
+    // Pho Oct 28 speed: one wins lookup per session, all in parallel.
+    const winLists = await Promise.all(sessIds.map((sid) => _getWins(sid).catch(() => [])));
     const winBySess = {};
-    for (const sid of sessIds) {
-        try {
-            const wins = await _getWins(sid);
-            winBySess[sid] = new Set(wins.map((w) => String(w.number).padStart(2, '0')));
-        } catch (e) { winBySess[sid] = new Set(); }
-    }
+    sessIds.forEach((sid, i) => {
+        winBySess[sid] = new Set(winLists[i].map((w) => String(w.number).padStart(2, '0')));
+    });
 
     // Group by session
     const bySess = {};
@@ -2082,11 +2176,11 @@ window.renderWeekly = async function renderWeekly() {
 
     label.textContent = formatDateStr(monday) + ' – ' + formatDateStr(sunday);
 
-    const recs = await getAgentRecords();
+    // Pho Oct 28 speed: records + players are independent.
+    const [recs, players] = await Promise.all([getAgentRecords(), getPlayers().catch(() => [])]);
     // Server-direct: a failed records read must not render as "no records".
     if (_agentRecordsFetchFailed) { showToast('❌ ဆာဗာ ဆက်မရပါ'); return; }
     // Player info for commission/multiplier
-    const players = await getPlayers().catch(() => []);
     // Server-direct: a failed players read must not silently run the totals
     // on default commission/multiplier rates.
     if (_playersFetchFailed) { showToast('❌ ဆာဗာ ဆက်မရပါ'); return; }
@@ -2100,13 +2194,12 @@ window.renderWeekly = async function renderWeekly() {
     const getInfo = (name) => playerInfo[name || ''] || { commission: 0, multiplier: 80 };
     // Winning numbers per session
     const sessIds = [...new Set(recs.map((r) => r.session).filter(Boolean))];
+    // Pho Oct 28 speed: one wins lookup per session, all in parallel.
+    const winLists = await Promise.all(sessIds.map((sid) => _getWins(sid).catch(() => [])));
     const winBySess = {};
-    for (const sid of sessIds) {
-        try {
-            const wins = await _getWins(sid);
-            winBySess[sid] = new Set(wins.map((w) => String(w.number).padStart(2, '0')));
-        } catch (e) { winBySess[sid] = new Set(); }
-    }
+    sessIds.forEach((sid, i) => {
+        winBySess[sid] = new Set(winLists[i].map((w) => String(w.number).padStart(2, '0')));
+    });
     const byDay = {};
     recs.forEach((r) => {
         const k = dateKey(r.created);
@@ -2489,3 +2582,24 @@ window.resetAgentApp = async function resetAgentApp() {
         if (nx && nx.classList.contains('vx-row')) nx.hidden = !nx.hidden;
     });
 })();
+
+/* TEST-ONLY, carried over from old agent2 (not part of v158): */
+window.cleanupTestPlayers = async function cleanupTestPlayers() {
+    try {
+        const players = await direct.withRetry(() => direct.directList('players', tenantId));
+        const names = new Set(players.map((p) => p.name || ''));
+        const recs = await direct.withRetry(() => direct.directList('lottery_records', tenantId));
+        const mine = recs.filter((r) => names.has(r.player_name || ''));
+        if (!players.length && !mine.length) { showToast('ဖျက်စရာ မရှိပါ'); return; }
+        if (!confirm(players.length + ' လူ + ' + mine.length + ' စာရင်း အကုန် ဖျက်မှာလား? (ပြန်မရဘူး)')) return;
+        try { localStorage.setItem('cleanup_backup_' + Date.now(), JSON.stringify({ players, records: mine })); } catch (e) {}
+        let delRecs = 0, delPlayers = 0;
+        for (const r of mine) { try { await direct.withRetry(() => direct.directDelete('lottery_records', r.id)); delRecs++; } catch (e) {} }
+        for (const p of players) { try { await direct.withRetry(() => direct.directDelete('players', p.id)); delPlayers++; } catch (e) {} }
+        await renderPlayers();
+        updateSyncPill();
+        showToast('🗑️ ' + delPlayers + ' လူ + ' + delRecs + ' စာရင်း ဖျက်ပြီးပြီ');
+    } catch (e) {
+        showToast('❌ ဖျက်မရပါ: ' + (e.message || e));
+    }
+};
