@@ -119,12 +119,18 @@ window.addEventListener('load', () => {
             </div>
 
             <div class="entry-playerbar">
-                <select id="entryPlayerSelect" class="field-input player-select">
+                <select id="entryPlayerSelect" class="field-input player-select" onchange="onEntryPlayerChange(this)">
                     <option value="">-- ထိုးသား ရွေးပါ --</option>
                 </select>
                 <button class="top-btn kb-toggle-btn" id="entryKbToggle" type="button" onclick="toggleEntryKeyboard()" title="ကီးဘုတ် ဖွင့်/ပိတ်">⌨️</button>
                 <button class="top-btn" onclick="openBoard()" title="Digital Board">📋</button>
                 <button class="top-btn btn-save-top" onclick="savePendingBatch()">💾 Save</button>
+            </div>
+
+            <div id="newPlayerInline" style="display:none;gap:6px;margin:6px 0 0;">
+                <input id="newPlayerNameInput" class="field-input" placeholder="လူသစ် နာမည်" onkeydown="if(event.key==='Enter')confirmInlinePlayer('entry')" style="flex:1;" />
+                <button class="top-btn btn-save-top" onclick="confirmInlinePlayer('entry')">✔ ထည့်</button>
+                <button class="top-btn" onclick="cancelInlinePlayer('entry')">✕</button>
             </div>
 
             <div class="table-container">
@@ -311,7 +317,13 @@ window.addEventListener('load', () => {
 
         <div class="board-player-row">
             <label class="field-label" for="boardPlayer">🧍 ဘယ်သူ့အတွက်</label>
-            <select id="boardPlayer" class="field-input"></select>
+            <select id="boardPlayer" class="field-input" onchange="onBoardPlayerChange(this)"></select>
+        </div>
+
+        <div id="boardNewPlayerInline" style="display:none;gap:6px;margin:6px 0 0;">
+            <input id="boardNewNameInput" class="field-input" placeholder="လူသစ် နာမည်" onkeydown="if(event.key==='Enter')confirmInlinePlayer('board')" style="flex:1;" />
+            <button class="btn-save" onclick="confirmInlinePlayer('board')">✔ ထည့်</button>
+            <button class="btn-back" onclick="cancelInlinePlayer('board')">✕</button>
         </div>
 
         <div class="board-textarea-wrap">
@@ -406,7 +418,7 @@ window.addEventListener('load', () => {
         </div>
         <div class="settings-row">
             <span>App Version</span>
-            <b>TEST6</b>
+            <b>TEST7</b>
         </div>
         <button class="btn-danger-outline" onclick="syncNowManual()">🔄 အခု Sync လုပ်မည်</button>
         <button class="btn-danger-outline" onclick="disconnectAgent()">🚪 ထွက်မည် (unlink)</button>
@@ -415,7 +427,7 @@ window.addEventListener('load', () => {
     </div>
 </div>
 
-<script type="module" src="app.js?v=t7"></script>
+<script type="module" src="app.js?v=t8"></script>
 
 <!-- Floating scroll-to-top button -->
 <button id="scrollTopBtn" class="scroll-top" onclick="scrollToTop()" hidden aria-label="အပေါ်တက်">⬆️</button>
