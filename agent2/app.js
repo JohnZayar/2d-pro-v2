@@ -88,12 +88,15 @@ async function getAgentBlocked(sessionId) {
 // never silently pass. Callers handle the throw: savePendingBatch blocks the
 // save (fail-closed, the enforcement point); submitEntry/saveBoard only stage
 // pending entries, so they proceed and let the save gate enforce.
-async function isAgentSessionLocked(sessionId) {
-    const s = await direct.withRetry(() => direct.directGet('sessions', sessionId));
+// Pho Oct 29 speed (TEST15): session + wins in parallel (was sequential).
+async function isAgentSessionLocked(sessionId, sessP) {
+    const [s, wins] = await Promise.all([
+        sessP || direct.withRetry(() => direct.directGet('sessions', sessionId)),
+        _getWins(sessionId),
+    ]);
     if (!s) return { locked: false };
     // manually closed by bookie → locked
     if (s.closed) return { locked: true, reason: 'အချိန်ပြည့်လို့ပိတ်သွားပါပြီ' };
-    const wins = await _getWins(sessionId);
     if (wins && wins.length) return { locked: true, reason: 'ပေါက်ဂဏန်း ထည့်ပြီးပြီ' };
     if (s.date) {
         const isAM = (s.timeType || '') === 'မနက်ပိုင်း';
@@ -1059,14 +1062,14 @@ window.submitEntry = async function submitEntry() {
    15s timeout per chunk like _req. Lives here, NOT in shared/direct.js,
    so the live apps' pinned direct.js is untouched (agent2 imports shared
    files from the live tree). */
-async function createRecordsBatch(recs) {
+async function createRecordsBatch(recs, timeoutMs) {
     const token = pb.getToken();
     const base = pb.getBaseUrl();
     const out = [];
     for (let i = 0; i < recs.length; i += 50) {
         const chunk = recs.slice(i, i + 50);
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 15000);
+        const timeoutId = setTimeout(() => controller.abort(), timeoutMs || 15000);
         let res;
         try {
             res = await fetch(base + '/api/batch', {
@@ -1105,10 +1108,13 @@ window.savePendingBatch = async function savePendingBatch() {
     // and fail-closed outcome is identical; only the waiting shrinks.
     // (Old code let a disabled-check throw stick the guard; a failed
     // read now fails closed with the guard reset instead.)
+    // Pho Oct 29 speed (TEST15): one shared session fetch feeds both the
+    // session check and the lock check (was two identical session gets).
+    const sessP = direct.withRetry(() => direct.directGet('sessions', currentSessionId));
     const [disabledRes, sessRes, lockRes] = await Promise.all([
         checkAgentDisabled().then((v) => ({ ok: true, v })).catch((e) => ({ ok: false, e })),
-        direct.withRetry(() => direct.directGet('sessions', currentSessionId)).then((v) => ({ ok: true, v })).catch((e) => ({ ok: false, e })),
-        isAgentSessionLocked(currentSessionId).then((v) => ({ ok: true, v })).catch((e) => ({ ok: false, e })),
+        sessP.then((v) => ({ ok: true, v })).catch((e) => ({ ok: false, e })),
+        isAgentSessionLocked(currentSessionId, sessP).then((v) => ({ ok: true, v })).catch((e) => ({ ok: false, e })),
     ]);
     if (!disabledRes.ok) { saveInFlight = false; showToast('❌ ဆာဗာ ဆက်မရပါ: ' + disabledRes.e.message); return; }
     if (disabledRes.v) { saveInFlight = false; return; }
@@ -1189,7 +1195,9 @@ window.savePendingBatch = async function savePendingBatch() {
         // proven chunked path — client ids make it duplicate-safe.
         let batchOk = false;
         try {
-            const batchIds = await direct.withRetry(() => createRecordsBatch(recs));
+            // Pho Oct 29 speed (TEST15): one batch attempt, 8s timeout,
+            // no retries — any throw falls back to chunks immediately.
+            const batchIds = await createRecordsBatch(recs, 8000);
             batchIds.forEach((id) => createdIds.push(id));
             batchOk = true;
         } catch (be) {
