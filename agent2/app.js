@@ -918,6 +918,7 @@ async function refreshEntryScreen() {
     }
 
     await renderEntryTable();
+    renderPlayerPanel('entry');
 }
 
 window.onEntrySessionChange = function onEntrySessionChange(sel) {
@@ -1069,39 +1070,52 @@ window.savePendingBatch = async function savePendingBatch() {
     // Pho Oct 18: set the guard SYNCHRONOUSLY before any await —
     // two rapid taps must not both pass.
     saveInFlight = true;
-    if (await checkAgentDisabled()) { saveInFlight = false; return; }
+    // Pho Oct 29 speed: the four pre-flight reads are independent — run
+    // them together instead of one-by-one. Decisions are evaluated in the
+    // OLD order (disabled -> session -> lock -> limits) so every toast
+    // and fail-closed outcome is identical; only the waiting shrinks.
+    // (Old code let a disabled-check throw stick the guard; a failed
+    // read now fails closed with the guard reset instead.)
+    const [disabledRes, sessRes, lockRes, limitRes] = await Promise.all([
+        checkAgentDisabled().then((v) => ({ ok: true, v })).catch((e) => ({ ok: false, e })),
+        direct.withRetry(() => direct.directGet('sessions', currentSessionId)).then((v) => ({ ok: true, v })).catch((e) => ({ ok: false, e })),
+        isAgentSessionLocked(currentSessionId).then((v) => ({ ok: true, v })).catch((e) => ({ ok: false, e })),
+        checkAgentLimits().then((v) => ({ ok: true, v })).catch((e) => ({ ok: false, e })),
+    ]);
+    if (!disabledRes.ok) { saveInFlight = false; showToast('❌ ဆာဗာ ဆက်မရပါ: ' + disabledRes.e.message); return; }
+    if (disabledRes.v) { saveInFlight = false; return; }
     if (!pendingEntries.length) { saveInFlight = false; showToast('စာရင်း မရှိသေးပါ'); return; }
     // Block if any pending entry has no player name
     if (pendingEntries.some((e) => !(e.player_name || '').trim() || e.player_name === '__new__')) { saveInFlight = false; showToast('❌ အမည် မပါ တဲ့ စာရင်း ရှိ — ဖျက် ပြီး ပြန် ထည့်'); return; }
     if (!currentSessionId) { saveInFlight = false; showToast('⚠️ Session မရှိသေးပါ'); return; }
-    // Pho Oct 19 Option B: Verify session actually exists on the server (not just ID truthy).
-    // Prevents blank/invalid session 400 errors.
-    // A throw here must never leave saveInFlight stuck — every failure path resets it.
+    // Session result from the parallel pre-flights above (Pho Oct 19
+    // Option B semantics kept: 404 = genuinely missing, other errors fail
+    // closed). A throw here must never leave saveInFlight stuck.
     let sessCheck = null;
-    try {
-        sessCheck = await direct.withRetry(() => direct.directGet('sessions', currentSessionId));
-    } catch (e) {
-        if (e && (e.code === 404 || /not found/i.test(e.message || ''))) {
+    if (!sessRes.ok) {
+        const se = sessRes.e;
+        if (se && (se.code === 404 || /not found/i.test(se.message || ''))) {
             sessCheck = null; // genuinely missing → the !sessCheck path below
         } else {
-            console.error('[agent] savePendingBatch session check failed', e);
+            console.error('[agent] savePendingBatch session check failed', se);
             saveInFlight = false;
-            showToast('❌ ဆာဗာ ဆက်မရပါ: ' + e.message);
+            showToast('❌ ဆာဗာ ဆက်မရပါ: ' + se.message);
             return;
         }
+    } else {
+        sessCheck = sessRes.v;
     }
     if (!sessCheck) { saveInFlight = false; showToast('⚠️ Session မတွေ့ပါ — ပြန်ရွေးပါ'); currentSessionId = null; localStorage.removeItem(LS_SESSION); await refreshSession(); return; }
-    let lkS, limitErr;
-    try {
-        lkS = await isAgentSessionLocked(currentSessionId);
-        // Hot-number limits (cumulative per session; formula-derived excluded)
-        limitErr = await checkAgentLimits();
-    } catch (e) {
-        console.error('[agent] savePendingBatch pre-flight failed', e);
+    if (!lockRes.ok || !limitRes.ok) {
+        const le = lockRes.e || limitRes.e;
+        console.error('[agent] savePendingBatch pre-flight failed', le);
         saveInFlight = false;
-        showToast('❌ ဆာဗာ ဆက်မရပါ: ' + e.message);
+        showToast('❌ ဆာဗာ ဆက်မရပါ: ' + le.message);
         return;
     }
+    const lkS = lockRes.v;
+    // Hot-number limits (cumulative per session; formula-derived excluded)
+    const limitErr = limitRes.v;
     if (lkS.locked) { saveInFlight = false; showToast('🔒 ' + lkS.reason + ' — သိမ်း မရပါ'); return; }
     if (limitErr) { saveInFlight = false; showToast('❌ ' + limitErr); return; }
 
@@ -1115,15 +1129,18 @@ window.savePendingBatch = async function savePendingBatch() {
             if (!byPlayer[k]) { byPlayer[k] = []; order.push(k); }
             byPlayer[k].push(e);
         });
+        // Pho Oct 29 speed: batch numbers are independent per player —
+        // fetch together. Records are built once (same fields, same ids)
+        // then created in chunks of 5 instead of one-by-one: same rows,
+        // same batch numbers, same rollback set — only the wait shrinks.
         const batchNos = {};
-        for (const k of order) batchNos[k] = await getNextBatchNo(k || null);
-
-        let count = 0;
+        const bns = await Promise.all(order.map((k) => getNextBatchNo(k || null)));
+        order.forEach((k, i) => { batchNos[k] = bns[i]; });
+        const recs = [];
         for (const k of order) {
             for (const e of byPlayer[k]) {
-                const recId = uid();
-                await direct.withRetry(() => direct.directCreate('lottery_records', {
-                    id: recId,
+                recs.push({
+                    id: uid(),
                     tenant: tenantId,
                     session: currentSessionId,
                     number: e.number,
@@ -1135,9 +1152,18 @@ window.savePendingBatch = async function savePendingBatch() {
                     fromFormula: !!e.fromFormula,
                     formula_text: e.formula_text || '',
                     created: Date.now()
-                }));
-                createdIds.push(recId);
-                count++;
+                });
+            }
+        }
+        for (let i = 0; i < recs.length; i += 5) {
+            const chunk = recs.slice(i, i + 5);
+            const results = await Promise.all(chunk.map((rec) =>
+                direct.withRetry(() => direct.directCreate('lottery_records', rec))
+                    .then(() => ({ ok: true, id: rec.id }))
+                    .catch((e) => ({ ok: false, e }))));
+            for (const r of results) {
+                if (r.ok) createdIds.push(r.id);
+                else throw r.e;
             }
         }
         pendingEntries = [];
@@ -1148,9 +1174,8 @@ window.savePendingBatch = async function savePendingBatch() {
         console.error('[agent] savePendingBatch failed', e);
         // Roll back this attempt's rows best-effort so a retry never
         // duplicates them; pending is kept for the retry.
-        for (const rid of createdIds) {
-            await direct.withRetry(() => direct.directDelete('lottery_records', rid)).catch(() => { /* best-effort */ });
-        }
+        await Promise.all(createdIds.map((rid) =>
+            direct.withRetry(() => direct.directDelete('lottery_records', rid)).catch(() => { /* best-effort */ })));
         showToast('❌ သိမ်းမရပါ: ' + e.message);
     } finally {
         saveInFlight = false;
@@ -1616,6 +1641,11 @@ window.openBoard = function openBoard() {
         return;
     }
     populateBoardPlayer();
+    const bp = $('boardPlayerPanel');
+    if (bp) bp.style.display = 'none';
+    _inlineShow('board', false);
+    const bni = $('boardNewNameInput');
+    if (bni) bni.value = '';
     $('boardModal').hidden = false;
     $('boardPreview').hidden = true;
     const ta = $('boardTextarea');
@@ -1629,6 +1659,7 @@ async function populateBoardPlayer() {
     sel.innerHTML = players.map((p) => '<option value="' + escHtml(p.name) + '">' + escHtml(p.name) + '</option>').join('') +
         '<option value="__new__">+ လူသစ်…</option>';
     sel.value = players.length ? players[0].name : '';
+    renderPlayerPanel('board');
 }
 
 
@@ -1677,6 +1708,7 @@ window.cancelInlinePlayer = function cancelInlinePlayer(which) {
     if (inp) inp.value = '';
     const sel = $(selId);
     if (sel) sel.value = _inlinePrev[which] || '';
+    renderPlayerPanel(which);
 };
 
 window.confirmInlinePlayer = async function confirmInlinePlayer(which) {
@@ -1704,6 +1736,76 @@ window.confirmInlinePlayer = async function confirmInlinePlayer(which) {
     if (inp) inp.value = '';
     showToast(existing ? '✅ ရှိပြီးသား လူကို ရွေးပြီးပြီ' : '✅ လူ ထည့်ပြီးပြီ');
 };
+
+
+/* ============ PC-STYLE DROPDOWN PANELS (Pho Oct 29, TEST8) ============
+   The betting person fields are custom drop-down panels (PC style): tap
+   the field -> the list drops directly UNDER it (in-flow, scrollable)
+   with a "+ လူသစ်…" row on top — not the phone's centered
+   native-select popup. The hidden native <select> stays the single
+   source of truth: every existing reader (submitEntry, savePendingBatch
+   guards, refreshEntryScreen, populateBoardPlayer) keeps working
+   untouched. Panel rows only set the select's value and call the
+   existing onEntry/onBoardPlayerChange handler. */
+function _panelSel(which) { return $(which === 'board' ? 'boardPlayer' : 'entryPlayerSelect'); }
+function _panelField(which) { return $(which === 'board' ? 'boardPlayerField' : 'entryPlayerField'); }
+function _panelEl(which) { return $(which === 'board' ? 'boardPlayerPanel' : 'entryPlayerPanel'); }
+
+function renderPlayerPanel(which) {
+    const sel = _panelSel(which);
+    const field = _panelField(which);
+    const panel = _panelEl(which);
+    if (!sel || !field || !panel) return;
+    const cur = sel.value || '';
+    const curOpt = Array.from(sel.options).find((o) => o.value === cur);
+    field.textContent = ((curOpt && curOpt.value !== '__new__' ? curOpt.textContent : '') || '-- ထိုးသား ရွေးပါ --') + ' \u25be';
+    let html = '<div onclick="pickPanelNew(\'' + which + '\')" style="padding:10px 12px;border-bottom:1px solid #334155;cursor:pointer;font-weight:bold;color:#7dd3fc;">+ \u101c\u1030\u101e\u1005\u103a\u2026</div>';
+    Array.from(sel.options).forEach((o, idx) => {
+        if (!o.value || o.value === '__new__') return;
+        const hl = o.value === cur ? 'background:#1e3a5f;font-weight:bold;' : '';
+        html += '<div onclick="pickPanelPlayer(\'' + which + '\',' + idx + ')" style="padding:10px 12px;border-bottom:1px solid #1e293b;cursor:pointer;' + hl + '">' + escHtml(o.textContent) + '</div>';
+    });
+    panel.innerHTML = html;
+}
+
+function togglePlayerPanel(which) {
+    const panel = _panelEl(which);
+    if (!panel) return;
+    if (panel.style.display === 'block') { panel.style.display = 'none'; return; }
+    renderPlayerPanel(which);
+    panel.style.display = 'block';
+}
+window.toggleEntryPlayerPanel = function toggleEntryPlayerPanel() { togglePlayerPanel('entry'); };
+window.toggleBoardPlayerPanel = function toggleBoardPlayerPanel() { togglePlayerPanel('board'); };
+
+window.pickPanelPlayer = function pickPanelPlayer(which, idx) {
+    const sel = _panelSel(which);
+    if (!sel || !sel.options[idx]) return;
+    sel.value = sel.options[idx].value;
+    if (which === 'board') onBoardPlayerChange(sel); else onEntryPlayerChange(sel);
+    _panelEl(which).style.display = 'none';
+    renderPlayerPanel(which);
+};
+
+window.pickPanelNew = function pickPanelNew(which) {
+    const sel = _panelSel(which);
+    if (!sel) return;
+    sel.value = '__new__';
+    if (which === 'board') onBoardPlayerChange(sel); else onEntryPlayerChange(sel);
+    _panelEl(which).style.display = 'none';
+};
+
+document.addEventListener('click', (ev) => {
+    const t = ev.target;
+    if (!t || !t.closest) return;
+    ['entry', 'board'].forEach((which) => {
+        const panel = _panelEl(which);
+        const field = _panelField(which);
+        if (panel && panel.style.display === 'block' && !panel.contains(t) && field && !field.contains(t)) {
+            panel.style.display = 'none';
+        }
+    });
+});
 
 window.closeBoard = function closeBoard() {
     $('boardModal').hidden = true;
