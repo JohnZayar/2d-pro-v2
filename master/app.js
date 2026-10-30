@@ -5,7 +5,7 @@
  */
 import * as pb from '../shared/pb.js?v=4';
 import * as direct from '../shared/direct.js?v=1';
-import { parseBoard, parseBoardReport, parseLine } from '../shared/parser.js?v=19';
+import { parseBoard, parseBoardReport, parseLine } from '../shared/parser.js?v=20';
 import {
     formatMoney, formatDateStr, getWeekMondayStr, remainingDigits,
     uid, showToast, escHtml, extractDigits, agentEmailFor, agentPasswordFor,
