@@ -14,7 +14,7 @@
 
 import * as pb from '../shared/pb.js?v=4';
 import * as direct from '../shared/direct.js?v=1';
-import { parseBoardReport, parseLine } from '../shared/parser.js?v=19';
+import { parseBoardReport, parseLine } from '../shared/parser.js?v=20';
 
 // Global safety net: log unhandled promise rejections instead of failing silently.
 if (typeof window !== 'undefined') {
