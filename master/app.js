@@ -91,6 +91,13 @@ async function init() {
                 showPage('page-login');
                 return;
             }
+            if (state.user.trialUntil && Date.now() > state.user.trialUntil) {
+                await pb.logout();
+                localStorage.removeItem('v2_saved_email');
+                localStorage.removeItem('v2_saved_pass');
+                showPage('page-login');
+                return;
+            }
             localStorage.setItem('v2_last_user_id', state.user.id);
             await enterApp();
             return;
@@ -176,6 +183,12 @@ async function doLogin() {
         if (state.user.disabled) {
             await pb.logout();
             $('loginError').textContent = 'အကောင့် ပိတ်ထားပါတယ် — admin ကို ဆက်သွယ်ပါ';
+            return;
+        }
+        // Trial (Pho Nov 2): expired trial accounts close like disabled ones.
+        if (state.user.trialUntil && Date.now() > state.user.trialUntil) {
+            await pb.logout();
+            $('loginError').textContent = 'အစမ်းရက်ပြည့်ပြီ';
             return;
         }
         // If different user from last session, clear local DB to prevent data leakage
@@ -291,6 +304,27 @@ async function createBuyerAccount() {
     }
 }
 
+/* Trial (Pho Nov 2): set a 7-day trial, or convert to paid by clearing trialUntil. */
+window.setBuyerTrial = async function setBuyerTrial(userId) {
+    if (!confirm('ဒီ buyer ကို စမ်း ၇ ရက် ပေးမလား?')) return;
+    try { await pb.update('users', userId, { trialUntil: Date.now() + 7 * 86400000 }); renderBuyerList(); }
+    catch (e) { showToast('❌ ' + (e.message || 'error')); }
+}
+window.clearBuyerTrial = async function clearBuyerTrial(userId) {
+    if (!confirm('ဒီ buyer ကို paid ဖြစ်အောင် ပြောင်းမလား? (စမ်း အကန့် ဖြုတ်မယ်)')) return;
+    try { await pb.update('users', userId, { trialUntil: null }); renderBuyerList(); }
+    catch (e) { showToast('❌ ' + (e.message || 'error')); }
+}
+/* Trial banner (Pho Nov 2): in-app reminder while 2 or fewer days remain. */
+function renderTrialBanner2d() {
+    const el = $('trialBanner2d'); if (!el) return;
+    const tu = state.user && state.user.trialUntil;
+    if (!tu) { el.style.display = 'none'; el.textContent = ''; return; }
+    const dl = Math.ceil((tu - Date.now()) / 86400000);
+    if (dl > 2) { el.style.display = 'none'; el.textContent = ''; return; }
+    el.style.display = '';
+    el.textContent = dl > 0 ? ('စမ်း ' + dl + ' ရက် ကျန်တယ် — ဝယ်ဖို့ ဆက်သွယ်ပါ') : 'အစမ်းရက်ပြည့်ပြီ';
+}
 async function renderBuyerList() {
     const box = $('buyerList');
     if (!box) return;
@@ -321,18 +355,45 @@ async function renderBuyerList() {
                 limitMap[tid] = parseInt(r.value, 10) || 5;
             }
         } catch (e) { /* ignore */ }
+        // Trial auto-close (Pho Nov 2): disable expired trial buyers
+        // (+ their agents, same cascade as toggleBuyerDisabled) whenever
+        // the seller lists buyers. Paid rows (no trialUntil) untouched;
+        // already-disabled rows never re-patched. Local objects updated
+        // so the rendered table shows ပိတ် immediately.
+        for (const b of buyers) {
+            if (b.trialUntil && !b.disabled && b.trialUntil < Date.now()) {
+                try {
+                    await pb.update('users', b.id, { disabled: true });
+                    b.disabled = true;
+                    const tid = typeof b.tenant === 'string' ? b.tenant : (b.tenant && b.tenant.id);
+                    if (tid) {
+                        for (let n = 1; n <= 5; n++) {
+                            try {
+                                const agentEmail = agentEmailForNum(tid, n);
+                                const agents = await pb.list('users', { filter: `email="${agentEmail}"`, perPage: 1 });
+                                const agent = (agents.items || agents)[0];
+                                if (agent) await pb.update('users', agent.id, { disabled: true });
+                            } catch (e) { /* agent n may not exist */ }
+                        }
+                    }
+                } catch (e) { /* backstop must never block the list */ }
+            }
+        }
         let html = '<div style="overflow-x:auto"><table class="v-table"><thead><tr><th>Email</th><th>ဆိုင်</th><th>Agent</th><th>အခြေအနေ</th><th></th></tr></thead><tbody>';
         for (const b of buyers) {
             const disabled = !!b.disabled;
             const tenantId = typeof b.tenant === 'string' ? b.tenant : (b.tenant && b.tenant.id);
             const limit = limitMap[tenantId] || 5;
+            const tu = b.trialUntil;
+            let trialTxt = '';
+            if (tu) { const dl = Math.ceil((tu - Date.now()) / 86400000); trialTxt = dl > 0 ? ('စမ်း ' + dl + ' ရက် ကျန်') : 'စမ်း ရက်ပြည့်'; }
             html += '<tr>' +
                 '<td>' + escHtml(b.email) + '</td>' +
                 '<td>' + escHtml(b.name || '') + '</td>' +
                 '<td><button class="btn small gray" onclick="editAgentLimit(\'' + (tenantId || '') + '\',' + limit + ')">' + limit + ' ✏️</button></td>' +
-                '<td>' + (disabled ? '<span style="color:#ef4444">🔴 ပိတ်</span>' : '<span style="color:#4ade80">🟢 ဖွင့်</span>') + '</td>' +
+                '<td>' + (disabled ? '<span style="color:#ef4444">🔴 ပိတ်</span>' : '<span style="color:#4ade80">🟢 ဖွင့်</span>') + (trialTxt ? '<br><span>' + trialTxt + '</span>' : '') + '</td>' +
                 '<td style="white-space:nowrap"><button class="btn small ' + (disabled ? 'gray' : 'red') + '" style="padding:4px 8px;font-size:12px" onclick="toggleBuyerDisabled(\'' + b.id + '\',' + (!disabled) + ')">' + (disabled ? 'ဖွင့်' : 'ပိတ်') + '</button>' +
-                '<button class="btn small" style="padding:4px 8px;font-size:12px;background:#374151;color:#fca5a5;border:1px solid #4b5563;margin-left:4px" onclick="deleteBuyerAccount(\'' + b.id + '\',\'' + escHtml(b.email).replace(/'/g, "\\'") + '\')">🗑️</button></td>' +
+                '<button class="btn small" style="padding:4px 8px;font-size:12px;background:#374151;color:#fca5a5;border:1px solid #4b5563;margin-left:4px" onclick="deleteBuyerAccount(\'' + b.id + '\',\'' + escHtml(b.email).replace(/'/g, "\\'") + '\')">🗑️</button><button class="btn small gray" style="padding:4px 8px;font-size:12px;margin-left:4px" onclick="setBuyerTrial(\'' + b.id + '\')">စမ်း ၇ ရက်</button>' + (tu ? '<button class="btn small gray" style="padding:4px 8px;font-size:12px;margin-left:4px" onclick="clearBuyerTrial(\'' + b.id + '\')">paid ဖြစ်</button>' : '') + '</td>' +
                 '</tr>';
         }
         html += '</tbody></table></div>';
@@ -464,6 +525,7 @@ async function enterApp() {
     renderAgents();
     if (state.activeSessionId) renderLedger();
     updateSyncPill();
+    renderTrialBanner2d();
     // Background maintenance (not awaited): old-record/winnings cleanup
     // (>2 weeks / >10 weeks, same rules as before) + date backfill so history
     // views survive session deletion. Failures only warn; next boot retries.
