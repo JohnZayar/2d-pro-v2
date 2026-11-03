@@ -41,6 +41,8 @@
  * Nov 3 2026 (v22): ORDER ONLY - nakhat, Thai-power and Thai-nakhat lists
  * reordered to pairs-adjacent (base, reverse, base, reverse...); sets, counts
  * and totals unchanged.
+ *
+ * Nov 3 2026 (v23): dot-before-R tolerance - see parseLine note below.
  * Use as ES6 module:  import { parseBoard } from './parser.js'
  */
 
@@ -458,6 +460,15 @@ export function parseLine(line) {
     // Do this BEFORE _normR converts ရ → r
     let preLine = convertMyanmarNumbers(cleanLine).replace(/ရ(?=\s*ခွေ|ခွေ|ပူး|ပါ|ပတ်|ထိပ်|နောက်|နက္ခတ်|စုံ)/g, '');
     let convertedLine = _normR(preLine);
+    // Pho Nov 3 (v23): dot-before-R tolerance - a dot/space run between a
+    // number and a following R/r marker (and between the marker and its
+    // amount) is ignored, so '45. R. 500' parses exactly like '45R500'
+    // (45 + reverse @500). Dot-list separators are untouched: the first
+    // pattern requires a marker after the dots, the second a digit after
+    // the marker, and both require an amount digit to follow the marker.
+    convertedLine = convertedLine
+        .replace(/(\d)[\s.]+r(?=[\s.]*\d)/gi, '$1r')
+        .replace(/r[\s.]+(\d)/gi, 'r$1');
     // Pho Oct 27 (v17): "/" separates entries/groups — split FIRST, then parse
     // each part on its own ("3-8-bk-2500/1@1000" → 20 @2500 + 1ပါ 19 @1000;
     // "48@6000/17-18@2500" → 48,84 @6000 + 17,71,18,81 @2500).
