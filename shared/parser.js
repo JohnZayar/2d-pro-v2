@@ -432,8 +432,18 @@ export function parseLine(line) {
     // Handle combined formulas: "5ထိပ်400နောက်100" → parse each part separately
     const cParts = splitCombinedFormula(cleanLine);
     if (cParts.length > 1) {
+        // Batch fix (Nov 3, FIX A, combined path): same inheritance as the
+        // "/" branch — a part without its own amount inherits the line's
+        // trailing amount. (Lines with 2+ keywords are split here and never
+        // reach the "/" branch, so this is required for the reported case.)
+        // Parts that already have amounts are never touched.
+        const lineAmtM = convertMyanmarNumbers(cleanLine).match(/(\d+)\s*$/);
+        const lineAmt = lineAmtM ? parseInt(lineAmtM[1], 10) : 0;
         for (const part of cParts) {
             const sub = parseLine(part);
+            if (lineAmt > 0) {
+                sub.forEach((it) => { if (Number(it.amount) === 0) it.amount = lineAmt; });
+            }
             results.push(...sub);
         }
         return results;
@@ -479,6 +489,15 @@ export function parseLine(line) {
                         pp = pp + '-' + (inheritKw ? inheritKw + '-' : '') + inheritAmt;
                     }
                     const sub = parseLine(pp);
+                    // Batch fix (Nov 3, FIX A): a slash-separated group WITHOUT
+                    // its own amount inherits the line's amount (the last
+                    // part's trailing amount). Previously such a group silently
+                    // kept amount 0 while the line stayed green. Non-zero
+                    // items are never touched.
+                    if (inheritAmt && parseInt(inheritAmt, 10) > 0) {
+                        const lineAmt = parseInt(inheritAmt, 10);
+                        sub.forEach((it) => { if (Number(it.amount) === 0) it.amount = lineAmt; });
+                    }
                     results.push(...sub);
                 }
                 return results;
@@ -499,7 +518,13 @@ export function parseLine(line) {
             results.push({ number: numStr, amount: mainAmt });
             if (numStr.length === 2) {
                 const revNum = numStr[1] + numStr[0];
-                if (revNum !== numStr) results.push({ number: revNum, amount: rAmt });
+                // Batch fix (Nov 3, FIX B): do not re-add a reverse that is
+                // already in the expansion itself when main and reverse share
+                // one amount (the @ case). A bare-digit list expands to
+                // contains-sets that already hold both orders, so re-adding
+                // the reverse doubled every number. Different-amount reverses
+                // (e.g. "=500r200" splits) are preserved as before.
+                if (revNum !== numStr && !(mainAmt === rAmt && nums.includes(revNum))) results.push({ number: revNum, amount: rAmt });
             }
         });
     };
