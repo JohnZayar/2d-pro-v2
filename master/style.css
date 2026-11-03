@@ -179,6 +179,8 @@ main { flex: 1; padding: 14px 12px 40px; }
 .session-card .smeta { color: var(--muted); font-size: 12px; margin-bottom: 10px; }
 .btn-grid { display: flex; flex-wrap: wrap; gap: 8px; }
 .btn-grid .btn { flex: 1 1 30%; min-width: 90px; }
+/* Board modal buttons: compact (small) - scoped to #modal-board only, base .btn untouched */
+#modal-board .btn-grid .btn { padding: 8px 6px; font-size: 13px; }
 
 /* ---------- Session action grid: uniform 3-col boxes ---------- */
 .session-card .btn-grid {
