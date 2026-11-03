@@ -5,7 +5,7 @@
  */
 import * as pb from '../shared/pb.js?v=4';
 import * as direct from '../shared/direct.js?v=1';
-import { parseBoard, parseBoardReport, parseLine } from '../shared/parser.js?v=21';
+import { parseBoard, parseBoardReport, parseLine } from '../shared/parser.js?v=22';
 import {
     formatMoney, formatDateStr, getWeekMondayStr, remainingDigits,
     uid, showToast, escHtml, extractDigits, agentEmailFor, agentPasswordFor,
@@ -3222,12 +3222,52 @@ function fillSessionSelect(sel, selectedId) {
 }
 
 /** Voucher formula-group expansion row (စာရင်းဖြေ): the group's numbers, hidden until the formula row is tapped. */
+/** Voucher group order (Pho Nov 3): sort a formula group's records by their
+ *  position in the parser expansion of the group's formula text, so the
+ *  voucher shows numbers in pair order (05, 50, 16, 61, ...) instead of
+ *  server-created order. Duplicates are kept: the k-th occurrence of a
+ *  (number, amount) maps to the k-th expansion slot. Records with no
+ *  expansion match (legacy/edited data) stay last in original order.
+ *  Never drops or merges records. */
+function sortVoucherGroup(records, formulaText) {
+    const ft = (formulaText || '').trim();
+    if (!ft || !records || records.length < 2) return records ? records.slice() : [];
+    let expansion = [];
+    try { expansion = parseBoard(ft) || []; } catch (e) { expansion = []; }
+    if (!expansion.length) return records.slice();
+    const slots = new Map();
+    expansion.forEach((e, i) => {
+        const key = String(e.number).padStart(2, '0') + '|' + Number(e.amount);
+        if (!slots.has(key)) slots.set(key, []);
+        slots.get(key).push(i);
+    });
+    const seen = new Map();
+    const decorated = records.map((r, origIdx) => {
+        const key = String(r.number).padStart(2, '0') + '|' + Number(r.amount);
+        const q = slots.get(key);
+        let idx;
+        if (!q) {
+            idx = Infinity;
+        } else {
+            const n = seen.get(key) || 0;
+            seen.set(key, n + 1);
+            idx = n < q.length ? q[n] : Infinity;
+        }
+        return { r, idx, origIdx };
+    });
+    decorated.sort((a, b) => {
+        if (a.idx !== b.idx) return a.idx < b.idx ? -1 : 1;
+        return a.origIdx - b.origIdx;
+    });
+    return decorated.map((d) => d.r);
+}
+
 function voucherExpandRow(grp, winNums) {
-    const chips = grp.map((r) => {
+    const lines = grp.map((r) => {
         const ns = String(r.number).padStart(2, '0');
-        return '<span class="vx-chip' + (winNums.has(ns) ? ' win' : '') + '">' + ns + ' · ' + formatMoney(r.amount) + '</span>';
+        return '<span class="vx-chip' + (winNums.has(ns) ? ' win' : '') + '" style="display:block">' + ns + ' · ' + formatMoney(r.amount) + '</span>';
     }).join('');
-    return '<tr class="vx-row" hidden><td colspan="2"><div class="vx-grid">' + chips + '</div></td></tr>';
+    return '<tr class="vx-row" hidden><td colspan="2" style="padding-bottom:12px"><div class="vx-grid" style="display:block">' + lines + '</div></td></tr>';
 }
 
 async function renderVouchers() {
@@ -3351,7 +3391,7 @@ async function renderVoucherContent() {
                 byFormula[key].push(r);
             });
             const rowsHtml = formulaOrder.map((key) => {
-                const grp = byFormula[key];
+                const grp = sortVoucherGroup(byFormula[key], (byFormula[key][0].formula_text || '').trim());
                 if (grp.length > 1) {
                     // Compact: formula text + (count) total
                     const ft = (grp[0].formula_text || '').trim();
