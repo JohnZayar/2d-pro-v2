@@ -209,7 +209,7 @@ button { font-family: inherit; }
 .board-preview .bline .tx { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; overflow-wrap: anywhere; }
 .board-btns { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
 .board-btns button {
-    padding: 14px 4px; border-radius: 10px; font-weight: 700; font-size: 15px;
+    padding: 8px 4px; border-radius: 10px; font-weight: 700; font-size: 13px;
     cursor: pointer; border: none; text-align: center;
 }
 .board-btns button:active { transform: scale(.97); }
