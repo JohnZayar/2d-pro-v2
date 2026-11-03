@@ -22,6 +22,7 @@ html, body {
     color: var(--text);
     font-family: -apple-system, "Segoe UI", Roboto, "Noto Sans Myanmar", sans-serif;
     min-height: 100vh;
+    overflow-x: clip;
     -webkit-tap-highlight-color: transparent;
 }
 
@@ -204,7 +205,8 @@ button { font-family: inherit; }
 .board-preview .bline.ok .mk { color: #4a7c59; }
 .board-preview .bline.bad .mk { color: #a33b3b; }
 .board-preview .bline.bad .tx { color: #a33b3b; }
-.board-preview .bline .tx { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Nov 3 layout: flex .tx must not widen the page - min-width: 0 lets the ellipsis truncate long dot-strings instead of pushing the fixed keypad off-screen. */
+.board-preview .bline .tx { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; overflow-wrap: anywhere; }
 .board-btns { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
 .board-btns button {
     padding: 14px 4px; border-radius: 10px; font-weight: 700; font-size: 15px;
