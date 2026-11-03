@@ -127,7 +127,6 @@ function bindUI() {
         } catch (e) { showBoardPasteHint(); }
     });
     $('boardText').addEventListener('input', () => { hideBoardPasteHint(); renderBoardLineCheck(); });
-    $('boardBack').addEventListener('click', () => closeModal('modal-board'));
     $('boardSave').addEventListener('click', saveBoard);
     on('boardClearAll', 'click', clearBoard);
     document.querySelectorAll('[data-close]').forEach((b) => {
