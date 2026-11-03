@@ -14,7 +14,7 @@
 
 import * as pb from '../shared/pb.js?v=4';
 import * as direct from '../shared/direct.js?v=1';
-import { parseBoard, parseBoardReport, parseLine } from '../shared/parser.js?v=22';
+import { parseBoard, parseBoardReport, parseLine } from '../shared/parser.js?v=23';
 
 // Global safety net: log unhandled promise rejections instead of failing silently.
 if (typeof window !== 'undefined') {
@@ -2136,6 +2136,22 @@ function dateKey(ts) {
     return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
 }
 
+// Session-date attribution (parity port Nov 3): a record belongs to its
+// SESSION's day, not its created day — evening entries into next
+// morning's session land on the session's day, matching Master/Offline.
+// A record whose session is missing falls back to its created day.
+function sessDateISO(s) {
+    if (!s || !s.date) return null;
+    const m = /^(\d{1,2})\.(\d{1,2})\.(\d{4})$/.exec(String(s.date).trim());
+    if (!m) return null;
+    return m[3] + '-' + m[2].padStart(2, '0') + '-' + m[1].padStart(2, '0');
+}
+function recordDateKey(r, sessById) {
+    const s = r && r.session ? sessById.get(r.session) : null;
+    const iso = s ? sessDateISO(s) : null;
+    return iso || dateKey(r.created);
+}
+
 function toISODate(d) {
     return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
 }
@@ -2166,7 +2182,8 @@ window.renderDaily = async function renderDaily() {
 
     // Populate person dropdown
     // Pho Oct 28 speed: dropdown players + all records are independent.
-    const [players, allRecs] = await Promise.all([getPlayers().catch(() => []), getAgentRecords()]);
+    const [players, allRecs, sessions] = await Promise.all([getPlayers().catch(() => []), getAgentRecords(), getAgentSessions().catch(() => [])]);
+    const sessById = new Map((sessions || []).map((s) => [s.id, s]));
     const prevVal = playerSel.value;
     let pHtml = '<option value="__all">-- အားလုံး --</option>';
     pHtml += players.map((p) => '<option value="' + escHtml(p.name) + '">' + escHtml(p.name) + '</option>').join('');
@@ -2175,7 +2192,7 @@ window.renderDaily = async function renderDaily() {
         playerSel.value = prevVal;
     }
 
-    let recs = allRecs.filter((r) => dateKey(r.created) === key);
+    let recs = allRecs.filter((r) => recordDateKey(r, sessById) === key);
     // Server-direct: a failed records read must not render as "no records".
     if (_agentRecordsFetchFailed) { showToast('❌ ဆာဗာ ဆက်မရပါ'); return; }
     const selPlayer = playerSel.value;
@@ -2250,20 +2267,24 @@ async function renderDailyTable(recs, dateKeyStr) {
         });
 
         html += '<div class="day-section"><div class="day-head"><span>📅 ' + escHtml(sName || dateKeyStr) + '</span></div>';
-        html += '<table class="v-table"><thead><tr><th>အမည်</th><th>တက်ငွေ</th><th>အပေါက်</th></tr></thead><tbody>';
+        html += '<table class="v-table"><thead><tr><th>အမည်</th><th>တက်ငွေ</th><th>အပေါက်</th><th>ကျန်</th></tr></thead><tbody>';
 
-        let sessBet = 0, sessWin = 0;
+        let sessBet = 0, sessWin = 0, sessNet = 0;
         for (const k of pOrder) {
             const pRecs = byPlayer[k];
+            const info = getInfo(k);
             const bet = pRecs.reduce((s, r) => s + (Number(r.amount) || 0), 0);
             const win = pRecs
                 .filter((r) => winNums.has(String(r.number).padStart(2, '0')))
                 .reduce((s, r) => s + (Number(r.amount) || 0), 0);
+            // ကျန် = bet×(1−commission%) − win×payout (Weekly netAmt logic)
+            const net = pRecs.reduce((s, r) => s + (Number(r.amount) || 0) * (1 - info.commission / 100), 0) - win * info.multiplier;
             sessBet += bet;
             sessWin += win;
-            html += '<tr><td>' + escHtml(playerLabel(k)) + '</td><td>' + formatMoney(bet) + '</td><td>' + formatMoney(win) + '</td></tr>';
+            sessNet += net;
+            html += '<tr><td>' + escHtml(playerLabel(k)) + '</td><td>' + formatMoney(bet) + '</td><td>' + formatMoney(win) + '</td><td style="color:' + (net >= 0 ? '#22c55e' : '#ef4444') + '">' + formatMoney(net) + '</td></tr>';
         }
-        html += '</tbody><tfoot><tr><td>Total</td><td>' + formatMoney(sessBet) + '</td><td>' + formatMoney(sessWin) + '</td></tr></tfoot></table>';
+        html += '</tbody><tfoot><tr><td>Total</td><td>' + formatMoney(sessBet) + '</td><td>' + formatMoney(sessWin) + '</td><td>' + formatMoney(sessNet) + '</td></tr></tfoot></table>';
         html += '</div>';
     }
     return html;
@@ -2410,7 +2431,8 @@ window.renderWeekly = async function renderWeekly() {
     label.textContent = formatDateStr(monday) + ' – ' + formatDateStr(sunday);
 
     // Pho Oct 28 speed: records + players are independent.
-    const [recs, players] = await Promise.all([getAgentRecords(), getPlayers().catch(() => [])]);
+    const [recs, players, sessions] = await Promise.all([getAgentRecords(), getPlayers().catch(() => []), getAgentSessions().catch(() => [])]);
+    const sessById = new Map((sessions || []).map((s) => [s.id, s]));
     // Server-direct: a failed records read must not render as "no records".
     if (_agentRecordsFetchFailed) { showToast('❌ ဆာဗာ ဆက်မရပါ'); return; }
     // Player info for commission/multiplier
@@ -2435,7 +2457,7 @@ window.renderWeekly = async function renderWeekly() {
     });
     const byDay = {};
     recs.forEach((r) => {
-        const k = dateKey(r.created);
+        const k = recordDateKey(r, sessById);
         (byDay[k] = byDay[k] || []).push(r);
     });
 
