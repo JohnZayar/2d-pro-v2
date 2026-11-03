@@ -37,6 +37,10 @@
  * EVEN digit both orders (10 lines, overlaps kept); digit + မကပ် = digit
  * paired with each ODD digit both orders (10 lines).
  *
+ *
+ * Nov 3 2026 (v22): ORDER ONLY - nakhat, Thai-power and Thai-nakhat lists
+ * reordered to pairs-adjacent (base, reverse, base, reverse...); sets, counts
+ * and totals unchanged.
  * Use as ES6 module:  import { parseBoard } from './parser.js'
  */
 
@@ -136,7 +140,7 @@ export function expandFormula(fullNoText) {
         // Pho Oct 29 22:25 CONFIRMED (supersedes 13:59 5-no-reverses):
         // Thai-power = 10: base 5 + reverses. Must precede the
         // generic ပါဝါ branch below (ထိုင်းပါဝါ contains ပါဝါ).
-        return ['13', '26', '47', '58', '90', '31', '62', '74', '85', '09'];
+        return ['13', '31', '26', '62', '47', '74', '58', '85', '90', '09'];
     } else if (cleanText.includes('ပါဝါ') || cleanText === 'ပါဝါ') {
         return ['05', '50', '16', '61', '27', '72', '38', '83', '49', '94'];
     } else if (cleanText.includes('ဘရိတ်') || cleanText.includes('ရိတ်') || /bk/i.test(cleanText) || cleanText.includes('ဘ')) {
@@ -258,9 +262,9 @@ export function expandFormula(fullNoText) {
     } else if (cleanText.includes('ထိုင်းနက္ခတ်')) {
         // Pho Oct 29 22:25 CONFIRMED (supersedes 13:59 5-no-reverses):
         // Thai-nakhat = 10: base 5 + reverses.
-        return ['19', '23', '48', '56', '70', '91', '32', '84', '65', '07'];
+        return ['19', '91', '23', '32', '48', '84', '56', '65', '70', '07'];
     } else if (cleanText.includes('နက္ခတ်')) {
-        return ['07', '18', '24', '53', '69', '70', '81', '42', '35', '96'];
+        return ['07', '70', '18', '81', '24', '42', '35', '53', '69', '96'];
     } else if (cleanText.includes('စုံစုံ')) {
         for (let i = 0; i <= 9; i += 2) for (let j = 0; j <= 9; j += 2) generatedNums.push(`${i}${j}`);
     } else if (cleanText.includes('မမ')) {
