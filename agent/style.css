@@ -824,3 +824,4 @@ tr.win-row td { background: rgba(250,204,21,.15); }
 .vx-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px 10px; font-size: 13px; font-weight: 400; letter-spacing: 0; }
 .vx-chip.win { color: #f5c542; font-weight: 700; }
 .v-table tr.vx-row td { background: rgba(127, 127, 127, 0.08); }
+.v-table tr.vx-row td { text-align: left; }
