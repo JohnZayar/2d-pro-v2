@@ -1503,7 +1503,7 @@ function sortVoucherGroup(records, formulaText) {
 function voucherExpandRow(grp, winNums) {
     const lines = grp.map((r) => {
         const ns = String(r.number).padStart(2, '0');
-        return '<span class="vx-chip' + (winNums.has(ns) ? ' win' : '') + '" style="display:block">' + ns + ' · ' + formatMoney(r.amount) + '</span>';
+        return '<span class="vx-chip' + (winNums.has(ns) ? ' win' : '') + '" style="display:block">' + ns + '&nbsp;&nbsp;&nbsp;&nbsp;-&nbsp;&nbsp;&nbsp;&nbsp;' + formatMoney(r.amount) + '</span>';
     }).join('');
     return '<tr class="vx-row" hidden><td colspan="2" style="padding-bottom:12px"><div class="vx-grid" style="display:block">' + lines + '</div></td></tr>';
 }
