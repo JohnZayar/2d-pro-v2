@@ -26,6 +26,7 @@ html, body {
     font-family: -apple-system, "Segoe UI", "Noto Sans Myanmar", "Myanmar3", Roboto, sans-serif;
     font-size: 15px;
     min-height: 100vh;
+    overflow-x: clip;
 }
 
 #app { max-width: 680px; margin: 0 auto; min-height: 100vh; display: flex; flex-direction: column; }
@@ -725,7 +726,8 @@ tr.win-row td { background: rgba(250,204,21,.15); }
 .board-check .bline.ok .mk { color: #4a7c59; }
 .board-check .bline.bad .mk { color: #a33b3b; }
 .board-check .bline.bad .tx { color: #a33b3b; }
-.board-check .bline .tx { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Nov 3 layout: flex .tx must not widen the page - min-width: 0 lets the ellipsis truncate long dot-strings instead of pushing the fixed keypad off-screen. */
+.board-check .bline .tx { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; overflow-wrap: anywhere; }
 
 /* ===== Reminder bar (session-close countdown + winning-number nudge) ===== */
 .reminder-bar {
