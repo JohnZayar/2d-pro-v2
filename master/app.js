@@ -5,7 +5,7 @@
  */
 import * as pb from '../shared/pb.js?v=4';
 import * as direct from '../shared/direct.js?v=1';
-import { parseBoard, parseBoardReport, parseLine } from '../shared/parser.js?v=22';
+import { parseBoard, parseBoardReport, parseLine } from '../shared/parser.js?v=23';
 import {
     formatMoney, formatDateStr, getWeekMondayStr, remainingDigits,
     uid, showToast, escHtml, extractDigits, agentEmailFor, agentPasswordFor,
@@ -2329,9 +2329,10 @@ function dailyAggFromRecords(recs, winNum) {
         const isAkan = r.record_type === 'akan';
         const pkey = voucherPersonKey(r) || '(အမည် မရှိ)';
         const key = (isAkan ? 'akan:' : 'pos:') + pkey;
-        if (!per[key]) { per[key] = { bet: 0, win: 0, winDeduct: 0, isAkan }; pLabel[key] = voucherPersonLabel(pkey); }
+        if (!per[key]) { per[key] = { bet: 0, win: 0, winDeduct: 0, isAkan, cnt: 0 }; pLabel[key] = voucherPersonLabel(pkey); }
         const amt = Number(r.amount) || 0;
         per[key].bet += isAkan ? -amt : amt;
+        per[key].cnt += 1; // each record = 1 ကွက် bet line (Pho Oct 26: Daily must show ကွက်)
         if (winNum && String(r.number).padStart(2, '0') === winNum) {
             per[key].win += amt;
             const ag0 = resolveAgentForBucket(pkey, pLabel[key]);
@@ -2350,7 +2351,7 @@ function dailyAggFromRecords(recs, winNum) {
         const nameHtml = v.isAkan
             ? `<span style="color:var(--red);font-weight:700">⬆️ ${escHtml(label)}</span>`
             : escHtml(label);
-        rows += `<tr><td>${nameHtml}</td><td>${formatMoney(v.bet)}</td><td>${formatMoney(v.win)}</td><td>${formatMoney(net)}</td></tr>`;
+        rows += `<tr><td>${nameHtml}</td><td style="text-align:center">${v.cnt}</td><td>${formatMoney(v.bet)}</td><td>${formatMoney(v.win)}</td><td>${formatMoney(net)}</td></tr>`;
     }
     return { rows, tBet, tWin, tNet, winNum };
 }
@@ -2432,8 +2433,8 @@ async function renderHomeDaily() {
         const agg = dailyAggFromRecords(sessRecs, winNum);
         gBet += agg.tBet; gWin += agg.tWin; gNet += agg.tNet;
         html += `<div style="font-weight:700;margin:10px 0 6px"><b>${title}</b> ${agg.winNum ? `· 🏆 <b style="color:var(--green)">${agg.winNum}</b>` : ''}</div>
-        <table class="data"><tr><th>ထိုးသား</th><th>ထိုးငွေ</th><th>ပေါက်</th><th>ကျန်</th></tr>
-        ${agg.rows || '<tr><td colspan="4" class="muted">မှတ်တမ်း မရှိ</td></tr>'}
+        <table class="data"><tr><th>ထိုးသား</th><th>ကွက်</th><th>ထိုးငွေ</th><th>ပေါက်</th><th>ကျန်</th></tr>
+        ${agg.rows || '<tr><td colspan="5" class="muted">မှတ်တမ်း မရှိ</td></tr>'}
         </table>`;
     }
 
