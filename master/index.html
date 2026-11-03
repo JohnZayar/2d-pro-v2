@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="theme-color" content="#0b0f17">
 <title>2D Master Pro v2</title>
-<link rel="stylesheet" href="style.css?v=12">
+<link rel="stylesheet" href="style.css?v=13">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon-192.png">
 <script>
@@ -163,7 +163,7 @@ window.addEventListener('load', () => {
                 <th style="width:30%;">ထိုးသား</th>
                 <th style="width:30%;">ဂဏန်း</th>
                 <th style="width:30%;">ပမာဏ</th>
-                <th style="width:10%;text-align:center;">🗑️</th>
+                <th style="width:10%;text-align:center;">×</th>
               </tr>
             </thead>
             <tbody id="entryTableBody">
@@ -297,7 +297,7 @@ window.addEventListener('load', () => {
                 <th style="width:30%;">ဒိုင် ⬆️</th>
                 <th style="width:30%;">ဂဏန်း</th>
                 <th style="width:30%;">ပမာဏ</th>
-                <th style="width:10%;text-align:center;">🗑️</th>
+                <th style="width:10%;text-align:center;">×</th>
               </tr>
             </thead>
             <tbody id="akanTableBody">
@@ -369,7 +369,7 @@ window.addEventListener('load', () => {
           <button id="nuclearWipeBtn" class="btn red block">🗑️ အကုန်ရှင်း (Server + App)</button>
           <div class="small muted" style="margin-top:6px">Server + ဖုန်း ၂ ခုလုံး အကုန် ဖျက် — ပြန်မရဘူး</div>
         </div>
-        <div class="small muted" style="text-align:center;margin-top:8px"><b>v220</b></div>
+        <div class="small muted" style="text-align:center;margin-top:8px"><b>v221</b></div>
       </section>
     </main>
   </div>
@@ -401,6 +401,7 @@ window.addEventListener('load', () => {
       <div class="field"><textarea id="boardText" placeholder="ဥပမာ:&#10;12=500&#10;6ထိပ်7000&#10;34567ခွေ"></textarea></div>
       <div id="boardLineCheck" class="board-check" style="display:none"></div>
       <div class="btn-grid">
+        <button id="boardClearAll" class="btn gray">အကုန်ဖျက်</button>
         <button id="boardBack" class="btn gray">Back</button>
         <button id="boardPaste" class="btn gray">Paste</button>
         <button id="boardSave" class="btn green">သိမ်းမည်</button>
@@ -581,6 +582,6 @@ window.addEventListener('load', () => {
 
 
 </div>
-<script type="module" src="app.js?v=v220"></script>
+<script type="module" src="app.js?v=v221"></script>
 </body>
 </html>
