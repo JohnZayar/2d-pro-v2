@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#0b0f17">
 <link rel="manifest" href="manifest.json">
 <title>2D Agent Pro v2</title>
-<link rel="stylesheet" href="style.css?v=9">
+<link rel="stylesheet" href="style.css?v=10">
 <script>
 // Pho Oct 18: if app.js fails to load (bad connection), show offline screen instead of white page
 window.addEventListener('load', () => {
@@ -145,7 +145,7 @@ window.addEventListener('load', () => {
                             <th style="width:30%;">ထိုးသား</th>
                             <th style="width:30%;">ဂဏန်း</th>
                             <th style="width:30%;">ပမာဏ</th>
-                            <th style="width:10%;text-align:center;">🗑️</th>
+                            <th style="width:10%;text-align:center;">×</th>
                         </tr>
                     </thead>
                     <tbody id="entryTableBody">
@@ -341,6 +341,7 @@ window.addEventListener('load', () => {
         <div id="boardPreview" class="board-preview" hidden></div>
 
         <div class="board-btns">
+            <button class="btn-back" onclick="clearBoard()">အကုန်ဖျက်</button>
             <button class="btn-back" onclick="closeBoard()">Back</button>
             <button class="btn-paste" onclick="pasteToBoard()">Paste</button>
             <button class="btn-save" onclick="saveBoard()">💾 Save</button>
@@ -426,7 +427,7 @@ window.addEventListener('load', () => {
         </div>
         <div class="settings-row">
             <span>App Version</span>
-            <b>v162</b>
+            <b>v163</b>
         </div>
         <button class="btn-danger-outline" onclick="syncNowManual()">🔄 အခု Sync လုပ်မည်</button>
         <button class="btn-danger-outline" onclick="disconnectAgent()">🚪 ထွက်မည် (unlink)</button>
@@ -434,7 +435,7 @@ window.addEventListener('load', () => {
     </div>
 </div>
 
-<script type="module" src="app.js?v=v162"></script>
+<script type="module" src="app.js?v=v163"></script>
 
 <!-- Floating scroll-to-top button -->
 <button id="scrollTopBtn" class="scroll-top" onclick="scrollToTop()" hidden aria-label="အပေါ်တက်">⬆️</button>
