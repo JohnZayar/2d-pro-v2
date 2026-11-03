@@ -38,6 +38,8 @@ const state = {
 };
 
 const $ = (id) => document.getElementById(id);
+/** Null-safe listener (version-skew guard): stale cached HTML may lack a newer element. */
+function on(id, ev, fn) { const el = document.getElementById(id); if (el) el.addEventListener(ev, fn); }
 
 /* ================= BOOT ================= */
 
@@ -122,11 +124,12 @@ function bindUI() {
         try {
             const t = await navigator.clipboard.readText();
             if (t) { $('boardText').value = t; renderBoardLineCheck(); }
-        } catch (e) { showToast('Paste မရပါ — ကိုယ်တိုင်ထည့်ပါ'); }
+        } catch (e) { showBoardPasteHint(); }
     });
-    $('boardText').addEventListener('input', () => renderBoardLineCheck());
+    $('boardText').addEventListener('input', () => { hideBoardPasteHint(); renderBoardLineCheck(); });
     $('boardBack').addEventListener('click', () => closeModal('modal-board'));
     $('boardSave').addEventListener('click', saveBoard);
+    on('boardClearAll', 'click', clearBoard);
     document.querySelectorAll('[data-close]').forEach((b) => {
         b.addEventListener('click', () => b.closest('.modal').classList.remove('open'));
     });
@@ -393,7 +396,7 @@ async function renderBuyerList() {
                 '<td><button class="btn small gray" onclick="editAgentLimit(\'' + (tenantId || '') + '\',' + limit + ')">' + limit + ' ✏️</button></td>' +
                 '<td>' + (disabled ? '<span style="color:#ef4444">🔴 ပိတ်</span>' : '<span style="color:#4ade80">🟢 ဖွင့်</span>') + (trialTxt ? '<br><span>' + trialTxt + '</span>' : '') + '</td>' +
                 '<td style="white-space:nowrap"><button class="btn small ' + (disabled ? 'gray' : 'red') + '" style="padding:4px 8px;font-size:12px" onclick="toggleBuyerDisabled(\'' + b.id + '\',' + (!disabled) + ')">' + (disabled ? 'ဖွင့်' : 'ပိတ်') + '</button>' +
-                '<button class="btn small" style="padding:4px 8px;font-size:12px;background:#374151;color:#fca5a5;border:1px solid #4b5563;margin-left:4px" onclick="deleteBuyerAccount(\'' + b.id + '\',\'' + escHtml(b.email).replace(/'/g, "\\'") + '\')">🗑️</button><button class="btn small gray" style="padding:4px 8px;font-size:12px;margin-left:4px" onclick="setBuyerTrial(\'' + b.id + '\')">စမ်း ၇ ရက်</button>' + (tu ? '<button class="btn small gray" style="padding:4px 8px;font-size:12px;margin-left:4px" onclick="clearBuyerTrial(\'' + b.id + '\')">paid ဖြစ်</button>' : '') + '</td>' +
+                '<button class="btn small" style="padding:4px 8px;font-size:12px;background:#374151;color:#fca5a5;border:1px solid #4b5563;margin-left:4px" onclick="deleteBuyerAccount(\'' + b.id + '\',\'' + escHtml(b.email).replace(/'/g, "\\'") + '\')">×</button><button class="btn small gray" style="padding:4px 8px;font-size:12px;margin-left:4px" onclick="setBuyerTrial(\'' + b.id + '\')">စမ်း ၇ ရက်</button>' + (tu ? '<button class="btn small gray" style="padding:4px 8px;font-size:12px;margin-left:4px" onclick="clearBuyerTrial(\'' + b.id + '\')">paid ဖြစ်</button>' : '') + '</td>' +
                 '</tr>';
         }
         html += '</tbody></table></div>';
@@ -1432,6 +1435,24 @@ function boardLineOk(line) {
 }
 
 /** Per-line formula check: small ✅/❌ per line + (count) total. Never guesses. */
+function showBoardPasteHint() {
+    const ta = $('boardText');
+    if (ta) ta.focus();
+    let hint = document.getElementById('boardPasteHint');
+    if (!hint) {
+        hint = document.createElement('div');
+        hint.id = 'boardPasteHint';
+        hint.style.cssText = 'font-size:12px;color:var(--muted);margin-top:6px;';
+        if (ta && ta.parentNode) ta.parentNode.insertBefore(hint, ta.nextSibling);
+    }
+    hint.textContent = 'ဒီနေရာမှာ ဖိထားပြီး Paste နှိပ်ပါ';
+    hint.style.display = '';
+}
+function hideBoardPasteHint() {
+    const hint = document.getElementById('boardPasteHint');
+    if (hint) hint.style.display = 'none';
+}
+
 function renderBoardLineCheck() {
     const ta = $('boardText');
     const box = $('boardLineCheck');
@@ -1457,6 +1478,14 @@ function renderBoardLineCheck() {
     box.innerHTML = html;
     box.style.display = '';
     return bad;
+}
+
+/**
+ Board clear-all (Pho Nov 4): one tap clears the whole board text + preview. No confirm. */
+function clearBoard() {
+    const ta = $('boardText');
+    if (ta) ta.value = '';
+    renderBoardLineCheck();
 }
 
 async function saveBoard() {
@@ -1692,7 +1721,7 @@ function renderEntryTable() {
                 '<td>' + label + '</td>' +
                 '<td class="cell-no">' + escHtml(ft) + ' (' + g.entries.length + ')</td>' +
                 '<td class="cell-amt">' + formatMoney(gTotal) + '</td>' +
-                '<td class="cell-del"><button class="rec-del" onclick="entryDeleteGroup(\'' + idxList + '\')" title="ဖျက်မည်">🗑️</button></td>' +
+                '<td class="cell-del"><button class="rec-del" onclick="entryDeleteGroup(\'' + idxList + '\')" title="ဖျက်မည်">×</button></td>' +
             '</tr>';
         }
         const e = g.entries[0]; const i = g.indices[0];
@@ -1700,7 +1729,7 @@ function renderEntryTable() {
             '<td>' + (e.record_type === 'akan' ? '⬆️ ' : '') + escHtml(e.player_name || (e.record_type === 'akan' ? 'ဒိုင် (အကန်)' : 'ကိုယ်တိုင်')) + '</td>' +
             '<td class="cell-no">' + escHtml(String(e.number)) + '</td>' +
             '<td class="cell-amt">' + formatMoney(e.amount) + '</td>' +
-            '<td class="cell-del"><button class="rec-del" onclick="entryDeleteRow(' + i + ')" title="ဖျက်မည်">🗑️</button></td>' +
+            '<td class="cell-del"><button class="rec-del" onclick="entryDeleteRow(' + i + ')" title="ဖျက်မည်">×</button></td>' +
         '</tr>';
     }).join('');
 }
@@ -2137,7 +2166,7 @@ function renderAgents() {
             <div class="ph">${escHtml(a.phone || '')} · ကော် ${a.commission || 0}% · အလျော် ${a.payout_rate || 80}${!a.hot_open ? ' · ဟော့ ပိတ်' : ((Number(a.blocked_limit) || 0) > 0 ? ' · ဟော့ ' + formatMoney(a.blocked_limit) : ' · ဟော့ ဖွင့်')}</div></div>
             <div class="acts">
                 <button class="btn small gray" data-edit="${a.id}">✏️</button>
-                <button class="btn small red" data-delag="${a.id}">🗑️</button>
+                <button class="btn small red" data-delag="${a.id}">×</button>
             </div>
         </div>`).join('');
     box.querySelectorAll('[data-edit]').forEach((b) =>
@@ -3763,7 +3792,7 @@ function renderAkanTable() {
             '<td class="cell-out" style="color:#ff5a5a">⬆️ ' + escHtml(e.player_name || '—') + '</td>' +
             '<td class="cell-no">' + escHtml(String(e.number)) + '</td>' +
             '<td class="cell-amt out-amt">' + formatMoney(e.amount) + '</td>' +
-            '<td class="cell-del"><button class="rec-del" onclick="akanDeleteRow(' + i + ')" title="ဖျက်မည်">🗑️</button></td>' +
+            '<td class="cell-del"><button class="rec-del" onclick="akanDeleteRow(' + i + ')" title="ဖျက်မည်">×</button></td>' +
         '</tr>'
     ).join('');
 }
@@ -3974,7 +4003,7 @@ async function renderAgentList() {
                 '<td><button class="btn small" style="padding:4px 8px;font-size:12px;background:#1e3a5f;color:#7dd3fc;border:1px solid #2d5a8f" onclick="regenerateAgentCode(\'' + agent.id + '\',' + n + ',\'' + tenantId + '\',\'' + escHtml(agent.name || `Agent ${n}`).replace(/'/g, "\\'") + '\')">🔑 Code အသစ်</button></td>' +
                 '<td>' + (disabled ? '<span style="color:#ef4444">🔴 ပိတ်</span>' : '<span style="color:#4ade80">🟢 ဖွင့်</span>') + '</td>' +
                 '<td style="white-space:nowrap"><button class="btn small ' + (disabled ? 'gray' : 'red') + '" style="padding:4px 8px;font-size:12px" onclick="toggleAgentDisabled(\'' + agent.id + '\',' + (!disabled) + ')">' + (disabled ? 'ဖွင့်' : 'ပိတ်') + '</button>' +
-                '<button class="btn small" style="padding:4px 8px;font-size:12px;background:#374151;color:#fca5a5;border:1px solid #4b5563;margin-left:4px" onclick="deleteAgentAccount(\'' + agent.id + '\',\'' + escHtml(agent.name || `Agent ${n}`).replace(/'/g, "\\'") + '\')">🗑️</button></td>' +
+                '<button class="btn small" style="padding:4px 8px;font-size:12px;background:#374151;color:#fca5a5;border:1px solid #4b5563;margin-left:4px" onclick="deleteAgentAccount(\'' + agent.id + '\',\'' + escHtml(agent.name || `Agent ${n}`).replace(/'/g, "\\'") + '\')">×</button></td>' +
                 '</tr>';
         }
         html += '</tbody></table></div>';
@@ -4227,7 +4256,7 @@ async function nuclearWipe() {
         menu.style.top = Math.min(y, window.innerHeight - 100) + 'px';
         menu.innerHTML =
             '<button onclick="openEditRecord(\'' + rid + '\')" style="display:block;width:100%;padding:8px 16px;margin:4px 0;background:#3b82f6;color:white;border:none;border-radius:4px;">✏️ ပြင်</button>' +
-            '<button onclick="deleteRecord(\'' + rid + '\')" style="display:block;width:100%;padding:8px 16px;margin:4px 0;background:#ef4444;color:white;border:none;border-radius:4px;">🗑️ ဖျက်</button>';
+            '<button onclick="deleteRecord(\'' + rid + '\')" style="display:block;width:100%;padding:8px 16px;margin:4px 0;background:#ef4444;color:white;border:none;border-radius:4px;">× ဖျက်</button>';
         document.body.appendChild(menu);
         setTimeout(() => { document.addEventListener('click', closeEditDeleteMenu, { once: true }); }, 100);
     };
@@ -4308,7 +4337,7 @@ async function nuclearWipe() {
         menu.style.top = Math.min(y, window.innerHeight - 100) + 'px';
         menu.innerHTML =
             '<button onclick="openEditGroup(\'' + ridsStr + '\')" style="display:block;width:100%;padding:8px 16px;margin:4px 0;background:#3b82f6;color:white;border:none;border-radius:4px;">✏️ ပြင်</button>' +
-            '<button onclick="deleteRecordGroup(\'' + ridsStr + '\')" style="display:block;width:100%;padding:8px 16px;margin:4px 0;background:#ef4444;color:white;border:none;border-radius:4px;">🗑️ အကုန် ဖျက်</button>';
+            '<button onclick="deleteRecordGroup(\'' + ridsStr + '\')" style="display:block;width:100%;padding:8px 16px;margin:4px 0;background:#ef4444;color:white;border:none;border-radius:4px;">× အကုန် ဖျက်</button>';
         document.body.appendChild(menu);
         setTimeout(() => { document.addEventListener('click', closeEditDeleteMenu, { once: true }); }, 100);
     };
