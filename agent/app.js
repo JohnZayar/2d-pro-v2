@@ -796,7 +796,7 @@ async function renderPlayers() {
                 (p.phone ? '<div class="player-phone">📞 ' + escHtml(p.phone) + '</div>' : '') +
                 '<div class="player-sess">ဒီ session: ' + formatMoney(t.amount) + '</div>' +
             '</div>' +
-            '<button class="rec-del" onclick="deletePlayer(\'' + p.id + '\')" title="ဖျက်မည်">🗑️</button>' +
+            '<button class="rec-del" onclick="deletePlayer(\'' + p.id + '\')" title="ဖျက်မည်">×</button>' +
         '</div>';
     }).join('');
 }
@@ -938,7 +938,7 @@ async function renderEntryTable() {
                 '<td>' + escHtml(e0.player_name || 'ကိုယ်တိုင်') + '</td>' +
                 '<td class="cell-no">' + escHtml(ft) + ' (' + g.entries.length + ')</td>' +
                 '<td class="cell-amt">' + formatMoney(gTotal) + '</td>' +
-                '<td class="cell-del"><button class="rec-del" onclick="deletePendingGroup(\'' + idxList + '\')" title="ဖျက်မည်">🗑️</button></td>' +
+                '<td class="cell-del"><button class="rec-del" onclick="deletePendingGroup(\'' + idxList + '\')" title="ဖျက်မည်">×</button></td>' +
             '</tr>';
         }
         const e = g.entries[0]; const i = g.indices[0];
@@ -946,7 +946,7 @@ async function renderEntryTable() {
             '<td>' + escHtml(e.player_name || 'ကိုယ်တိုင်') + '</td>' +
             '<td class="cell-no">' + escHtml(e.number) + '</td>' +
             '<td class="cell-amt">' + formatMoney(e.amount) + '</td>' +
-            '<td class="cell-del"><button class="rec-del" onclick="deletePendingEntry(' + i + ')" title="ဖျက်မည်">🗑️</button></td>' +
+            '<td class="cell-del"><button class="rec-del" onclick="deletePendingEntry(' + i + ')" title="ဖျက်မည်">×</button></td>' +
         '</tr>';
     }).join('');
 }
@@ -1631,7 +1631,7 @@ window.openBatchDetail = async function openBatchDetail(playerKey, batchNo) {
             '<td>' + formatMoney(r.amount) + '</td>' +
             '<td class="v-actions">' +
                 '<button class="rec-edit" onclick="openEditRecord(\'' + r.id + '\')" title="ပြင်မည်">✏️</button>' +
-                '<button class="rec-del" onclick="deleteRecord(\'' + r.id + '\')" title="ဖျက်မည်">🗑️</button>' +
+                '<button class="rec-del" onclick="deleteRecord(\'' + r.id + '\')" title="ဖျက်မည်">×</button>' +
             '</td>' +
         '</tr>'
     ).join('') + '</tbody></table>' : '<div class="empty-state">စာရင်း မရှိပါ</div>';
@@ -1932,6 +1932,26 @@ window.closeBoard = function closeBoard() {
     $('boardModal').hidden = true;
 };
 
+function showBoardPasteHint() {
+    const ta = $('boardTextarea');
+    if (ta) ta.focus();
+    let hint = document.getElementById('boardPasteHint');
+    if (!hint) {
+        hint = document.createElement('div');
+        hint.id = 'boardPasteHint';
+        hint.style.cssText = 'font-size:12px;color:var(--muted);margin-top:6px;';
+        const wrap = document.querySelector('.board-textarea-wrap');
+        if (wrap) wrap.appendChild(hint);
+        else if (ta && ta.parentNode) ta.parentNode.appendChild(hint);
+    }
+    hint.textContent = 'ဒီနေရာမှာ ဖိထားပြီး Paste နှိပ်ပါ';
+    hint.style.display = '';
+}
+function hideBoardPasteHint() {
+    const hint = document.getElementById('boardPasteHint');
+    if (hint) hint.style.display = 'none';
+}
+
 window.pasteToBoard = async function pasteToBoard() {
     try {
         const text = await navigator.clipboard.readText();
@@ -1939,7 +1959,7 @@ window.pasteToBoard = async function pasteToBoard() {
         ta.value = (ta.value ? ta.value + '\n' : '') + text;
         updateBoardPreview();
     } catch (e) {
-        showToast('📋 Paste ခွင့်မရှိပါ — ကိုယ်တိုင် paste လုပ်ပါ');
+        showBoardPasteHint();
     }
 };
 
@@ -1973,12 +1993,22 @@ const updateBoardPreview = debounce(() => {
 }, 400);
 
 document.addEventListener('input', (e) => {
-    if (e.target && e.target.id === 'boardTextarea') updateBoardPreview();
+    if (e.target && e.target.id === 'boardTextarea') { hideBoardPasteHint(); updateBoardPreview(); }
 });
 
 
 
 /** Board save → one new batch for the selected player. */
+/**
+ Board clear-all (Pho Nov 4): one tap clears the whole board text + preview. No confirm. No draft exists in Agent. */
+window.clearBoard = function clearBoard() {
+    const ta = $('boardTextarea');
+    if (ta) ta.value = '';
+    const box = $('boardPreview');
+    if (box) box.hidden = true;
+    updateBoardPreview();
+};
+
 window.saveBoard = async function saveBoard() {
     if (saveInFlight) return;
     // Pho Oct 18: set the guard SYNCHRONOUSLY before any await.
@@ -2609,7 +2639,7 @@ window.resetAgentApp = async function resetAgentApp() {
         menu.style.top = Math.min(y, window.innerHeight - 100) + 'px';
         menu.innerHTML =
             '<button onclick="openEditRecord(\'' + rid + '\')" style="display:block;width:100%;padding:8px 16px;margin:4px 0;background:#3b82f6;color:white;border:none;border-radius:4px;">✏️ ပြင်</button>' +
-            '<button onclick="deleteRecord(\'' + rid + '\')" style="display:block;width:100%;padding:8px 16px;margin:4px 0;background:#ef4444;color:white;border:none;border-radius:4px;">🗑️ ဖျက်</button>';
+            '<button onclick="deleteRecord(\'' + rid + '\')" style="display:block;width:100%;padding:8px 16px;margin:4px 0;background:#ef4444;color:white;border:none;border-radius:4px;">× ဖျက်</button>';
         document.body.appendChild(menu);
         setTimeout(() => {
             document.addEventListener('click', closeEditDeleteMenu, { once: true });
@@ -2706,7 +2736,7 @@ window.resetAgentApp = async function resetAgentApp() {
         menu.style.top = Math.min(y, window.innerHeight - 100) + 'px';
         menu.innerHTML =
             '<button onclick="openEditGroup(\'' + ridsStr + '\')" style="display:block;width:100%;padding:8px 16px;margin:4px 0;background:#3b82f6;color:white;border:none;border-radius:4px;">✏️ ပြင်</button>' +
-            '<button onclick="deleteRecordGroup(\'' + ridsStr + '\')" style="display:block;width:100%;padding:8px 16px;margin:4px 0;background:#ef4444;color:white;border:none;border-radius:4px;">🗑️ အကုန် ဖျက်</button>';
+            '<button onclick="deleteRecordGroup(\'' + ridsStr + '\')" style="display:block;width:100%;padding:8px 16px;margin:4px 0;background:#ef4444;color:white;border:none;border-radius:4px;">× အကုန် ဖျက်</button>';
         document.body.appendChild(menu);
         setTimeout(() => {
             document.addEventListener('click', closeEditDeleteMenu, { once: true });
