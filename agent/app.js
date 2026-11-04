@@ -2169,7 +2169,11 @@ function dateKey(ts) {
 // Session-date attribution (parity port Nov 3): a record belongs to its
 // SESSION's day, not its created day — evening entries into next
 // morning's session land on the session's day, matching Master/Offline.
-// A record whose session is missing falls back to its created day.
+// Complete-delete (Nov 4): NO created-date fallback. A record whose
+// session is unknown/missing returns null and is excluded from Daily/
+// Weekly totals, never summed back in. sessById comes from
+// getAgentSessions(), which already excludes Master-archived sessions,
+// so archived-session records also resolve to null here.
 function sessDateISO(s) {
     if (!s || !s.date) return null;
     const m = /^(\d{1,2})\.(\d{1,2})\.(\d{4})$/.exec(String(s.date).trim());
@@ -2179,7 +2183,7 @@ function sessDateISO(s) {
 function recordDateKey(r, sessById) {
     const s = r && r.session ? sessById.get(r.session) : null;
     const iso = s ? sessDateISO(s) : null;
-    return iso || dateKey(r.created);
+    return iso;
 }
 
 function toISODate(d) {
@@ -2222,7 +2226,10 @@ window.renderDaily = async function renderDaily() {
         playerSel.value = prevVal;
     }
 
-    let recs = allRecs.filter((r) => recordDateKey(r, sessById) === key);
+    // Complete-delete: explicit null guard (null === key is already
+    // false, but do not rely on that) — session-less and archived-
+    // session records (null key) never enter Daily totals.
+    let recs = allRecs.filter((r) => { const k = recordDateKey(r, sessById); return k !== null && k === key; });
     // Server-direct: a failed records read must not render as "no records".
     if (_agentRecordsFetchFailed) { showToast('❌ ဆာဗာ ဆက်မရပါ'); return; }
     const selPlayer = playerSel.value;
@@ -2486,8 +2493,13 @@ window.renderWeekly = async function renderWeekly() {
         winBySess[sid] = new Set(winLists[i].map((w) => String(w.number).padStart(2, '0')));
     });
     const byDay = {};
+    // Complete-delete: filter nulls BEFORE grouping — a null group must
+    // never render or be summed. Null = session unknown/missing or
+    // Master-archived (sessById comes from getAgentSessions(), which
+    // already excludes archived sessions).
     recs.forEach((r) => {
         const k = recordDateKey(r, sessById);
+        if (k === null) return;
         (byDay[k] = byDay[k] || []).push(r);
     });
 
