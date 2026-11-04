@@ -2385,6 +2385,7 @@ function dailyAggFromRecords(recs, winNum) {
 }
 
 async function renderHomeDaily() {
+    await loadArchivedSessionIds();
     const dateInput = $('homeDailyDate');
     if (!_homeDailyDate) {
         const today = new Date();
@@ -2407,7 +2408,7 @@ async function renderHomeDaily() {
     // unchanged and place every row exactly as before.
     // Links + records + wins are independent: fetch in parallel.
     // On any failure, keep the previous body (never blank it).
-    const daySessIds = state.sessions.filter((s) => s.date === ds).map((s) => s.id);
+    const daySessIds = state.sessions.filter((s) => s.date === ds && !(state.archivedSessionIds && state.archivedSessionIds.has(s.id))).map((s) => s.id);
     const sessFilter = daySessIds.length ? `(${daySessIds.map((id) => `session = "${id}"`).join(' || ')})` : null;
     let allRecs, allWins;
     try {
@@ -2421,6 +2422,10 @@ async function renderHomeDaily() {
         return;
     }
     const dayRecs = allRecs.filter((r) => {
+        // Archived sessions never count: drop before either branch, so a
+        // record can never pass via the session lookup (or a denormalized
+        // stamp) when its session is archived.
+        if (state.archivedSessionIds && state.archivedSessionIds.has(r.session)) return false;
         // New records have session_date; old records: look up via session
         if (r.session_date) {
             if (r.session_date !== ds) return false;
@@ -2502,6 +2507,7 @@ function shortTimeType(tt) {
 }
 
 async function renderWeekly() {
+    await loadArchivedSessionIds();
     const box = $('weeklyContent');
     const offset = state.weeklyOffset || 0;
     const mon = mondayOf(new Date());
@@ -2522,7 +2528,7 @@ async function renderWeekly() {
     // server-side instead — same totals, far less download.
     // (Schema note as in Daily: no session_date/date fields exist, so the
     // filter uses the session relation; the loops below are unchanged.)
-    const weekSessIds = state.sessions.filter((s) => days.some((d) => d.ds === s.date)).map((s) => s.id);
+    const weekSessIds = state.sessions.filter((s) => days.some((d) => d.ds === s.date) && !(state.archivedSessionIds && state.archivedSessionIds.has(s.id))).map((s) => s.id);
     const sessFilter = weekSessIds.length ? `(${weekSessIds.map((id) => `session = "${id}"`).join(' || ')})` : null;
     let allRecs, allWins;
     try {
@@ -2550,6 +2556,10 @@ async function renderWeekly() {
         for (const tt of ['မနက်ပိုင်း', 'ညနေပိုင်း']) {
         const isAM = tt === 'မနက်ပိုင်း';
         const recs = allRecs.filter((r) => {
+            // Archived sessions never count: drop before the session lookup,
+            // so a record can never pass via the session branch (or a
+            // denormalized stamp) when its session is archived.
+            if (state.archivedSessionIds && state.archivedSessionIds.has(r.session)) return false;
             const rs = sessById.get(r.session);
             const rDate = r.session_date || (rs ? rs.date : '');
             const rTT = r.session_timeType || (rs ? rs.timeType : '');
