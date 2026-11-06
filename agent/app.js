@@ -12,9 +12,9 @@
  * Batches keep entry order — never re-sorted — so they match what was sent.
  */
 
-import * as pb from '../shared/pb.js?v=4';
+import * as pb from '../shared/pb.js?v=5';
 import * as direct from '../shared/direct.js?v=1';
-import { parseBoard, parseBoardReport, parseLine } from '../shared/parser.js?v=23';
+import { parseBoard, parseBoardReport, parseLine } from '../shared/parser.js?v=24';
 
 // Global safety net: log unhandled promise rejections instead of failing silently.
 if (typeof window !== 'undefined') {
@@ -51,7 +51,7 @@ function addPendingUnique(playerName, number, amount, fromFormula, formulaText, 
  *  ပါဝါ/ထိုင်းပါဝါ, ဘရိတ်/ပွင့်, ညီအစ်ကို, စုံစုံ, မမ, စုံမ, မစုံ,
  *  ထိပ်, နောက်. Only pure direct numbers are capped. အာ is NOT exempt
  *  (explicit-list reverse counts as direct, Pho Oct 29 15:06). */
-const FORMULA_KEYWORDS = ['ပါ', 'ပူး', 'ခွေ', 'ပတ်', 'နက္ခတ်', 'ထိုင်းနက္ခတ်', 'ညီအစ်ကို', 'စုံမ', 'မစုံ', 'ထိပ်', 'နောက်', 'ဘရိတ်', 'ပွင့်', 'ပါဝါ', 'စုံစုံ', 'မမ'];
+const FORMULA_KEYWORDS = ['ပါ', 'ပူး', 'ခွေ', 'ပတ်', 'နက္ခတ်', 'နတ်ခတ်', 'ထိုင်းနက္ခတ်', 'ထိုင်းနတ်ခတ်', 'ညီအစ်ကို', 'စုံမ', 'မစုံ', 'ထိပ်', 'နောက်', 'ဘရိတ်', 'ပွင့်', 'ပါဝါ', 'စုံစုံ', 'မမ']; // Pho Nov 6: နတ်ခတ် = နက္ခတ်
 function lineHasFormula(line) {
     const s = String(line || '');
     return FORMULA_KEYWORDS.some((kw) => s.includes(kw));
