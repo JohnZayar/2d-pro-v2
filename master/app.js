@@ -3,9 +3,9 @@
  * PocketBase IS the source of truth for the UI; no local-first layer,
  * no sync queue, no background pull. Realtime events refresh the visible view.
  */
-import * as pb from '../shared/pb.js?v=4';
+import * as pb from '../shared/pb.js?v=5';
 import * as direct from '../shared/direct.js?v=1';
-import { parseBoard, parseBoardReport, parseLine } from '../shared/parser.js?v=23';
+import { parseBoard, parseBoardReport, parseLine } from '../shared/parser.js?v=24';
 import {
     formatMoney, formatDateStr, getWeekMondayStr, remainingDigits,
     uid, showToast, escHtml, extractDigits, agentEmailFor, agentPasswordFor,
@@ -168,7 +168,7 @@ function bindUI() {
         akanPending.forEach((e) => { e.player_name = bookie; });
         renderAkanTable();
     });
-    // Server URL UI removed (hardcoded to https://2d.skylinkvpn.stream)
+    // Server URL UI removed (hardcoded to https://api.23ledger.com)
 }
 
 /* ================= AUTH ================= */
@@ -1421,7 +1421,7 @@ async function openBoard(sessionId) {
    hot-number cap — only pure direct numbers are capped (အကြွေမရ,
    ဖော်မြူလာနဲ့ဆိုရ, အပူးလဲ ရ). Same list as Agent. အာ is NOT exempt
    (explicit-list reverse counts as direct, Pho Oct 29 15:06). */
-const FORMULA_KEYWORDS = ['ပါ', 'ပူး', 'ခွေ', 'ပတ်', 'နက္ခတ်', 'ထိုင်းနက္ခတ်', 'ညီအစ်ကို', 'စုံမ', 'မစုံ', 'ထိပ်', 'နောက်', 'ဘရိတ်', 'ပွင့်', 'ပါဝါ', 'စုံစုံ', 'မမ'];
+const FORMULA_KEYWORDS = ['ပါ', 'ပူး', 'ခွေ', 'ပတ်', 'နက္ခတ်', 'နတ်ခတ်', 'ထိုင်းနက္ခတ်', 'ထိုင်းနတ်ခတ်', 'ညီအစ်ကို', 'စုံမ', 'မစုံ', 'ထိပ်', 'နောက်', 'ဘရိတ်', 'ပွင့်', 'ပါဝါ', 'စုံစုံ', 'မမ']; // Pho Nov 6: နတ်ခတ် = နက္ခတ်
 function lineHasFormula(line) {
     const str = String(line || '');
     return FORMULA_KEYWORDS.some((kw) => str.includes(kw));
