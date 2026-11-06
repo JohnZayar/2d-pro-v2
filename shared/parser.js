@@ -43,6 +43,8 @@
  * and totals unchanged.
  *
  * Nov 3 2026 (v23): dot-before-R tolerance - see parseLine note below.
+ *
+ * Nov 6 2026 (v24): alias နတ်ခတ် = နက္ခတ် (Pho); "/" split moved before combined formulas; bare-continuation merge — a "/" segment with no digit set inherits the previous group's digits (ထိပ်/နောက် one group, 60).
  * Use as ES6 module:  import { parseBoard } from './parser.js'
  */
 
@@ -102,7 +104,7 @@ function sepRegex() {
  */
 export function expandFormula(fullNoText) {
     const generatedNums = [];
-    let cleanText = _normR(convertMyanmarNumbers(fullNoText).trim().normalize('NFC'));
+    let cleanText = _normR(convertMyanmarNumbers(fullNoText).trim().normalize('NFC')).replace(/နတ်ခတ်/g, 'နက္ခတ်'); // Pho Nov 6: နတ်ခတ် = နက္ခတ်
 
     // Pho Oct 17: ဘရိတ်/ပွင့်/Bk — Nဘရိတ် = pairs where (d1+d2)%10 == N (10 numbers per digit)
     // e.g. 1ဘရိတ် → 01 10 29 92 38 83 47 74 56 65; 123bk → 30 numbers
@@ -430,30 +432,11 @@ export function parseLine(line) {
     // Normalize to canonical forms so all writing methods work
     cleanLine = cleanLine
         .replace(/အရှေ့/g, 'ထိပ်').replace(/ရှေ့/g, 'ထိပ်')
-        .replace(/အနောက်/g, 'နောက်').replace(/အပိတ်/g, 'နောက်').replace(/ပိတ်/g, 'နောက်');
+        .replace(/အနောက်/g, 'နောက်').replace(/အပိတ်/g, 'နောက်').replace(/ပိတ်/g, 'နောက်')
+        .replace(/နတ်ခတ်/g, 'နက္ခတ်'); // Pho Nov 6: နတ်ခတ် = နက္ခတ် (same word, က/တ spellings)
 
     // Pho Oct 26 Fix 3: a trailing separator at line end is never meaningful.
     cleanLine = cleanLine.replace(/[\s\-,\/\.]+$/, '');
-
-    // Handle combined formulas: "5ထိပ်400နောက်100" → parse each part separately
-    const cParts = splitCombinedFormula(cleanLine);
-    if (cParts.length > 1) {
-        // Batch fix (Nov 3, FIX A, combined path): same inheritance as the
-        // "/" branch — a part without its own amount inherits the line's
-        // trailing amount. (Lines with 2+ keywords are split here and never
-        // reach the "/" branch, so this is required for the reported case.)
-        // Parts that already have amounts are never touched.
-        const lineAmtM = convertMyanmarNumbers(cleanLine).match(/(\d+)\s*$/);
-        const lineAmt = lineAmtM ? parseInt(lineAmtM[1], 10) : 0;
-        for (const part of cParts) {
-            const sub = parseLine(part);
-            if (lineAmt > 0) {
-                sub.forEach((it) => { if (Number(it.amount) === 0) it.amount = lineAmt; });
-            }
-            results.push(...sub);
-        }
-        return results;
-    }
 
     // Pho: ရ before a formula keyword is ignored (e.g. "567ရခွေပူး" → "567ခွေပူး")
     // (ရ as reverse marker only applies after a complete number, not mid-formula)
@@ -479,8 +462,30 @@ export function parseLine(line) {
     // Digits-only parts (e.g. "7890" in "7890/567-ခွေပူး-4000") inherit the
     // last part's keyword + amount, so each group gets the shared formula.
     if (convertedLine.includes('/')) {
-        const sParts = convertedLine.split('/').map((p) => p.trim()).filter((p) => p.length > 0);
+        let sParts = convertedLine.split('/').map((p) => p.trim()).filter((p) => p.length > 0);
         if (sParts.length > 1) {
+            // Pho Nov 6 v24: bare-continuation segments — a "/" segment that is
+            // a bare formula keyword + amount with NO digit set of its own
+            // (starts with a letter, e.g. "နောက်400") belongs to the previous
+            // group ("၁အုပ်စုထဲမို့") and inherits its leading digits:
+            // "8,6,9ထိပ်600/နောက်400" = one group, 60 | 30,000. Glue ONLY when
+            // the previous segment starts with a digit AND is a formula group
+            // (contains a formula keyword); a bare formula after a plain direct
+            // bet ("12=500/နောက်400") stays split — gluing there would merge
+            // the two amounts ("500400"). r/အာ-style segments are never glued.
+            const kwMerge = ['ထိုင်းနက္ခတ်', 'ထိုင်းပါဝါ', 'ခွေပူး', 'အခွေ', 'ခွေ', 'စုံကပ်', 'မကပ်', 'ထိပ်', 'နောက်', 'အပတ်', 'ပတ်', 'အပါ', 'ပါ', 'ဘရိတ်', 'ပွင့်', 'ပါဝါ', 'နက္ခတ်', 'စုံစုံ', 'မမ', 'စုံမ', 'မစုံ', 'ညီအစ်ကို', 'အပူး', 'ပူး'];
+            const startsWithKw = (s) => kwMerge.some((k) => s.startsWith(k)) || /^bk/i.test(s);
+            const hasKw = (s) => kwMerge.some((k) => s.includes(k)) || /bk/i.test(s);
+            const mergedParts = [];
+            for (const seg of sParts) {
+                const prev = mergedParts[mergedParts.length - 1];
+                if (prev && /^\d/.test(prev) && hasKw(prev) && !/^\d/.test(seg) && startsWithKw(seg)) {
+                    mergedParts[mergedParts.length - 1] = prev + seg;
+                } else {
+                    mergedParts.push(seg);
+                }
+            }
+            sParts = mergedParts;
             const lastP = sParts[sParts.length - 1];
             const lastIsBareAmt = /^\d+$/.test(lastP);
             const lastHasGroupKw = /ခွေ/.test(lastP);
@@ -519,6 +524,28 @@ export function parseLine(line) {
             }
         }
     }
+
+    // Handle combined formulas: "5ထိပ်400နောက်100" → parse each part separately
+    // (Nov 6 v24: runs AFTER the "/" split above, so slash-separated segments are never re-cut here.)
+    const cParts = splitCombinedFormula(convertedLine);
+    if (cParts.length > 1) {
+        // Batch fix (Nov 3, FIX A, combined path): same inheritance as the
+        // "/" branch — a part without its own amount inherits the line's
+        // trailing amount. (Slash lines were already handled above, so this
+        // covers the no-slash combined case.)
+        // Parts that already have amounts are never touched.
+        const lineAmtM = convertMyanmarNumbers(convertedLine).match(/(\d+)\s*$/);
+        const lineAmt = lineAmtM ? parseInt(lineAmtM[1], 10) : 0;
+        for (const part of cParts) {
+            const sub = parseLine(part);
+            if (lineAmt > 0) {
+                sub.forEach((it) => { if (Number(it.amount) === 0) it.amount = lineAmt; });
+            }
+            results.push(...sub);
+        }
+        return results;
+    }
+
     // v218.3: / and , as amount separators (12/500 -> 12=500, 12,500 -> 12=500)
     convertedLine = convertedLine.replace(/^(.+?)[/,](\d{3,})$/, '$1=$2');
     // Pho: "=" between digits and formula keyword = space (e.g. "567=ပါ" → "567 ပါ")
