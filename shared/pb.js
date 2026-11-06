@@ -8,7 +8,7 @@
  * Use as ES6 module:  import * as pb from './pb.js'
  */
 
-const DEFAULT_BASE_URL = 'https://2d.skylinkvpn.stream';
+const DEFAULT_BASE_URL = 'https://api.23ledger.com';
 const AUTH_KEY = 'pb_auth'; // localStorage key: { token, model }
 const URL_KEY = 'pb_server_url'; // localStorage key for custom server URL override
 
