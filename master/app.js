@@ -1082,7 +1082,16 @@ function openGeneric(title, html) {
 /* ================= LIMIT DIALOG (per-session) ================= */
 
 function sessionLimit(s) {
-    return Number(s && s.limit) || 50000;
+    return Number(s && s.limit) || 0;
+}
+
+/** Last entered session Limit (Pho Nov 14): a new session carries
+ * forward the most recently updated session's Limit — never an
+ * auto value. 0 when no Limit has ever been entered. */
+function lastSessionLimit() {
+    const s0 = (state.sessions || [])[0];
+    const v = s0 ? Number(s0.limit) || 0 : 0;
+    return v > 0 ? v : 0;
 }
 
 async function openLimitDialog() {
@@ -1093,7 +1102,7 @@ async function openLimitDialog() {
 window.openLimitDialog = openLimitDialog;
 
 async function saveLimit() {
-    const v = Number($('limitInput').value) || 50000;
+    const v = Number($('limitInput').value) || 0;
     const s = state.sessions.find((x) => x.id === state.activeSessionId);
     if (s) {
         // Server-direct (Pho Oct 27): save to the server first, only then
@@ -1286,7 +1295,7 @@ async function saveSession() {
         const newSessionId = uid(); // M2: mint ONCE outside withRetry
         s = await direct.withRetry(() => direct.directCreate('sessions', {
             id: newSessionId, tenant: state.tenantPbId,
-            name, date: dateStr, timeType, is_open: true, limit: 50000,
+            name, date: dateStr, timeType, is_open: true, limit: lastSessionLimit(),
         }));
     } catch (e) {
         showToast('❌ ' + (e.message || e));
@@ -1854,6 +1863,80 @@ window.submitEntryRow = async function submitEntryRow() {
     showToast(rType === 'akan' ? '✅ ထည့်ပြီးပြီ (⬆️ အထွက်)' : '✅ ထည့်ပြီးပြီ' + (skipped ? ' (⚠️ ' + skipped + ' လိုင်း ကျန်)' : '') + blkMsg);
 };
 
+/**
+ * Per-person cumulative Limit gate (Pho Nov 14).
+ * Partitions entryPending into { saveable, held, messages }.
+ * A pending DIRECT line is held when the person's saved + pending
+ * total on that number in this session would exceed their Limit
+ * (person_limit; 0/blank = no cap). Formula lines, akan (outgoing)
+ * lines, and persons without a Limit are never held. Held lines are
+ * named in the toast — never silently reduced.
+ */
+async function checkPersonLimitGate() {
+    const sid = state.activeSessionId;
+    const directPending = entryPending.filter((e) =>
+        (e.record_type || 'pos') === 'pos' && !lineHasFormula(e.formula_text || ''));
+    if (!directPending.length) return { saveable: entryPending.slice(), held: [], messages: [] };
+    // Existing saved direct totals in this session.
+    const recs = await direct.withRetry(() => direct.directList('lottery_records', state.tenantPbId, { filter: `session = "${sid}"`, sort: 'created' }));
+    // Group pending direct items by person (id when known, else name).
+    const groups = {};
+    directPending.forEach((e) => {
+        const pid = e.person_id || '';
+        const name = (e.player_name || '').trim();
+        const key = pid || ('name:' + name);
+        if (!groups[key]) groups[key] = { pid, name, items: [] };
+        groups[key].items.push(e);
+    });
+    const held = [];
+    const messages = [];
+    for (const key of Object.keys(groups)) {
+        const grp = groups[key];
+        const person = grp.pid
+            ? state.agents.find((a) => a.id === grp.pid)
+            : state.agents.find((a) => (a.name || '').trim() === grp.name);
+        const cap = person ? (Number(person.person_limit) || 0) : 0;
+        if (!cap) continue;
+        const pend = {};
+        grp.items.forEach((e) => {
+            const n = String(e.number).padStart(2, '0');
+            pend[n] = (pend[n] || 0) + (Number(e.amount) || 0);
+        });
+        for (const n of Object.keys(pend)) {
+            let existing = 0;
+            recs.forEach((r) => {
+                if ((r.record_type || 'pos') !== 'pos') return;
+                if (lineHasFormula(r.formula_text || '')) return;
+                if (String(r.number).padStart(2, '0') !== n) return;
+                if (!recordBelongsToPerson(r, grp)) return;
+                existing += Number(r.amount) || 0;
+            });
+            const tot = existing + pend[n];
+            if (tot > cap) {
+                messages.push((grp.name || '—') + ' · ' + n + ' Limit ' + formatMoney(cap) + ' ကျော် (စုစုပေါင်း ' + formatMoney(tot) + ')');
+                grp.items.forEach((e) => {
+                    if (String(e.number).padStart(2, '0') === n) held.push(e);
+                });
+            }
+        }
+    }
+    const heldSet = new Set(held);
+    return { saveable: entryPending.filter((e) => !heldSet.has(e)), held, messages };
+}
+
+/** A saved record belongs to a pending person group: exact person_id
+ * match when known, else a legacy row with no person_id under the
+ * same name. A row carrying a DIFFERENT person_id never matches,
+ * even when the name matches (same-name safe, Pho Oct 18). */
+function recordBelongsToPerson(r, grp) {
+    if (grp.pid) {
+        if (r.person_id === grp.pid) return true;
+        if (!r.person_id && (r.player_name || r.agent_name || '').trim() === grp.name) return true;
+        return false;
+    }
+    return (r.player_name || r.agent_name || '').trim() === grp.name;
+}
+
 /** 💾 Save — persist all pending entries as NEW batches (one batch_no per person/type). */
 
 window.saveEntryBatch = async function saveEntryBatch() {
@@ -1865,8 +1948,20 @@ window.saveEntryBatch = async function saveEntryBatch() {
     // Block if any entry has no player name
     if (entryPending.some((e) => !(e.player_name || '').trim())) { entrySaveInFlight = false; showToast('❌ အမည် မပါ တဲ့ စာရင်း ရှိ — ဖျက် ပြီး ပြန် ထည့်'); return; }
     if (!state.activeSessionId) { entrySaveInFlight = false; showToast('⚠️ Session မရှိသေးပါ'); return; }
-    // Pho Oct 29 limit redesign: no cumulative limits gate — hot numbers
-    // are capped per line at stage time by the hot rule instead.
+    // Pho Oct 29 hot rule: hot numbers are capped per line at stage time.
+    // Pho Nov 14 per-person Limit (cumulative): hold back pending direct
+    // lines that would push a person over their Limit on one number in
+    // this session. A failed read fails closed — the save waits instead
+    // of silently over-saving.
+    let gate;
+    try { gate = await checkPersonLimitGate(); }
+    catch (e) { entrySaveInFlight = false; showToast('Limit စစ်မရပါ — ပြန်စစ်ပါ'); return; }
+    if (gate.held.length && gate.saveable.length === 0) {
+        entrySaveInFlight = false;
+        showToast('🚫 ' + gate.messages.join(' · '));
+        return;
+    }
+    const toSave = gate.saveable;
     let lkRes;
     try { lkRes = { ok: true, v: await isSessionLocked(state.activeSessionId) }; }
     catch (e) { lkRes = { ok: false, e }; }
@@ -1881,7 +1976,7 @@ window.saveEntryBatch = async function saveEntryBatch() {
         // Group by (person, record_type), preserving first-appearance order
         const order = [];
         const byKey = {};
-        entryPending.forEach((e) => {
+        toSave.forEach((e) => {
             const k = (e.player_name || '') + '|' + (e.record_type || 'pos');
             if (!byKey[k]) { byKey[k] = []; order.push(k); }
             byKey[k].push(e);
@@ -1930,9 +2025,9 @@ window.saveEntryBatch = async function saveEntryBatch() {
             }
         }
 
-        entryPending = [];
+        entryPending = gate.held;
         renderEntryTable();
-        showToast('✅ သိမ်းပြီးပြီ');
+        showToast('✅ သိမ်းပြီးပြီ' + (gate.messages.length ? ' (🚫 ' + gate.messages.join(' · ') + ')' : ''));
         await loadSessions();
         renderSessions();
         renderLedger();
@@ -2162,7 +2257,7 @@ function renderAgents() {
     box.innerHTML = state.agents.map((a) => `
         <div class="agent-row">
             <div><div class="nm">${escHtml(a.name)} <span class="ptype">${escHtml(personTypeLabel(a))}</span>${agentBadgeForPerson(a.id) ? ` <span class="ptype" style="background:#1e3a5f;color:#7dd3fc">${escHtml(agentBadgeForPerson(a.id))}</span>` : ''}</div>
-            <div class="ph">${escHtml(a.phone || '')} · ကော် ${a.commission || 0}% · အလျော် ${a.payout_rate || 80}${!a.hot_open ? ' · ဟော့ ပိတ်' : ((Number(a.blocked_limit) || 0) > 0 ? ' · ဟော့ ' + formatMoney(a.blocked_limit) : ' · ဟော့ ဖွင့်')}</div></div>
+            <div class="ph">${escHtml(a.phone || '')} · ကော် ${a.commission || 0}% · အလျော် ${a.payout_rate || 80}${(Number(a.person_limit) || 0) > 0 ? ' · Limit ' + formatMoney(a.person_limit) : ''}${!a.hot_open ? ' · ဟော့ ပိတ်' : ((Number(a.blocked_limit) || 0) > 0 ? ' · ဟော့ ' + formatMoney(a.blocked_limit) : ' · ဟော့ ဖွင့်')}</div></div>
             <div class="acts">
                 <button class="btn small gray" data-edit="${a.id}">✏️</button>
                 <button class="btn small red" data-delag="${a.id}">×</button>
@@ -2188,6 +2283,7 @@ async function openAgentModal(id) {
     // is no longer read or edited.
     $('agHotOpen').value = (a && a.hot_open) ? '1' : '';
     $('agLimitAmt').value = a ? (a.blocked_limit || '') : '';
+    $('agPersonLimit').value = a ? (a.person_limit || '') : '';
     openModal('modal-agent');
     // Pho Oct 21: fill the agent-account link picker (async, modal already open).
     const linkSel = $('agLink');
@@ -2221,6 +2317,7 @@ async function saveAgent() {
         payout_rate: Number($('agPayout').value) || 80,
         hot_open: $('agHotOpen').value === '1',
         blocked_limit: Number($('agLimitAmt').value) || 0,
+        person_limit: Number($('agPersonLimit').value) || 0,
     };
     let personId = state.editingAgentId;
     // Server-direct (Pho Oct 27): writes go to the server, not local DB.
