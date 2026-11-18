@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="theme-color" content="#0b0f17">
 <title>2D Master Offline</title>
-<link rel="stylesheet" href="style.css?v=8">
+<link rel="stylesheet" href="style.css?v=12">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon-192.png">
 <script>
@@ -136,7 +136,7 @@ if ('serviceWorker' in navigator) {
                 <th style="width:30%;">ထိုးသား</th>
                 <th style="width:30%;">ဂဏန်း</th>
                 <th style="width:30%;">ပမာဏ</th>
-                <th style="width:10%;text-align:center;">🗑️</th>
+                <th style="width:10%;text-align:center;">×</th>
               </tr>
             </thead>
             <tbody id="entryTableBody">
@@ -266,7 +266,7 @@ if ('serviceWorker' in navigator) {
                 <th style="width:30%;">ဒိုင် ⬆️</th>
                 <th style="width:30%;">ဂဏန်း</th>
                 <th style="width:30%;">ပမာဏ</th>
-                <th style="width:10%;text-align:center;">🗑️</th>
+                <th style="width:10%;text-align:center;">×</th>
               </tr>
             </thead>
             <tbody id="akanTableBody">
@@ -332,7 +332,7 @@ if ('serviceWorker' in navigator) {
         <div class="card">
           <button id="resetAppBtn" class="btn gray block">🔄 App Reset (cache ရှင်း)</button>
         </div>
-        <div class="small muted" style="text-align:center;margin-top:8px"><b>Offline v1</b></div>
+        <div class="small muted" style="text-align:center;margin-top:8px"><b>Offline v21</b></div>
       </section>
     </main>
   </div>
@@ -361,11 +361,12 @@ if ('serviceWorker' in navigator) {
       <button class="close-x" data-close>×</button>
       <h2 id="boardTitle">ထိုးကွက်</h2>
       <div class="field" id="boardTargetWrap"><label>ထိုးသား</label><select id="boardTarget"></select></div>
+      <div class="field" id="boardAkanWrap" style="display:none"><label>ဒိုင် (အကန်ဒိုင်)</label><select id="boardAkanBookie"></select></div>
       <div class="field"><textarea id="boardText" placeholder="ဥပမာ:&#10;12=500&#10;6ထိပ်7000&#10;34567ခွေ"></textarea></div>
       <div id="boardLineCheck" class="board-check" style="display:none"></div>
       <div class="btn-grid">
+        <button id="boardClearAll" class="btn gray">ဖျက်</button>
         <button id="boardBack" class="btn gray">Back</button>
-        <button id="boardPaste" class="btn gray">Paste</button>
         <button id="boardSave" class="btn green">သိမ်းမည်</button>
       </div>
     </div>
@@ -419,13 +420,15 @@ if ('serviceWorker' in navigator) {
       <div class="field"><label>ဖုန်း</label><input id="agPhone" type="tel"></div>
       <div class="field"><label>ကော်မရှင် %</label><input id="agComm" type="number" inputmode="decimal" value="0"></div>
       <div class="field"><label>အလျော်နှုန်း</label><input id="agPayout" type="number" inputmode="numeric" value="80"></div>
-      <div class="field"><label>ကန့်သတ် (ဂဏန်း → တစ်ပွဲစာ အများဆုံး)</label>
-        <div class="row" style="gap:6px">
-          <input id="agLimitNum" type="text" inputmode="numeric" placeholder="ဂဏန်း" style="flex:1">
-          <input id="agLimitAmt" type="number" inputmode="numeric" placeholder="ပမာဏ" style="flex:1">
-          <button id="agLimitAdd" class="btn small" type="button">+ ထည့်</button>
-        </div>
-        <div id="agLimitList" class="mt"></div>
+      <div class="field"><label>ဟော့ဂဏန်း</label>
+        <select id="agHotOpen" class="field-input">
+          <option value="">ပိတ်</option>
+          <option value="1">ဖွင့်</option>
+        </select>
+      </div>
+      <div class="field"><label>ဟော့ဂဏန်း တကွက်စာ limit (ပိတ်ဂဏန်း အကုန်)</label>
+        <input id="agLimitAmt" type="number" inputmode="numeric" placeholder="ပမာဏ">
+        <div class="small muted">ပိတ်ရင် မရ · ဖွင့်ပြီး cap မရှိရင် အကန့်အသတ်မရှိ · ကျန်ဂဏန်း လီမစ်မရှိ</div>
       </div>
       <button id="agSave" class="btn block green">သိမ်းမည်</button>
     </div>
@@ -536,6 +539,6 @@ if ('serviceWorker' in navigator) {
 
 
 </div>
-<script type="module" src="app.js?v=off1"></script>
+<script type="module" src="app.js?v=off5"></script>
 </body>
 </html>
