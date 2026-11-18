@@ -26,6 +26,7 @@ html, body {
     font-family: -apple-system, "Segoe UI", "Noto Sans Myanmar", "Myanmar3", Roboto, sans-serif;
     font-size: 15px;
     min-height: 100vh;
+    overflow-x: clip;
 }
 
 #app { max-width: 680px; margin: 0 auto; min-height: 100vh; display: flex; flex-direction: column; }
@@ -213,16 +214,16 @@ main { flex: 1; padding: 14px 12px 40px; }
 .sumbox-tap { cursor: pointer; opacity: 0.85; }
 .sumbox-tap:active { opacity: 0.65; }
 #ledgerGrid {
-    display: grid; grid-template-columns: repeat(10, 1fr); gap: 4px;
+    display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px;
     background: var(--card); border: 1px solid var(--border);
     border-radius: var(--radius); padding: 8px;
 }
 .lcell {
-    background: var(--bg2); border: 1px solid var(--border); border-radius: 6px;
-    padding: 8px 2px; text-align: center; font-size: 13px; line-height: 1.35;
+    background: var(--bg2); border: 1px solid var(--border); border-radius: 8px;
+    padding: 7px 2px 6px; text-align: center; line-height: 1.3;
 }
-.lcell .n { font-weight: 700; color: var(--text); display: block; }
-.lcell .a { color: var(--muted); display: block; font-size: 11px; min-height: 14px; }
+.lcell .n { font-weight: 800; color: var(--text); display: block; font-size: 18px; }
+.lcell .a { color: var(--muted); display: block; font-size: 12px; min-height: 15px; }
 .lcell.over { background: rgba(239,68,68,.18); border-color: var(--red2); }
 .lcell.over .a { color: var(--red); font-weight: 700; }
 .lcell.win { background: rgba(250,204,21,.25); border-color: #facc15; }
@@ -370,12 +371,18 @@ table.data tr.total td { font-weight: 700; color: var(--accent); border-top: 2px
 
 /* ---------- 🧾 Voucher tables (neat grid with totals) ---------- */
 .v-table {
-    width: 100%; border-collapse: collapse; margin-top: 6px;
+    width: 100%; table-layout: fixed; border-collapse: collapse; margin-top: 6px;
     font-size: 14px; background: rgba(0,0,0,.15); border-radius: 8px; overflow: hidden;
 }
 .v-table th, .v-table td {
-    border: 1px solid var(--border); padding: 7px 10px; text-align: center;
+    border: 1px solid var(--border); padding: 8px 10px; text-align: left;
+    vertical-align: middle;
+    overflow-wrap: anywhere;
 }
+.v-table th:last-child, .v-table td:last-child { text-align: right; }
+.v-table tr.vx-row td { text-align: left; }
+.v-table thead th { text-align: left; }
+.v-table thead th:last-child { text-align: right; }
 .v-table thead th {
     background: rgba(56,189,248,.12); color: var(--accent);
     font-size: 13px; font-weight: 700;
@@ -517,7 +524,7 @@ table.data tr.over-row td:first-child { font-weight: 800; font-size: 15px; }
     border-color: var(--accent);
     box-shadow: 0 0 0 2px rgba(59,130,246,.25);
 }
-.pos-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.pos-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 14px; }
 .pos-table thead th {
     background: #141d31; color: var(--muted); font-size: 12px; font-weight: 700;
     padding: 10px 8px; text-align: left;
@@ -525,11 +532,18 @@ table.data tr.over-row td:first-child { font-weight: 800; font-size: 15px; }
 }
 .pos-table tbody td {
     padding: 10px 8px; border-top: 1px solid var(--border);
-    color: var(--text);
+    color: var(--text); text-align: left; vertical-align: middle;
+    overflow-wrap: anywhere;
 }
+.pos-table .cell-amt { text-align: right; white-space: nowrap; }
+.pos-table thead th:nth-child(3) { text-align: right; }
 .pos-table .cell-no { color: var(--yellow); font-weight: 800; font-size: 16px; letter-spacing: 1px; }
+.row-tap { cursor: pointer; }
+.exp-row td { font-size: 13px; line-height: 1.7; padding-top: 2px; padding-bottom: 10px; word-break: break-word; }
 .pos-table .cell-amt { color: var(--green); font-weight: 700; }
 .pos-table .cell-del { text-align: center; }
+.rec-del { background: none; border: none; color: var(--muted); font-size: 14px; padding: 4px 8px; cursor: pointer; border-radius: 6px; }
+.rec-del:active { background: rgba(255,255,255,.06); }
 .pos-table .empty-cell { text-align: center; color: var(--muted); padding: 24px; font-size: 13px; }
 
 /* ---------- Color formula keypad (7x2, same as Agent) ---------- */
@@ -714,7 +728,10 @@ tr.win-row td { background: rgba(250,204,21,.15); }
 .board-check .bline.ok .mk { color: #4a7c59; }
 .board-check .bline.bad .mk { color: #a33b3b; }
 .board-check .bline.bad .tx { color: #a33b3b; }
-.board-check .bline .tx { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Nov 3 layout: flex .tx must not widen the page - min-width: 0 lets the ellipsis truncate long dot-strings instead of pushing the fixed keypad off-screen. */
+.board-check .bline .tx { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; overflow-wrap: anywhere; }
+.board-check .bline .bd { flex: 0 0 auto; font-size: 12px; color: #4a7c59; font-weight: 700; }
+.board-check .bline.total { font-weight: 700; border-top: 1px dashed #888; margin-top: 4px; padding-top: 4px; }
 
 /* ===== Reminder bar (session-close countdown + winning-number nudge) ===== */
 .reminder-bar {
@@ -740,3 +757,10 @@ tr.win-row td { background: rgba(250,204,21,.15); }
   color: #7dd3fc;
   text-align: center;
 }
+/* Visual polish (Pho Oct 18): borders, text size — content untouched */
+.pos-table tbody td { border-bottom: 1px solid rgba(255,255,255,.06); }
+.pos-table tbody tr:last-child td { border-bottom: none; }
+.pos-table .cell-no { font-size: 15px; }
+.pos-table thead th { font-size: 12px; letter-spacing: .5px; }
+.v-table tbody td { border-bottom: 1px solid rgba(255,255,255,.05); }
+.v-table tbody tr:last-child td { border-bottom: none; }

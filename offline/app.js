@@ -41,12 +41,18 @@ const state = {
 };
 
 const $ = (id) => document.getElementById(id);
+/** Null-safe listener (version-skew guard): stale cached HTML may lack a newer element. */
+function on(id, ev, fn) { const el = document.getElementById(id); if (el) el.addEventListener(ev, fn); }
 
-/* ================= OFFLINE AUTH (activation key + PIN) ================= */
+/* ================= OFFLINE AUTH (device license + PIN) ================= */
+// License scheme (Pho Nov 3): key = "deviceId|app|expiry.sig", ECDSA P-256
+// over the UTF-8 payload. Trial expiry is YYYYMMDD fixed from issue date;
+// paid is NEVER. Binding is ANDROID_ID via the Java bridge (install-ID
+// fallback only when the bridge is absent).
 // ECDSA P-256 public key (SPKI DER, base64). The private key stays ONLY with Pho.
 // Anyone reading this file cannot forge activation keys.
-const OFF_PUBKEY_B64 = 'MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEb+QuAjxZATlTTbt9ZqzZEXgNjIbYQc/WWgWJVEJO9mobMJwR9Q6KG3122dAAsECZZ1lIfHx9nEJo99yCctzMvA==';
-const OFF_LS = { installId: 'off_install_id', activated: 'off_activated', pinHash: 'off_pin_hash' };
+const OFF_PUBKEY_B64 = 'MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAECmHe8rKGM3xv4VCKtrg1CyNkeCl0rZfWSbZDX9R1LgslGQqbWxEq10N8UaZI6meL3CXqrq78dgXN4+vqMZux6w==';
+const OFF_LS = { installId: 'off_install_id', activated: 'off_activated', pinHash: 'off_pin_hash', license: 'off_license' };
 
 function offInstallId() {
     let id = null;
@@ -57,37 +63,74 @@ function offInstallId() {
     }
     return id;
 }
+/* Stable device ID: ANDROID_ID from the Java bridge survives app delete +
+   reinstall on the same phone. Falls back to the persisted install ID when
+   the bridge is absent (browser test). */
+function offDeviceId() {
+    try {
+        if (typeof window !== 'undefined' && window.DeviceBridge && typeof window.DeviceBridge.getDeviceId === 'function') {
+            const d = window.DeviceBridge.getDeviceId();
+            if (d) return String(d);
+        }
+    } catch (e) {}
+    return offInstallId();
+}
 function offIsActivated() { try { return localStorage.getItem(OFF_LS.activated) === '1'; } catch (e) { return false; } }
 function offHasPin() { try { return !!localStorage.getItem(OFF_LS.pinHash); } catch (e) { return false; } }
 async function offSha256Hex(s) {
     const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
     return Array.from(new Uint8Array(d)).map((b) => b.toString(16).padStart(2, '0')).join('');
 }
+/* Padding-tolerant base64/base64url decoder (keygen may emit unpadded). */
 function _b64ToBytes(b64) {
-    const bin = atob(b64.replace(/-/g, '+').replace(/_/g, '/'));
+    let s = b64.replace(/-/g, '+').replace(/_/g, '/');
+    while (s.length % 4) s += '=';
+    const bin = atob(s);
     const bytes = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
     return bytes;
 }
-/** Verify an activation key (base64 ECDSA signature of the install ID). */
-async function offVerifyActivation(installId, keyB64) {
+async function offVerifySig(payload, sigB64) {
     try {
         const pubKey = await crypto.subtle.importKey('spki', _b64ToBytes(OFF_PUBKEY_B64),
             { name: 'ECDSA', namedCurve: 'P-256' }, false, ['verify']);
-        const sig = _b64ToBytes(keyB64.trim());
+        const sig = _b64ToBytes(sigB64);
         return await crypto.subtle.verify({ name: 'ECDSA', hash: 'SHA-256' },
-            pubKey, sig, new TextEncoder().encode(installId));
+            pubKey, sig, new TextEncoder().encode(payload));
     } catch (e) { return false; }
 }
+function offTodayYMD() {
+    const n = new Date();
+    return n.getFullYear() + String(n.getMonth() + 1).padStart(2, '0') + String(n.getDate()).padStart(2, '0');
+}
+/** Check a license string "payload.sig" — payload is "deviceId|app|expiry".
+    expiry is YYYYMMDD (trial, fixed from issue date) or NEVER (paid).
+    Returns { ok:true } or { ok:false, reason:'expired'|'mismatch'|'bad'|'none' }. */
+async function offCheckLicense(stored) {
+    if (!stored) return { ok: false, reason: 'none' };
+    const dot = stored.lastIndexOf('.');
+    if (dot <= 0) return { ok: false, reason: 'bad' };
+    const payload = stored.slice(0, dot);
+    const sig = stored.slice(dot + 1);
+    const parts = payload.split('|');
+    if (parts.length !== 3) return { ok: false, reason: 'bad' };
+    if (parts[1] !== '2D') return { ok: false, reason: 'mismatch' };
+    if (parts[0] !== offDeviceId()) return { ok: false, reason: 'mismatch' };
+    if (parts[2] !== 'NEVER') {
+        if (!/^\d{8}$/.test(parts[2])) return { ok: false, reason: 'bad' };
+        if (parts[2] < offTodayYMD()) return { ok: false, reason: 'expired' };
+    }
+    return (await offVerifySig(payload, sig)) ? { ok: true } : { ok: false, reason: 'bad' };
+}
 /* Login-card screens (the card's innerHTML is swapped per step). */
-function offRenderActivation() {
-    const id = offInstallId();
+function offRenderActivation(expired) {
+    const id = offDeviceId();
     document.querySelector('.login-card').innerHTML =
-        '<h1>📴 2D Master</h1><p class="sub">Offline — activate လုပ်ပါ</p>' +
-        '<div class="small muted">Install ID (ဒါကို ရောင်းသူ့ဆီပို့ပါ)</div>' +
+        '<h1>📴 2D Master</h1><p class="sub">Offline — ' + (expired ? 'Key သက်တမ်းကုန်ပြီ — Key အသစ် ထည့်ပါ' : 'activate လုပ်ပါ') + '</p>' +
+        '<div class="small muted">Device ID (ဒါကို ရောင်းသူ့ဆီပို့ပါ)</div>' +
         '<div class="act-id" id="offActId">' + escHtml(id) + '</div>' +
         '<button class="btn small gray block" onclick="navigator.clipboard && navigator.clipboard.writeText(document.getElementById(\'offActId\').textContent).then(()=>showToast(\'ကူးပြီးပြီ\'))">📋 ID ကူးမယ်</button>' +
-        '<input id="offKey" type="text" placeholder="Activation Key ထည့်ပါ" autocomplete="off" style="margin-top:10px">' +
+        '<input id="offKey" type="text" placeholder="License Key ထည့်ပါ" autocomplete="off" style="margin-top:10px">' +
         '<button class="btn block" onclick="window.offActivate()">Activate လုပ်မယ်</button>' +
         '<div id="loginError"></div>';
 }
@@ -111,12 +154,12 @@ function offRenderPinEntry() {
 window.offActivate = async function () {
     const key = ($('offKey') || {}).value || '';
     const err = $('loginError');
-    if (!key.trim()) { err.textContent = 'Activation Key ထည့်ပါ'; return; }
+    if (!key.trim()) { err.textContent = 'License Key ထည့်ပါ'; return; }
     err.textContent = 'စစ်နေတယ်…';
-    const ok = await offVerifyActivation(offInstallId(), key);
-    if (!ok) { err.textContent = 'Key မှားနေတယ် — ရောင်းသူ့ကို ပြန်မေးပါ'; return; }
-    try { localStorage.setItem(OFF_LS.activated, '1'); } catch (e) {}
-    offRenderSetPin();
+    const r = await offCheckLicense(key.trim());
+    if (!r.ok) { err.textContent = r.reason === 'expired' ? 'Key သက်တမ်းကုန်နေပြီ — အသစ် တောင်းပါ' : 'Key မှားနေတယ် — ရောင်းသူ့ကို ပြန်မေးပါ'; return; }
+    try { localStorage.setItem(OFF_LS.license, key.trim()); } catch (e) {}
+    if (offHasPin()) offRenderPinEntry(); else offRenderSetPin();
 };
 window.offSetPin = async function () {
     const p1 = ($('offPin1') || {}).value || '';
@@ -152,6 +195,23 @@ window.offChangePin = async function () {
     showToast('PIN ချိန်းပြီးပြီ ✅');
 };
 
+/* Device-license boot decision (Pho Nov 3). A stored new license governs
+   over the legacy flag, so an expired trial can never fall back to
+   permanent access. Legacy installs without a stored license are
+   grandfathered. Expiry never wipes data or PIN. */
+async function offGateBoot() {
+    let lic = null;
+    try { lic = localStorage.getItem(OFF_LS.license); } catch (e) {}
+    if (lic) {
+        const r = await offCheckLicense(lic);
+        if (r.ok) { if (!offHasPin()) offRenderSetPin(); else offRenderPinEntry(); return; }
+        if (r.reason === 'expired') { offRenderActivation(true); return; }
+        offRenderActivation(false); return;
+    }
+    if (offIsActivated()) { if (!offHasPin()) offRenderSetPin(); else offRenderPinEntry(); return; }
+    offRenderActivation(false);
+}
+
 /* ================= BOOT ================= */
 
 document.addEventListener('DOMContentLoaded', init);
@@ -170,11 +230,9 @@ async function _getWins(sessionId) {
 async function init() {
     bindUI();
     await db.openDB().catch((e) => console.error('IDB open failed', e));
-    // Offline gate: activation key -> set PIN -> PIN entry.
-    if (!offIsActivated()) { showPage('page-login'); offRenderActivation(); return; }
-    if (!offHasPin()) { showPage('page-login'); offRenderSetPin(); return; }
+    // Offline gate: device-bound license -> set PIN -> PIN entry.
     showPage('page-login');
-    offRenderPinEntry();
+    await offGateBoot();
 }
 
 function showPage(id) {
@@ -188,15 +246,12 @@ function bindUI() {
     $('fabSession').addEventListener('click', openSessionModal);
     $('nsSave').addEventListener('click', saveSession);
 
-    $('boardPaste').addEventListener('click', async () => {
-        try {
-            const t = await navigator.clipboard.readText();
-            if (t) { $('boardText').value = t; renderBoardLineCheck(); }
-        } catch (e) { showToast('Paste မရပါ — ကိုယ်တိုင်ထည့်ပါ'); }
-    });
-    $('boardText').addEventListener('input', () => renderBoardLineCheck());
+    $('boardText').addEventListener('input', () => { renderBoardLineCheck(); saveBoardDraft(); });
+    // Refit open modal sheets when the phone keyboard opens/closes.
+    if (window.visualViewport) window.visualViewport.addEventListener('resize', fitOpenSheets);
     $('boardBack').addEventListener('click', () => closeModal('modal-board'));
     $('boardSave').addEventListener('click', saveBoard);
+    on('boardClearAll', 'click', clearBoard);
     document.querySelectorAll('[data-close]').forEach((b) => {
         b.addEventListener('click', () => b.closest('.modal').classList.remove('open'));
     });
@@ -205,7 +260,6 @@ function bindUI() {
     $('limitSave').addEventListener('click', saveLimit);
     $('addAgentBtn').addEventListener('click', () => openAgentModal(null));
     $('agSave').addEventListener('click', saveAgent);
-    $('agLimitAdd').addEventListener('click', addAgentLimit);
 
     // Offline: no sync button, no buyer/agent-login management, PIN replaces password.
     const logoutBtn = $('logoutBtn');
@@ -370,7 +424,7 @@ async function renderBuyerList() {
                 '<td><button class="btn small gray" onclick="editAgentLimit(\'' + (tenantId || '') + '\',' + limit + ')">' + limit + ' ✏️</button></td>' +
                 '<td>' + (disabled ? '<span style="color:#ef4444">🔴 ပိတ်</span>' : '<span style="color:#4ade80">🟢 ဖွင့်</span>') + '</td>' +
                 '<td style="white-space:nowrap"><button class="btn small ' + (disabled ? 'gray' : 'red') + '" style="padding:4px 8px;font-size:12px" onclick="toggleBuyerDisabled(\'' + b.id + '\',' + (!disabled) + ')">' + (disabled ? 'ဖွင့်' : 'ပိတ်') + '</button>' +
-                '<button class="btn small" style="padding:4px 8px;font-size:12px;background:#374151;color:#fca5a5;border:1px solid #4b5563;margin-left:4px" onclick="deleteBuyerAccount(\'' + b.id + '\',\'' + escHtml(b.email).replace(/'/g, "\\'") + '\')">🗑️</button></td>' +
+                '<button class="btn small" style="padding:4px 8px;font-size:12px;background:#374151;color:#fca5a5;border:1px solid #4b5563;margin-left:4px" onclick="deleteBuyerAccount(\'' + b.id + '\',\'' + escHtml(b.email).replace(/'/g, "\\'") + '\')">×</button></td>' +
                 '</tr>';
         }
         html += '</tbody></table></div>';
@@ -452,6 +506,7 @@ async function enterApp() {
     await loadSessions();
     await loadAgents();
     await backfillDates().catch((e) => console.warn('backfillDates failed:', e.message));
+    await sweepOrphanRecords().catch((e) => console.warn('sweepOrphanRecords failed:', e.message));
     await loadSettingsIntoUI();
     renderSessions();
     renderAgents();
@@ -864,6 +919,15 @@ window.closeDrawer = closeDrawer;
 window.goDrawer = goDrawer;
 window.doLogout = doLogout;
 
+/** Keep an open modal sheet above the phone keyboard (Pho Oct 26 — with the
+ * keyboard open, the board's chips + Save were hidden behind it). Uses the
+ * truly visible area, so it works whether the window resizes or only pans. */
+function fitOpenSheets() {
+    if (!window.visualViewport) return;
+    const h = Math.floor(window.visualViewport.height * 0.92);
+    document.querySelectorAll('.modal.open .sheet').forEach((sh) => { sh.style.maxHeight = h + 'px'; });
+}
+
 function openModal(id) {
     // The formula keypads are fixed overlays (z-index 900) that would cover the
     // modal sheet — hide them whenever any modal opens (e.g. 🏆 ပေါက်သီး).
@@ -872,6 +936,7 @@ function openModal(id) {
     const akp = $('akanKeypad');
     if (akp && !akp.hidden) { akp.hidden = true; $('akanKbToggle')?.classList.remove('active'); }
     $(id).classList.add('open');
+    fitOpenSheets();
 }
 function closeModal(id) { $(id).classList.remove('open'); }
 
@@ -952,7 +1017,7 @@ async function renderSessions() {
                 <button class="btn small gray" data-act="blocked" data-id="${s.id}">🚫 ဒိုင်ပိတ်</button>
                 <button class="btn small gray" data-act="alltotal" data-id="${s.id}">💰 ALL Total</button>
                 <button class="btn small ${s.closed ? 'gray' : 'red'}" data-act="toggleclose" data-id="${s.id}">${s.closed ? '🔓 ဖွင့်' : '🔴 ပိတ်'}</button>
-                <button class="btn small red" data-act="del" data-id="${s.id}">🗑️</button>
+                <button class="btn small red" data-act="delall" data-id="${s.id}">× ဖိုင်လုံး</button>
             </div>
         </div>`;
     }
@@ -976,7 +1041,7 @@ async function sessionAction(act, id) {
     else if (act === 'blocked') { setActiveSession(id); openBlocked(id); }
     else if (act === 'alltotal') { setActiveSession(id); openAllTotal(id); }
     else if (act === 'toggleclose') toggleSessionClose(id);
-    else if (act === 'del') deleteSession(id);
+    else if (act === 'delall') deleteSessionAll(id);
 }
 
 async function toggleSessionClose(id) {
@@ -1023,12 +1088,16 @@ async function saveSession() {
     showToast('✅ ပွဲ ဖန်တီးပြီးပြီ');
 }
 
-async function deleteSession(id) {
+/** Whole-file delete (batch, Nov 3): delete ONE session AND all its records
+ * in one go. Winning numbers are KEPT (draw history for Remaining Digits)
+ * — the confirm dialog states this. Akan rows are lottery_records, so they
+ * are wiped with the rest. Tombstones the session id + refreshes. */
+async function deleteSessionAll(id) {
     const s = state.sessions.find((x) => x.id === id);
     if (!s) return;
-    if (!confirm(`"${sessionLabel(s)}" ကို ဖျက်မှာလား?\nပွဲစဥ်ကဒ်ပဲ ပျက်မယ် — စာရင်း၊ ပေါက်သီး၊ အချုပ်တွေ ကျန်မယ်။`)) return;
-    // Tombstone the server id so a later pull never resurrects this session,
-    // even if the server-side delete failed or is still queued.
+    const recs = await db.query('lottery_records', 'by_session', id);
+    if (!confirm(`"${sessionLabel(s)}" — ပွဲရော စာရင်း ${recs.length} ခုလုံးပါ ဖျက်မှာလား?\n(ပေါက်သီးသမိုင်း ကျန်မယ်)`)) return;
+    // Tombstone the server id so a later pull never resurrects this session.
     try {
         const pbId = s._pbId || s.id;
         const raw = localStorage.getItem('v2_deleted_sessions');
@@ -1039,9 +1108,9 @@ async function deleteSession(id) {
         }
         localStorage.setItem('v2_deleted_sessions', JSON.stringify(arr));
     } catch (e) { /* ignore */ }
-    // NOTE: lottery_records are KEPT for Daily/Weekly history (2 weeks)
-    // They are auto-deleted when older than 2 weeks (see cleanupOldRecords)
-    // NOTE: winning_numbers are KEPT for ကျန်ဂဏန်း (10-week history)
+    for (const r of recs) {
+        try { await db.del('lottery_records', r.id); } catch (e) { /* ignore */ }
+    }
     await deleteRecord('sessions', s);
     if (state.activeSessionId === id) {
         state.activeSessionId = null;
@@ -1050,10 +1119,26 @@ async function deleteSession(id) {
     await loadSessions();
     renderSessions();
     renderLedger();
-    showToast('🗑️ ဖျက်ပြီးပြီ');
+    showToast('🗑️ ဖိုင်လုံး ဖျက်ပြီးပြီ');
 }
 
 /* ================= DIGITAL BOARD ================= */
+
+/** Board draft: unsaved board text survives an app kill (Pho Oct 26 — the
+ * Viber/Telegram copy → paste workflow dies when the app is backgrounded
+ * and killed). Saved on every input/paste; cleared only on a full Save. */
+function saveBoardDraft() {
+    try {
+        const ta = $('boardText');
+        if (!ta) return;
+        localStorage.setItem('v2_board_draft', JSON.stringify({ sessionId: state.boardSessionId || '', mode: state.boardMode || 'entry', text: ta.value || '' }));
+    } catch (e) {}
+}
+function readBoardDraft() {
+    try { const raw = localStorage.getItem('v2_board_draft'); return raw ? JSON.parse(raw) : null; }
+    catch (e) { return null; }
+}
+function clearBoardDraft() { try { localStorage.removeItem('v2_board_draft'); } catch (e) {} }
 
 async function openBoard(sessionId) {
     state.boardSessionId = sessionId;
@@ -1069,6 +1154,7 @@ async function openBoard(sessionId) {
     }
     sel.innerHTML = opts;
     $('boardText').value = '';
+    if ($('boardAkanWrap')) $('boardAkanWrap').style.display = 'none';
     renderBoardLineCheck();
     openModal('modal-board');
     // Auto-paste: Viber က ကူးထားတဲ့ စာရင်း ရှိ ရင် တန်း ထည့် (Paste နှိပ် စရာ မ လို)
@@ -1077,10 +1163,22 @@ async function openBoard(sessionId) {
         if (clip && clip.trim()) {
             $('boardText').value = clip.trim();
             renderBoardLineCheck();
+            saveBoardDraft();
             showToast('📋 ကူးထားတဲ့ စာရင်း ထည့်ပြီးပြီ');
         }
     } catch (e) { /* clipboard blocked — Paste ခလုတ် သုံး */ }
-    setTimeout(() => $('boardText').focus(), 300);
+    // Draft restore: app killed while copying → unsaved board text is back.
+    if (!$('boardText').value.trim()) {
+        const d = readBoardDraft();
+        if (d && d.sessionId === sessionId && d.mode === (state.boardMode || 'entry') && d.text) {
+            $('boardText').value = d.text;
+            renderBoardLineCheck();
+            showToast('📋 ရှေ့စာရင်း ပြန်ထည့်ပြီးပြီ');
+        }
+    }
+    // Pho Oct 26: NO auto-focus here — the phone keyboard must appear ONLY
+    // when he taps the textarea to type. The old focus() call summoned it
+    // on every board open and covered the buttons (the real "auto" error).
 }
 
 /** Strict per-line check: parse must succeed AND every number must be 2-digit. Never guesses. */
@@ -1090,7 +1188,8 @@ function boardLineOk(line) {
     return parsed.length > 0 && parsed.every((p) => /^\d{2}$/.test(String(p.number)));
 }
 
-/** Per-line formula check: small ✅/❌ per line, subtle styling. Never guesses. */
+/** Per-line formula check: ✅/❌ per line + per-line ကွက်/ငွေ + total (Pho Oct 26:
+ * the old ✅/❌-only board could not be verified). Never guesses. */
 function renderBoardLineCheck() {
     const ta = $('boardText');
     const box = $('boardLineCheck');
@@ -1099,15 +1198,37 @@ function renderBoardLineCheck() {
     if (!text.trim()) { box.innerHTML = ''; box.style.display = 'none'; return 0; }
     let html = '';
     let bad = 0;
+    let totCount = 0, totMoney = 0;
     for (const line of text.split('\n')) {
         if (!line.trim()) continue;
         const ok = boardLineOk(line);
-        if (!ok) bad++;
-        html += `<div class="bline ${ok ? 'ok' : 'bad'}"><span class="mk">${ok ? '✅' : '❌'}</span><span class="tx">${escHtml(line)}</span></div>`;
+        if (!ok) {
+            bad++;
+            html += `<div class="bline bad"><span class="mk">❌</span><span class="tx">${escHtml(line)}</span></div>`;
+            continue;
+        }
+        let parsed = [];
+        try { parsed = parseLine(line); } catch (e) { parsed = []; }
+        const cnt = parsed.length;
+        const money = parsed.reduce((s, p) => s + (Number(p.amount) || 0), 0);
+        totCount += cnt; totMoney += money;
+        const amts = [...new Set(parsed.map((p) => Number(p.amount) || 0))];
+        const detail = amts.length === 1 ? `${cnt} ကွက် × ${formatMoney(amts[0])}` : `${cnt} ကွက် · ${formatMoney(money)}`;
+        html += `<div class="bline ok"><span class="mk">✅</span><span class="tx">${escHtml(line)}</span><span class="bd"> → ${detail}</span></div>`;
     }
+    if (totCount) html += `<div class="bline total"><span class="tx">စုစုပေါင်း: ${totCount} ကွက် · ${formatMoney(totMoney)}</span></div>`;
     box.innerHTML = html;
     box.style.display = '';
     return bad;
+}
+
+/**
+ Board clear-all (Pho Nov 4): one tap clears the whole board text + preview + stored draft, so reopening the board does NOT restore cleared text. No confirm. */
+function clearBoard() {
+    const ta = $('boardText');
+    if (ta) ta.value = '';
+    renderBoardLineCheck();
+    clearBoardDraft();
 }
 
 async function saveBoard() {
@@ -1124,7 +1245,7 @@ async function saveBoard() {
         if (!boardLineOk(line)) { badLines.push(line); continue; }
         let parsed = [];
         try { parsed = parseLine(line); } catch (e) { parsed = []; }
-        for (const p of parsed) okItems.push(p);
+        for (const p of parsed) okItems.push({...p, formula_text: line.trim(), _fromFormula: lineHasFormula(line)});
     }
     if (!okItems.length) { showToast('ထည့်တာ မမှန်ပါ — စစ်ပါ'); return; }
     const sessionId = state.boardSessionId;
@@ -1133,12 +1254,19 @@ async function saveBoard() {
     const keepBadOpen = () => {
         $('boardText').value = badLines.join('\n');
         renderBoardLineCheck();
+        saveBoardDraft();
     };
 
     // အကန်ဒိုင် mode → rows land in the OUTGOING pending table, not the entry table.
     if (state.boardMode === 'akan') {
-        const bookie = (($('akanBookieSelect') && $('akanBookieSelect').value) || '').trim() || null;
+        // Bookie comes from the board's own dropdown first (Pho Oct 26 — the
+        // select used to live only on the screen behind the modal), then the
+        // akan screen's select. Sync the choice back so later saves agree.
+        const boardSel = $('boardAkanBookie');
+        let bookie = ((boardSel && boardSel.value) || '').trim() || null;
+        if (!bookie) bookie = (($('akanBookieSelect') && $('akanBookieSelect').value) || '').trim() || null;
         if (!bookie) { showToast('❌ ဒိုင် နာမည် ရွေးပါ'); return; }
+        if ($('akanBookieSelect')) $('akanBookieSelect').value = bookie;
         okItems.forEach((it) => {
             addAkanUnique(bookie, it.number, it.amount);
         });
@@ -1150,6 +1278,7 @@ async function saveBoard() {
         showToast('✅ ' + okItems.length + ' ကွက် ထည့်ပြီးပြီ (အထွက်)');
         $('boardText').value = '';
         renderBoardLineCheck();
+        clearBoardDraft();
         closeModal('modal-board');
         await openAkandain(sessionId);
         return;
@@ -1160,26 +1289,40 @@ async function saveBoard() {
     const personName = agent ? agent.name : '';
     if (!personName) { showToast('❌ အမည် ရွေးပါ (မရွေးရင် တင်မရ)'); return; }
 
-    // 🚫 ဒိုင်ပိတ်: blocked numbers cannot be bet (incoming only)
+    // Pho Oct 29 hot rule (ported from Master/Agent): session blocked
+    // numbers follow this person's hot_open — ပိတ် = fully blocked;
+    // ဖွင့် + cap = per-line cap; ဖွင့် + no cap = unlimited.
+    // Formula lines exempt; non-hot unlimited; akan persons exempt.
     const blockedSet2 = new Set(getBlocked(sessionId));
+    const hotOpenB = !!(agent && agent.hot_open);
+    const capB = Number(agent && agent.blocked_limit) || 0;
     const blockedHit2 = [];
+    const overHit2 = [];
     const allowedBoard = okItems.filter((it) => {
         const nn = String(it.number).padStart(2, '0');
-        if (blockedSet2.has(nn)) { blockedHit2.push(nn); return false; }
-        return true;
+        if (it._fromFormula) return true;
+        if (agent && (agent.person_type || 'agent') === 'akan') return true;
+        if (!blockedSet2.has(nn)) return true;
+        if (hotOpenB && (capB === 0 || (Number(it.amount) || 0) <= capB)) return true;
+        if (hotOpenB) overHit2.push(nn); else blockedHit2.push(nn);
+        return false;
     });
-    if (blockedHit2.length) showToast('🚫 ဒိုင်ပိတ်: ' + [...new Set(blockedHit2)].join(', ') + ' — တင် မရပါ');
+    const blkParts2 = [];
+    if (blockedHit2.length) blkParts2.push([...new Set(blockedHit2)].join(', ') + ' ပိတ်');
+    if (overHit2.length) blkParts2.push([...new Set(overHit2)].join(', ') + ' တကွက် ' + formatMoney(capB) + ' ကျော်');
+    const blkMsg2 = blkParts2.length ? ' (🚫 ' + blkParts2.join(' · ') + ')' : '';
     allowedBoard.forEach((it) => {
-        addEntryUnique(personName || null, it.number, it.amount, 'pos');
+        addEntryUnique(personName || null, it.number, it.amount, 'pos', agent ? agent.id : '', it.formula_text || '', -1, it._fromFormula);
     });
     if (badLines.length) {
         keepBadOpen();
-        showToast('✅ ' + allowedBoard.length + ' ကွက် ထည့်ပြီးပြီ · ❌ ' + badLines.length + ' လိုင်း ကျန် — ပြင်ပြီး Save ပြန်နှိပ်');
+        showToast('✅ ' + allowedBoard.length + ' ကွက် ထည့်ပြီးပြီ · ❌ ' + badLines.length + ' လိုင်း ကျန် — ပြင်ပြီး Save ပြန်နှိပ်' + blkMsg2);
         return;
     }
-    showToast('✅ ' + allowedBoard.length + ' ကွက် ထည့်ပြီးပြီ');
+    showToast('✅ ' + allowedBoard.length + ' ကွက် ထည့်ပြီးပြီ' + blkMsg2);
     $('boardText').value = '';
     renderBoardLineCheck();
+    clearBoardDraft();
     closeModal('modal-board');
     await openEntry(sessionId);
 }
@@ -1187,24 +1330,21 @@ async function saveBoard() {
 /* ================= ENTRY SCREEN (ထိုးကွက် — Agent-style) ================= */
 
 let entryPending = [];      // typed but NOT yet saved: [{player_name, number, amount, record_type}]
-/** Add to entryPending, skipping exact duplicates (prevents double-add glitches). */
-function addEntryUnique(playerName, number, amount, recordType) {
+/** Add to entryPending. Pho Oct 16: repeats are legitimate — all valid lines enter. */
+function addEntryUnique(playerName, number, amount, recordType, personId, formulaText, lineIdx, fromFormula) {
     const num = String(number).padStart(2, '0');
     const amt = Number(amount) || 0;
-    const exists = entryPending.some((e) =>
-        (e.player_name || '') === (playerName || '') &&
-        String(e.number).padStart(2, '0') === num &&
-        (Number(e.amount) || 0) === amt &&
-        (e.record_type || 'pos') === (recordType || 'pos')
-    );
-    if (!exists) {
-        entryPending.push({ player_name: playerName, number: num, amount: amt, record_type: recordType || 'pos' });
-        return true;
-    }
-    return false;
+    entryPending.push({ player_name: playerName, number: num, amount: amt, record_type: recordType || 'pos', person_id: personId || '', formula_text: formulaText || '', line_idx: lineIdx ?? -1, _fromFormula: !!fromFormula });
+    return true;
 }
 let entryActiveBox = 'no';  // 'no' | 'amt' | 'rev'
 let entrySaveInFlight = false;
+
+const FORMULA_KEYWORDS = ['ပါ', 'ပူး', 'ခွေ', 'ပတ်', 'နက္ခတ်', 'နတ်ခတ်', 'ထိုင်းနက္ခတ်', 'ထိုင်းနတ်ခတ်', 'ညီအစ်ကို', 'စုံမ', 'မစုံ', 'ထိပ်', 'နောက်', 'ဘရိတ်', 'ပွင့်', 'ပါဝါ', 'စုံစုံ', 'မမ']; // Pho Nov 6: နတ်ခတ် = နက္ခတ်
+function lineHasFormula(line) {
+    const str = String(line || '');
+    return FORMULA_KEYWORDS.some((kw) => str.includes(kw));
+}
 
 const ENTRY_FORMULA_INSERT = {
     'ထိပ်': 'ထိပ်', 'နောက်': 'နောက်', 'ပတ်': 'ပတ်', 'ပူး': 'ပူး',
@@ -1283,20 +1423,42 @@ async function renderEntry() {
 async function renderEntryPersonOptions() {
     const pSel = $('entryPlayerSelect');
     const prev = pSel.value;
-    const order = [];
-    const seen = new Set();
-    const add = (k) => { k = (k || '').trim(); if (k && !seen.has(k)) { seen.add(k); order.push(k); } };
-
-    // ONLY registered people — unregistered names are BLOCKED entirely
-    // ထိုးသား + Agent only — အကန်ဒိုင် never mixes in here
-    (state.agents || []).forEach((a) => { if ((a.person_type || 'agent') !== 'akan') add(a.name); });
+    // Pho Oct 18: options keyed by agent ID (not name) so same-name persons stay separate.
+    // If duplicate names exist, show phone to distinguish.
+    const nameCount = {};
+    (state.agents || []).forEach((a) => {
+        if ((a.person_type || 'agent') === 'akan') return;
+        const n = (a.name || '').trim();
+        if (n) nameCount[n] = (nameCount[n] || 0) + 1;
+    });
+    let opts = '';
+    (state.agents || []).forEach((a) => {
+        if ((a.person_type || 'agent') === 'akan') return;
+        const n = (a.name || '').trim();
+        if (!n) return;
+        const label = (nameCount[n] > 1 && a.phone) ? `${n} (${a.phone})` : n;
+        opts += `<option value="${escHtml(a.id)}">${escHtml(label)}</option>`;
+    });
     const ph = '-- ထိုးသား ရွေးပါ --';
-    pSel.innerHTML = '<option value="">' + escHtml(ph) + '</option>' +
-        order.map((k) => '<option value="' + escHtml(k) + '">' + escHtml(voucherPersonLabel(k)) + '</option>').join('');
-    if (prev && order.includes(prev)) pSel.value = prev;
+    pSel.innerHTML = '<option value="">' + escHtml(ph) + '</option>' + opts;
+    if (prev && pSel.querySelector(`option[value="${CSS.escape(prev)}"]`)) pSel.value = prev;
 }
 
-/** Pending entries table + totals. */
+/** Pending entries table + totals. Groups by formula_text (Pho Oct 16).
+ * Pho Oct 27: tap a grouped (formula) row to expand its numbers below it;
+ * tap again to collapse. Only one group open at a time is NOT enforced —
+ * each row toggles its own detail, keyed by (formula_text, line_idx) so the
+ * open state survives re-renders (e.g. after a delete). */
+const _expandedEntryRows = new Set();
+window.toggleEntryExpand = function toggleEntryExpand(ri, ev) {
+    if (ev && ev.target && ev.target.closest && ev.target.closest('button')) return;
+    const keys = window.__entryRowKeys || [];
+    const key = keys[ri];
+    if (!key) return;
+    if (_expandedEntryRows.has(key)) _expandedEntryRows.delete(key);
+    else _expandedEntryRows.add(key);
+    renderEntryTable();
+};
 function renderEntryTable() {
     const tbody = $('entryTableBody');
     const total = entryPending.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
@@ -1306,18 +1468,53 @@ function renderEntryTable() {
         tbody.innerHTML = '<tr><td colspan="4" class="empty-cell">စာရင်း မရှိသေးပါ။</td></tr>';
         return;
     }
-    tbody.innerHTML = entryPending.map((e, i) =>
-        '<tr>' +
+    // Group by (formula_text, line_idx) — each input line is its own row
+    const byF = {}; const fOrder = [];
+    entryPending.forEach((e, idx) => {
+        const ft = (e.formula_text || '').trim();
+        const key = ft ? ft + '‖' + (e.line_idx ?? -1) : `__s__${idx}`;
+        if (!byF[key]) { byF[key] = { indices: [], entries: [] }; fOrder.push(key); }
+        byF[key].indices.push(idx);
+        byF[key].entries.push(e);
+    });
+    window.__entryRowKeys = fOrder;
+    tbody.innerHTML = fOrder.map((key, ri) => {
+        const g = byF[key];
+        if (g.entries.length > 1) {
+            const e0 = g.entries[0];
+            const ft = (e0.formula_text || '').trim();
+            const gTotal = g.entries.reduce((s, e) => s + (Number(e.amount) || 0), 0);
+            const expanded = _expandedEntryRows.has(key);
+            let row = '<tr class="row-tap" onclick="toggleEntryExpand(' + ri + ', event)">' +
+                '<td>' + escHtml(e0.player_name || 'ကိုယ်တိုင်') + '</td>' +
+                '<td class="cell-no">' + escHtml(ft) + ' (' + g.entries.length + ')' + (expanded ? ' ▴' : ' ▾') + '</td>' +
+                '<td class="cell-amt">' + formatMoney(gTotal) + '</td>' +
+                '<td class="cell-del"><button class="rec-del" onclick="entryDeleteGroup(\'' + g.indices.join(',') + '\')" title="ဖျက်မည်">×</button></td>' +
+            '</tr>';
+            if (expanded) {
+                const nums = g.entries.map((e) => '<span class="cell-no">' + escHtml(String(e.number)) + '</span> <span class="cell-amt">' + formatMoney(e.amount) + '</span>').join(' · ');
+                row += '<tr class="exp-row"><td colspan="4">' + nums + '</td></tr>';
+            }
+            return row;
+        }
+        const e = g.entries[0]; const i = g.indices[0];
+        return '<tr>' +
             '<td>' + (e.record_type === 'akan' ? '⬆️ ' : '') + escHtml(e.player_name || (e.record_type === 'akan' ? 'ဒိုင် (အကန်)' : 'ကိုယ်တိုင်')) + '</td>' +
             '<td class="cell-no">' + escHtml(String(e.number)) + '</td>' +
             '<td class="cell-amt">' + formatMoney(e.amount) + '</td>' +
-            '<td class="cell-del"><button class="rec-del" onclick="entryDeleteRow(' + i + ')" title="ဖျက်မည်">🗑️</button></td>' +
-        '</tr>'
-    ).join('');
+            '<td class="cell-del"><button class="rec-del" onclick="entryDeleteRow(' + i + ')" title="ဖျက်မည်">×</button></td>' +
+        '</tr>';
+    }).join('');
 }
 
 window.entryDeleteRow = function entryDeleteRow(i) {
     entryPending.splice(i, 1);
+    renderEntryTable();
+};
+
+window.entryDeleteGroup = function entryDeleteGroup(idxList) {
+    const idxs = String(idxList).split(',').map(Number).filter((n) => Number.isInteger(n)).sort((a, b) => b - a);
+    idxs.forEach((i) => { if (i >= 0 && i < entryPending.length) entryPending.splice(i, 1); });
     renderEntryTable();
 };
 
@@ -1352,7 +1549,11 @@ async function isSessionLocked(sessionId) {
 window.submitEntryRow = async function submitEntryRow() {
     const lk = await isSessionLocked(state.activeSessionId);
     if (lk.locked) { showToast('🔒 ' + lk.reason + ' — ပြင်/ထည့် မရပါ'); return; }
-    const playerName = $('entryPlayerSelect').value || null;
+    // Pho Oct 18: dropdown value is now the agent ID (same-name persons stay separate).
+    const selId = $('entryPlayerSelect').value || null;
+    const selAgent = selId ? (state.agents || []).find((a) => a.id === selId) : null;
+    const playerName = selAgent ? selAgent.name : null;
+    const personId = selAgent ? selAgent.id : null;
     if (!playerName) { showToast('❌ အမည် စာရင်း သွင်းထားမှ ရမယ် — အရင် လူ စာရင်း သွင်းပါ'); return; }
     const rType = 'pos'; // ထိုးကွက် is incoming-only; outgoing goes through 🔄 အကန်ဒိုင်
     const noText = $('boxNo').value.trim();
@@ -1378,22 +1579,35 @@ window.submitEntryRow = async function submitEntryRow() {
         showToast('❌ ဖော်မြူလာ မသိပါ (ဂဏန်း မှားနေတယ်)' + (invalidLines.length ? ': ' + invalidLines[0] : ''));
         return;
     }
-    // 🚫 ဒိုင်ပိတ်: blocked numbers cannot be bet
+    // Pho Oct 29 hot rule (ported from Master/Agent): session blocked
+    // numbers follow this person's hot_open — ပိတ် = fully blocked;
+    // ဖွင့် + cap = per-line cap; ဖွင့် + no cap = unlimited.
+    // Formula lines exempt; non-hot unlimited.
     const blockedSet = new Set(getBlocked(state.activeSessionId));
+    const hotOpenE = !!selAgent.hot_open;
+    const capE = Number(selAgent.blocked_limit) || 0;
+    const isFormulaEntry = lineHasFormula(line);
     const blockedHit = [];
+    const overHit = [];
     const allowedItems = validItems.filter((it) => {
         const nn = String(it.number).padStart(2, '0');
-        if (blockedSet.has(nn)) { blockedHit.push(nn); return false; }
-        return true;
+        if (isFormulaEntry) return true;
+        if (!blockedSet.has(nn)) return true;
+        if (hotOpenE && (capE === 0 || (Number(it.amount) || 0) <= capE)) return true;
+        if (hotOpenE) overHit.push(nn); else blockedHit.push(nn);
+        return false;
     });
     if (!allowedItems.length) { entryClearInputs(); showToast('🚫 ဒိုင်ပိတ် ဂဏန်းတွေ ချည်း — တင် မရပါ'); return; }
     allowedItems.forEach((it) => {
-        addEntryUnique(playerName, it.number, it.amount, rType);
+        addEntryUnique(playerName, it.number, it.amount, rType, personId, '', -1, isFormulaEntry);
     });
     entryClearInputs();
     renderEntryTable();
     const skipped = invalidLines.length + (items.length - validItems.length) + blockedHit.length;
-    const blkMsg = blockedHit.length ? ' (🚫 ' + [...new Set(blockedHit)].join(',') + ' ပိတ်)' : '';
+    const blkParts = [];
+    if (blockedHit.length) blkParts.push([...new Set(blockedHit)].join(',') + ' ပိတ်');
+    if (overHit.length) blkParts.push([...new Set(overHit)].join(',') + ' တကွက် ' + formatMoney(capE) + ' ကျော်');
+    const blkMsg = blkParts.length ? ' (🚫 ' + blkParts.join(' · ') + ')' : '';
     showToast(rType === 'akan' ? '✅ ထည့်ပြီးပြီ (⬆️ အထွက်)' : '✅ ထည့်ပြီးပြီ' + (skipped ? ' (⚠️ ' + skipped + ' လိုင်း ကျန်)' : '') + blkMsg);
 };
 
@@ -1406,9 +1620,11 @@ window.saveEntryBatch = async function saveEntryBatch() {
     if (!state.activeSessionId) { showToast('⚠️ Session မရှိသေးပါ'); return; }
     const lk = await isSessionLocked(state.activeSessionId);
     if (lk.locked) { showToast('🔒 ' + lk.reason + ' — သိမ်း မရပါ'); return; }
-    // Per-person per-number limit check (cumulative per session)
-    const limitErr = await checkPersonLimits(entryPending, state.activeSessionId);
-    if (limitErr) { showToast('❌ ' + limitErr); return; }
+    // Pho Oct 29 hot rule (ported from Master/Agent): per-line cap at
+    // save time — replaces the abolished Oct 16 cumulative per-number
+    // limits. Formula lines exempt; akan (outgoing) exempt.
+    const hotErr = checkHotRule(entryPending, state.activeSessionId);
+    if (hotErr) { showToast('❌ ' + hotErr); return; }
 
     entrySaveInFlight = true;
     try {
@@ -1432,8 +1648,10 @@ window.saveEntryBatch = async function saveEntryBatch() {
                     session_timeType: sess ? sess.timeType : null,
                     number: String(e.number).padStart(2, '0'),
                     amount: Number(e.amount) || 0,
+                    formula_text: e.formula_text || '',
                     agent_name: e.player_name || '',
                     player_name: e.player_name || '',
+                    person_id: e.person_id || '',
                     record_type: e.record_type || 'pos',
                     batch_no: batchNo,
                 });
@@ -1453,36 +1671,22 @@ window.saveEntryBatch = async function saveEntryBatch() {
     }
 };
 
-/** Check per-person per-number limits (cumulative per session).
- *  Returns an error message if any limit is exceeded, else null. */
-async function checkPersonLimits(pending, sessionId) {
-    const pendTotals = {};
-    pending.forEach((e) => {
-        const name = (e.player_name || '').trim();
-        const num = String(e.number).padStart(2, '0');
-        const k = name + '|' + num;
-        pendTotals[k] = (pendTotals[k] || 0) + (Number(e.amount) || 0);
-    });
-    let existing = [];
-    try { existing = await db.query('lottery_records', 'by_session', sessionId); } catch (e) { /* ignore */ }
-    const existTotals = {};
-    existing.forEach((r) => {
-        const name = (r.player_name || r.agent_name || '').trim();
-        const num = String(r.number).padStart(2, '0');
-        const k = name + '|' + num;
-        existTotals[k] = (existTotals[k] || 0) + (Number(r.amount) || 0);
-    });
-    for (const k of Object.keys(pendTotals)) {
-        const sep = k.lastIndexOf('|');
-        const name = k.slice(0, sep), num = k.slice(sep + 1);
-        const person = (state.agents || []).find((a) => a.name === name);
-        const lim = person && person.limits && Number(person.limits[num]);
-        if (lim > 0) {
-            const total = (existTotals[k] || 0) + pendTotals[k];
-            if (total > lim) {
-                return `${name} — ဟော့ဂဏန်း (${num}) Limite ပြည့်လို့ မရတော့ပါ`;
-            }
-        }
+/** Pho Oct 29 hot rule (ported from Master/Agent): per-line cap, never
+ *  cumulative. Returns an error message if any pending line violates the
+ *  person's hot rule, else null. Formula lines exempt; akan exempt. */
+function checkHotRule(pending, sessionId) {
+    const blockedSet = new Set(getBlocked(sessionId));
+    for (const e of pending) {
+        if ((e.record_type || 'pos') === 'akan') continue;
+        if (e._fromFormula) continue;
+        const nn = String(e.number).padStart(2, '0');
+        if (!blockedSet.has(nn)) continue;
+        const person = (state.agents || []).find((a) => a.id === (e.person_id || '')) ||
+            (state.agents || []).find((a) => a.name === (e.player_name || '').trim());
+        const hotOpen = !!(person && person.hot_open);
+        const cap = Number(person && person.blocked_limit) || 0;
+        if (!hotOpen) return `${(e.player_name || '').trim()} — ဟော့ဂဏန်း (${nn}) ပိတ်ထားလို့ မရပါ`;
+        if (cap > 0 && (Number(e.amount) || 0) > cap) return `${(e.player_name || '').trim()} — ဟော့ဂဏန်း (${nn}) တကွက် ${formatMoney(cap)} ကျော်လို့ မရပါ`;
     }
     return null;
 }
@@ -1499,6 +1703,11 @@ window.openAkanBoard = function openAkanBoard() {
     openBoard(state.activeSessionId);
     // Bookie is chosen on the akandain screen — hide the board's target row.
     $('boardTargetWrap').style.display = 'none';
+    // Pho Oct 26: bookie select must live IN the board too (no going back).
+    const bSel = $('boardAkanBookie');
+    const aSel = $('akanBookieSelect');
+    if (bSel && aSel) { bSel.innerHTML = aSel.innerHTML; bSel.value = aSel.value; }
+    if ($('boardAkanWrap')) $('boardAkanWrap').style.display = '';
     const s = state.sessions.find((x) => x.id === state.activeSessionId);
     $('boardTitle').textContent = '🔄 အကန်ဒိုင် (အထွက်) — ' + (s ? sessionLabel(s) : '');
 };
@@ -1676,10 +1885,10 @@ function renderAgents() {
     box.innerHTML = state.agents.map((a) => `
         <div class="agent-row">
             <div><div class="nm">${escHtml(a.name)} <span class="ptype">${escHtml(personTypeLabel(a))}</span></div>
-            <div class="ph">${escHtml(a.phone || '')} · ကော် ${a.commission || 0}% · အလျော် ${a.payout_rate || 80}</div></div>
+            <div class="ph">${escHtml(a.phone || '')} · ကော် ${a.commission || 0}% · အလျော် ${a.payout_rate || 80}${!a.hot_open ? ' · ဟော့ ပိတ်' : ((Number(a.blocked_limit) || 0) > 0 ? ' · ဟော့ ' + formatMoney(a.blocked_limit) : ' · ဟော့ ဖွင့်')}</div></div>
             <div class="acts">
                 <button class="btn small gray" data-edit="${a.id}">✏️</button>
-                <button class="btn small red" data-delag="${a.id}">🗑️</button>
+                <button class="btn small red" data-delag="${a.id}">×</button>
             </div>
         </div>`).join('');
     box.querySelectorAll('[data-edit]').forEach((b) =>
@@ -1697,46 +1906,11 @@ function openAgentModal(id) {
     $('agPhone').value = a ? (a.phone || '') : '';
     $('agComm').value = a ? (a.commission || 0) : 0;
     $('agPayout').value = a ? (a.payout_rate || 80) : 80;
-    state.editingLimits = Object.assign({}, (a && a.limits) || {});
-    $('agLimitNum').value = '';
-    $('agLimitAmt').value = '';
-    renderAgentLimitList();
+    if ($('agHotOpen')) $('agHotOpen').value = (a && a.hot_open) ? '1' : '';
+    $('agLimitAmt').value = a ? (a.blocked_limit || '') : '';
     openModal('modal-agent');
 }
 
-/** Render per-number limits in the person modal. */
-function renderAgentLimitList() {
-    const box = $('agLimitList');
-    const keys = Object.keys(state.editingLimits || {});
-    if (!keys.length) {
-        box.innerHTML = '<div class="small muted">ကန့်သတ် မရှိသေးပါ</div>';
-        return;
-    }
-    box.innerHTML = keys.sort().map((num) =>
-        `<div class="row" style="justify-content:space-between;padding:4px 0;border-bottom:1px dashed #ddd">
-            <span><b>${escHtml(num)}</b> → ${formatMoney(state.editingLimits[num])}</span>
-            <button class="btn small red" data-dellimit="${escHtml(num)}" type="button">×</button>
-        </div>`).join('');
-    box.querySelectorAll('[data-dellimit]').forEach((b) =>
-        b.addEventListener('click', () => {
-            delete state.editingLimits[b.dataset.dellimit];
-            renderAgentLimitList();
-        }));
-}
-
-function addAgentLimit() {
-    const raw = $('agLimitNum').value.trim();
-    const amt = Number($('agLimitAmt').value) || 0;
-    // Allow "56" or "56+98+35+69" — each number gets the same limit.
-    const nums = raw.split('+').map((s) => s.trim()).filter(Boolean);
-    if (!nums.length || !nums.every((n) => /^\d{2}$/.test(n))) { showToast('ဂဏန်း ၂ လုံး ထည့်ပါ (56+98 လို့လဲ ရတယ်)'); return; }
-    if (amt <= 0) { showToast('ပမာဏ ထည့်ပါ'); return; }
-    state.editingLimits = state.editingLimits || {};
-    nums.forEach((n) => { state.editingLimits[n] = amt; });
-    $('agLimitNum').value = '';
-    $('agLimitAmt').value = '';
-    renderAgentLimitList();
-}
 
 async function saveAgent() {
     const name = $('agName').value.trim();
@@ -1747,11 +1921,13 @@ async function saveAgent() {
         phone: $('agPhone').value.trim(),
         commission: Number($('agComm').value) || 0,
         payout_rate: Number($('agPayout').value) || 80,
-        limits: Object.assign({}, state.editingLimits || {}),
+        hot_open: ($('agHotOpen') && $('agHotOpen').value === '1') || false,
+        blocked_limit: Number($('agLimitAmt').value) || 0,
     };
     if (state.editingAgentId) {
         const a = state.agents.find((x) => x.id === state.editingAgentId);
         Object.assign(a, data);
+        delete a.limits; // abolished Oct 16 per-number limits — never read again
         await updateRecord('agents', a);
     } else {
         await createRecord('agents', data);
@@ -1787,9 +1963,10 @@ async function openDaily(sessionId) {
         const isAkan = r.record_type === 'akan';
         const pkey = voucherPersonKey(r) || '(အမည် မရှိ)';
         const key = (isAkan ? 'akan:' : 'pos:') + pkey;
-        if (!per[key]) { per[key] = { bet: 0, win: 0, winDeduct: 0, isAkan }; pLabel[key] = voucherPersonLabel(pkey); }
+        if (!per[key]) { per[key] = { bet: 0, win: 0, winDeduct: 0, isAkan, cnt: 0 }; pLabel[key] = voucherPersonLabel(pkey); }
         const amt = Number(r.amount) || 0;
         per[key].bet += isAkan ? -amt : amt;
+        per[key].cnt += 1; // each record = 1 ကွက် bet line (Pho Oct 26: Daily must show ကွက်)
         // ပေါက် column DISPLAYS the raw winning amount only.
         // Behind the scenes ("နောက်ကွယ်ကတွက်မယ်") the net uses win × payout (80).
         // Bettors: Pho PAYS winnings (deduct). Akan: bookie PAYS Pho (add).
@@ -1800,7 +1977,7 @@ async function openDaily(sessionId) {
             per[key].winDeduct += amt * payout;
         }
     }
-    let rows = '', tBet = 0, tWin = 0, tComm = 0, tWinDeductPos = 0, tWinDeductAkan = 0, tNet = 0;
+    let rows = '', tBet = 0, tWin = 0, tComm = 0, tWinDeductPos = 0, tWinDeductAkan = 0, tNet = 0, tCnt = 0;
     for (const [key, v] of Object.entries(per)) {
         const label = pLabel[key];
         const ag = state.agents.find((a) => a.name === label);
@@ -1809,23 +1986,25 @@ async function openDaily(sessionId) {
         // Bettors: ကျန် = ထိုးငွေ − ကော် − (အပေါက် × 80). Pho pays winners.
         // Akan: ကျန် = ထိုးငွေ − ကော် + (အပေါက် × 80). Bookie pays Pho.
         const net = v.isAkan ? v.bet - commAmt + v.winDeduct : v.bet - commAmt - v.winDeduct;
-        tBet += v.bet; tWin += v.win; tComm += commAmt; tNet += net;
+        tBet += v.bet; tWin += v.win; tComm += commAmt; tNet += net; tCnt += v.cnt;
         if (v.isAkan) tWinDeductAkan += v.winDeduct; else tWinDeductPos += v.winDeduct;
         const nameHtml = v.isAkan
             ? `<span style="color:var(--red);font-weight:700">⬆️ ${escHtml(label)}</span>`
             : escHtml(label);
-        rows += `<tr><td>${nameHtml}</td><td>${formatMoney(v.bet)}</td><td>${formatMoney(v.win)}</td><td>${formatMoney(net)}</td></tr>`;
+        rows += `<tr><td>${nameHtml}</td><td style="text-align:center">${v.cnt}</td><td>${formatMoney(v.bet)}</td><td>${formatMoney(v.win)}</td><td>${formatMoney(net)}</td></tr>`;
     }
     // Total deducts commission and the background (win × 80), not the displayed raw win.
     // tNet is the sum of row nets (handles both bettor and akan directions).
     const html = `
         <div class="muted small" style="margin-bottom:8px">${escHtml(s ? sessionLabel(s) : '')}
         ${winNum ? ` · 🏆 ပေါက်သီး <b style="color:var(--green)">${winNum}</b>` : ' · ပေါက်သီး မထည့်ရသေး'}</div>
-        <table class="data"><tr><th>ထိုးသား</th><th>ထိုးငွေ</th><th>ပေါက်</th><th>ကျန်</th></tr>
-        ${rows || '<tr><td colspan="4" class="muted">မှတ်တမ်း မရှိ</td></tr>'}
+        <table class="data"><tr><th>ထိုးသား</th><th>ကွက်</th><th>ထိုးငွေ</th><th>ပေါက်</th><th>ကျန်</th></tr>
+        ${rows || '<tr><td colspan="5" class="muted">မှတ်တမ်း မရှိ</td></tr>'}
         </table>
         <div class="card" style="margin-top:10px"><div style="font-weight:700;margin-bottom:6px">📊 အချုပ်</div>
         <table class="data">
+        <tr><td>ကွက် စုစုပေါင်း</td><td style="text-align:right">${tCnt}</td></tr>
+        <tr><td>ထိုးငွေ စုစုပေါင်း</td><td style="text-align:right">${formatMoney(tBet)}</td></tr>
         <tr class="total"><td>ကျန်</td><td style="text-align:right">${(tNet < 0 ? '−' : '+') + formatMoney(Math.abs(tNet))}</td></tr>
         </table></div>`;
     openGeneric('📑 Daily စာရင်းချုပ်', html);
@@ -1850,9 +2029,10 @@ function dailyAggFromRecords(recs, winNum) {
         const isAkan = r.record_type === 'akan';
         const pkey = voucherPersonKey(r) || '(အမည် မရှိ)';
         const key = (isAkan ? 'akan:' : 'pos:') + pkey;
-        if (!per[key]) { per[key] = { bet: 0, win: 0, winDeduct: 0, isAkan }; pLabel[key] = voucherPersonLabel(pkey); }
+        if (!per[key]) { per[key] = { bet: 0, win: 0, winDeduct: 0, isAkan, cnt: 0 }; pLabel[key] = voucherPersonLabel(pkey); }
         const amt = Number(r.amount) || 0;
         per[key].bet += isAkan ? -amt : amt;
+        per[key].cnt += 1; // each record = 1 ကွက် bet line (Pho Oct 26: Daily must show ကွက်)
         if (winNum && String(r.number).padStart(2, '0') === winNum) {
             per[key].win += amt;
             const ag0 = state.agents.find((a) => a.name === pLabel[key]);
@@ -1860,20 +2040,20 @@ function dailyAggFromRecords(recs, winNum) {
             per[key].winDeduct += amt * payout;
         }
     }
-    let rows = '', tBet = 0, tWin = 0, tNet = 0;
+    let rows = '', tBet = 0, tWin = 0, tNet = 0, tCnt = 0;
     for (const [key, v] of Object.entries(per)) {
         const label = pLabel[key];
         const ag = state.agents.find((a) => a.name === label);
         const comm = ag ? (Number(ag.commission) || 0) : 0;
         const commAmt = Math.round(v.bet * comm / 100);
         const net = v.isAkan ? v.bet - commAmt + v.winDeduct : v.bet - commAmt - v.winDeduct;
-        tBet += v.bet; tWin += v.win; tNet += net;
+        tBet += v.bet; tWin += v.win; tNet += net; tCnt += v.cnt;
         const nameHtml = v.isAkan
             ? `<span style="color:var(--red);font-weight:700">⬆️ ${escHtml(label)}</span>`
             : escHtml(label);
-        rows += `<tr><td>${nameHtml}</td><td>${formatMoney(v.bet)}</td><td>${formatMoney(v.win)}</td><td>${formatMoney(net)}</td></tr>`;
+        rows += `<tr><td>${nameHtml}</td><td style="text-align:center">${v.cnt}</td><td>${formatMoney(v.bet)}</td><td>${formatMoney(v.win)}</td><td>${formatMoney(net)}</td></tr>`;
     }
-    return { rows, tBet, tWin, tNet, winNum };
+    return { rows, tBet, tWin, tNet, winNum, tCnt };
 }
 
 async function renderHomeDaily() {
@@ -1888,8 +2068,11 @@ async function renderHomeDaily() {
     const ds = `${d}.${m}.${y}`; // match session.date format DD.MM.YYYY
 
     // Get ALL records for this date (works even after session deletion)
+    const liveSessionIds = new Set((state.sessions || []).map((s) => s.id));
     const allRecs = await db.getAll('lottery_records');
     const dayRecs = allRecs.filter((r) => {
+        // Complete-delete guard: exclude records whose session is dead.
+        if (isDeadSessionRecord(r, liveSessionIds)) return false;
         // New records have session_date; old records: look up via session
         if (r.session_date) {
             if (r.session_date !== ds) return false;
@@ -1931,8 +2114,8 @@ async function renderHomeDaily() {
         const agg = dailyAggFromRecords(sessRecs, winNum);
         gBet += agg.tBet; gWin += agg.tWin; gNet += agg.tNet;
         html += `<div style="font-weight:700;margin:10px 0 6px"><b>${title}</b> ${agg.winNum ? `· 🏆 <b style="color:var(--green)">${agg.winNum}</b>` : ''}</div>
-        <table class="data"><tr><th>ထိုးသား</th><th>ထိုးငွေ</th><th>ပေါက်</th><th>ကျန်</th></tr>
-        ${agg.rows || '<tr><td colspan="4" class="muted">မှတ်တမ်း မရှိ</td></tr>'}
+        <table class="data"><tr><th>ထိုးသား</th><th>ကွက်</th><th>ထိုးငွေ</th><th>ပေါက်</th><th>ကျန်</th></tr>
+        ${agg.rows || '<tr><td colspan="5" class="muted">မှတ်တမ်း မရှိ</td></tr>'}
         </table>`;
     }
 
@@ -1985,6 +2168,7 @@ async function renderWeekly() {
     state.weeklyMonday = days[0].ds;
     // NOTE: iterate dates (not sessions) so deleted sessions don't hide history.
     // Records/winning numbers carry denormalized session_date/date (see backfillDates).
+    const liveSessionIds = new Set((state.sessions || []).map((s) => s.id));
     const allRecs = await db.getAll('lottery_records');
     const allWins = await db.getAll('winning_numbers');
 
@@ -1997,7 +2181,7 @@ async function renderWeekly() {
         const ds = days[dayIdx].ds;
         for (const tt of ['မနက်ပိုင်း', 'ညနေပိုင်း']) {
         const isAM = tt === 'မနက်ပိုင်း';
-        const recs = allRecs.filter((r) => r.session_date === ds && (r.session_timeType || '') === tt);
+        const recs = allRecs.filter((r) => r.session_date === ds && (r.session_timeType || '') === tt && !isDeadSessionRecord(r, liveSessionIds));
         const _w = allWins.find((x) => (x.date || '') === ds && ((x.timeType || '') === tt));
         const wins = _w ? [_w] : [];
         const winNum = wins.length ? String(wins[0].number).padStart(2, '0') : null;
@@ -2269,6 +2453,34 @@ async function backfillDates() {
     }
 }
 
+/**
+ * Orphan predicate (Nov 4, complete-delete rule): a record is orphaned when
+ * its r.session is truthy but no live session row has that id. Records with
+ * a falsy r.session cannot be attributed and are NOT orphaned.
+ */
+function isDeadSessionRecord(r, liveIds) {
+    return Boolean(r.session) && !liveIds.has(r.session);
+}
+
+/**
+ * Orphan sweep (Nov 4): delete every orphaned lottery_records row (leftovers
+ * of the old card-only delete, which kept records). Idempotent: re-runs find
+ * zero. Toasts the deleted count only when > 0. NEVER touches
+ * winning_numbers rows (Remaining Digits runs on them).
+ */
+async function sweepOrphanRecords() {
+    const liveIds = new Set((state.sessions || []).map((s) => s.id));
+    const recs = await db.getAll('lottery_records');
+    let n = 0;
+    for (const r of recs) {
+        if (isDeadSessionRecord(r, liveIds)) {
+            try { await db.del('lottery_records', r.id); n++; } catch (e) { /* ignore */ }
+        }
+    }
+    if (n > 0) showToast('🗑️ ကျန်နေတဲ့ မှတ်တမ်း ' + n + ' ခု ဖျက်ပြီးပြီ');
+    return n;
+}
+
 // Auto-delete winning numbers older than 10 weeks
 async function cleanupOldWinnings() {
     try {
@@ -2340,23 +2552,59 @@ async function openRemaining() {
     }
 
     const dayNames = ['တနင်္ဂနွေ', 'တနင်္လာ', 'အင်္ဂါ', 'ဗုဒ္ဓဟူး', 'ကြာသပတေး', 'သောကြာ', 'စနေ'];
-    let html = '';
-    const allNums = [];
-    for (const dateKey of sortedDates.slice(0, 70)) {
+    // Pho Oct 29 week-split: ကျန်ဂဏန်း = single digits missing from ONE
+    // week's 5 days of winning numbers — never the 70-day window.
+    // Top (coloured): last week's remainder; below: this week's remainder
+    // (draws so far). Lines show ONLY the current week (Mon-Fri),
+    // always; older weeks never appear as lines.
+    // Mon-Fri ONLY, always: Sat/Sun never shown and never counted; a
+    // weekday missing from a week is a holiday (no draw that day).
+    const thisMon = mondayOf(new Date());
+    const lastMon = new Date(thisMon.getFullYear(), thisMon.getMonth(), thisMon.getDate() - 7);
+    const thisMonDs = dsOf(thisMon);
+    const lastMonDs = dsOf(lastMon);
+    const lastNums = [];
+    const thisNums = [];
+    for (const dateKey of Object.keys(byDate)) {
+        const pd = parseSessionDate(dateKey);
+        if (!pd) continue;
+        const wd = pd.getDay();
+        if (wd === 0 || wd === 6) continue; // Mon-Fri only
+        const wk = dsOf(mondayOf(pd));
+        const d = byDate[dateKey];
+        const nums = [];
+        if (d.am) nums.push(d.am);
+        if (d.pm) nums.push(d.pm);
+        if (wk === lastMonDs) lastNums.push(...nums);
+        else if (wk === thisMonDs) thisNums.push(...nums);
+    }
+    const remLast = remainingDigits(lastNums);
+    const remThis = remainingDigits(thisNums);
+    const prevChipStyle = 'background:rgba(212,175,55,.18);border-color:#c9a227;color:#d4af37;';
+    let html = `<div class="small muted" style="margin:6px 0">ယခင်အပတ်ကျန် (${remLast.length})</div>
+        <div class="digit-chips">${remLast.map((d) => `<span class="dchip" style="${prevChipStyle}">${d}</span>`).join('')}</div>
+        <div class="small muted" style="margin:10px 0 6px">ယခုအပတ်ကျန် (${remThis.length})</div>
+        <div class="digit-chips">${remThis.map((d) => `<span class="dchip">${d}</span>`).join('')}</div>`;
+    // Lines: current week only (newest first, as before). The header
+    // names the week Mon-Fri; a missing weekday is a holiday.
+    const thisFri = new Date(thisMon.getFullYear(), thisMon.getMonth(), thisMon.getDate() + 4);
+    html += `<div class="small muted" style="margin:10px 0 2px">တပတ် ${thisMonDs} – ${dsOf(thisFri)}</div>`;
+    let thisWeekLines = 0;
+    for (const dateKey of sortedDates) {
         const d = byDate[dateKey];
         if (!d.am && !d.pm) continue;
+        const pd = parseSessionDate(dateKey);
+        if (pd && (pd.getDay() === 0 || pd.getDay() === 6)) continue; // Mon-Fri only
+        const wk = pd ? dsOf(mondayOf(pd)) : null;
+        if (wk !== thisMonDs) continue;
         const [dd, mm, yy] = dateKey.split('.').map(Number);
         const dayName = dayNames[new Date(yy, mm - 1, dd).getDay()];
-        if (d.am) allNums.push(d.am);
-        if (d.pm) allNums.push(d.pm);
         html += `<div class="dayline">${dayName} Am ${d.am || '--'} Pm ${d.pm || '--'}</div>`;
+        thisWeekLines++;
     }
+    if (!thisWeekLines) html += `<div class="small muted">ဒီအပတ် ပေါက်သီး မရှိသေးပါ</div>`;
 
-    const rem = remainingDigits(allNums);
-    html += `<div class="small muted" style="margin:6px 0">ကျန်ဂဏန်း (${rem.length})</div>
-        <div class="digit-chips">${rem.map((d) => `<span class="dchip">${d}</span>`).join('')}</div>`;
-
-    openGeneric('🔢 ကျန်ဂဏန်း (၁၀ ပတ်)', `<div class="digit-week card">${html}</div>`);
+    openGeneric('🔢 ကျန်ဂဏန်း', `<div class="digit-week card">${html}</div>`);
 }
 
 /* ================= ⚖️ ကြီးငယ် (BIG / SMALL) ================= */
@@ -2564,11 +2812,18 @@ async function sessionRecordsOrdered(sessionId) {
 }
 
 function voucherPersonKey(r) {
+    // Pho Oct 18: group by person_id when present (same-name persons stay separate).
+    if (r.person_id) return 'id:' + r.person_id;
     // Agent-synced: group under agent_name only (hide individual player names in Master)
     if (r.agent_name && r.player_name && r.agent_name !== r.player_name) return r.agent_name;
     return r.player_name || r.agent_name || '';
 }
 function voucherPersonLabel(k) {
+    // Pho Oct 18: 'id:xxx' keys resolve to the agent's name for display.
+    if (k && k.startsWith('id:')) {
+        const a = (state.agents || []).find((x) => x.id === k.slice(3));
+        return (a && a.name) || 'ကိုယ်တိုင်';
+    }
     return k || 'ကိုယ်တိုင်';
 }
 
@@ -2612,6 +2867,50 @@ async function renderVouchers() {
     renderVoucherContent();
 }
 
+function sortVoucherGroup(records, formulaText) {
+    const ft = (formulaText || '').trim();
+    if (!ft || !records || records.length < 2) return records ? records.slice() : [];
+    let expansion = [];
+    try { expansion = parseBoard(ft) || []; } catch (e) { expansion = []; }
+    if (!expansion.length) return records.slice();
+    const slots = new Map();
+    expansion.forEach((e, i) => {
+        const key = String(e.number).padStart(2, '0') + '|' + Number(e.amount);
+        if (!slots.has(key)) slots.set(key, []);
+        slots.get(key).push(i);
+    });
+    const seen = new Map();
+    const decorated = records.map((r, origIdx) => {
+        const key = String(r.number).padStart(2, '0') + '|' + Number(r.amount);
+        const q = slots.get(key);
+        let idx;
+        if (!q) {
+            idx = Infinity;
+        } else {
+            const n = seen.get(key) || 0;
+            seen.set(key, n + 1);
+            idx = n < q.length ? q[n] : Infinity;
+        }
+        return { r, idx, origIdx };
+    });
+    decorated.sort((a, b) => {
+        if (a.idx !== b.idx) return a.idx < b.idx ? -1 : 1;
+        return a.origIdx - b.origIdx;
+    });
+    return decorated.map((d) => d.r);
+}
+
+function voucherExpandRow(grp, winNums) {
+    const lines = grp.map((r) => {
+        const ns = String(r.number).padStart(2, '0');
+        // Inline win colour (offline style.css has no .vx-chip.win rule and
+        // its pin stays untouched, so no new stylesheet dependency).
+        const winStyle = winNums.has(ns) ? ';color:#f5c542;font-weight:700' : '';
+        return '<span class="vx-chip" style="display:block' + winStyle + '">' + ns + '&nbsp;&nbsp;&nbsp;&nbsp;-&nbsp;&nbsp;&nbsp;&nbsp;' + formatMoney(r.amount) + '</span>';
+    }).join('');
+    return '<tr class="vx-row" hidden><td colspan="2" style="padding-bottom:12px"><div class="vx-grid" style="display:block">' + lines + '</div></td></tr>';
+}
+
 async function renderVoucherContent() {
     const sid = $('voucherSession').value;
     const sel = $('voucherPerson').value;
@@ -2649,14 +2948,8 @@ async function renderVoucherContent() {
             byBatch[b].push(r);
         });
         const batches = batchOrder.map((b, i) => {
-            // Dedup: same number+amount shows only once
-            const seenB = new Set();
-            const items = byBatch[b].filter((r) => {
-                const key = String(r.number).padStart(2, '0') + '|' + (Number(r.amount) || 0);
-                if (seenB.has(key)) return false;
-                seenB.add(key);
-                return true;
-            });
+            // Pho: NO dedup — duplicates are legitimate and must all show
+            const items = byBatch[b];
             return { label: 'NO ' + (i + 1), items };
         });
         const isAkan = pRecs.length > 0 && pRecs.every((r) => r.record_type === 'akan');
@@ -2671,15 +2964,37 @@ async function renderVoucherContent() {
             (p.isAkan ? ' <span class="ptype">အထွက်</span>' : '') + '</div>';
         p.batches.forEach((b) => {
             const bTotal = b.items.reduce((s, r) => s + (Number(r.amount) || 0), 0);
-            html += '<div class="v-batch"><div class="v-batch-no">' + escHtml(b.label) + '</div>' +
-                '<table class="v-table"><thead><tr><th>ဂဏန်း</th><th>ပမာဏ</th></tr></thead><tbody>' +
-                b.items.map((r) => {
+            // Group by formula_text for compact display (e.g. "အပူး 500" (10) 5000);
+            // records without a formula show as single rows.
+            const byFormula = {};
+            const formulaOrder = [];
+            b.items.forEach((r) => {
+                const ft = (r.formula_text || '').trim();
+                const key = ft || `__single__${r.id}`;
+                if (!byFormula[key]) { byFormula[key] = []; formulaOrder.push(key); }
+                byFormula[key].push(r);
+            });
+            const rowsHtml = formulaOrder.map((key) => {
+                const grp = sortVoucherGroup(byFormula[key], (byFormula[key][0].formula_text || '').trim());
+                if (grp.length > 1) {
+                    const ft = (grp[0].formula_text || '').trim();
+                    const cnt = grp.length;
+                    const total = grp.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+                    const ids = grp.map((r) => r.id).join(',');
+                    return '<tr data-rids="' + escHtml(ids) + '" style="user-select:none;-webkit-user-select:none;"><td>' + escHtml(ft) + '</td>' +
+                        '<td>(' + cnt + ') ' + formatMoney(total) + '</td></tr>' + voucherExpandRow(grp, winNums);
+                } else {
+                    const r = grp[0];
                     const numStr = String(r.number).padStart(2, '0');
                     const isWin = winNums.has(numStr);
                     return '<tr data-rid="' + escHtml(r.id) + '"' + (isWin ? ' class="win-row"' : '') + '><td' + (isWin ? ' class="win-cell"' : '') + '>' +
                         escHtml(numStr) + '</td>' +
                         '<td' + (isWin ? ' class="win-cell"' : '') + '>' + formatMoney(r.amount) + '</td></tr>';
-                }).join('') +
+                }
+            }).join('');
+            html += '<div class="v-batch"><div class="v-batch-no">' + escHtml(b.label) + '</div>' +
+                '<table class="v-table"><thead><tr><th>ဂဏန်း</th><th>ပမာဏ</th></tr></thead><tbody>' +
+                rowsHtml +
                 '</tbody><tfoot><tr><td>Total</td><td>' + formatMoney(bTotal) + '</td></tr></tfoot></table></div>';
         });
         html += '</div>';
@@ -2695,10 +3010,27 @@ async function renderVoucherContent() {
             if (bi > 0) lines.push('');
             lines.push(b.label);
             let bTotal = 0;
+            const byF = {};
+            const fOrder = [];
             b.items.forEach((r) => {
-                const amt = Number(r.amount) || 0;
-                bTotal += amt;
-                lines.push(String(r.number).padStart(2, '0') + ' ' + amt);
+                const ft = (r.formula_text || '').trim();
+                const key = ft || `__s__${r.id}`;
+                if (!byF[key]) { byF[key] = []; fOrder.push(key); }
+                byF[key].push(r);
+            });
+            fOrder.forEach((key) => {
+                const grp = byF[key];
+                if (grp.length > 1) {
+                    const ft = (grp[0].formula_text || '').trim();
+                    const total = grp.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+                    bTotal += total;
+                    lines.push(`${ft} (${grp.length}) ${total}`);
+                } else {
+                    const r = grp[0];
+                    const amt = Number(r.amount) || 0;
+                    bTotal += amt;
+                    lines.push(String(r.number).padStart(2, '0') + ' ' + amt);
+                }
             });
             lines.push('Total ' + bTotal);
         });
@@ -2977,7 +3309,7 @@ function renderAkanTable() {
             '<td class="cell-out">⬆️ ' + escHtml(e.player_name || '—') + '</td>' +
             '<td class="cell-no">' + escHtml(String(e.number)) + '</td>' +
             '<td class="cell-amt out-amt">' + formatMoney(e.amount) + '</td>' +
-            '<td class="cell-del"><button class="rec-del" onclick="akanDeleteRow(' + i + ')" title="ဖျက်မည်">🗑️</button></td>' +
+            '<td class="cell-del"><button class="rec-del" onclick="akanDeleteRow(' + i + ')" title="ဖျက်မည်">×</button></td>' +
         '</tr>'
     ).join('');
 }
@@ -3154,7 +3486,7 @@ async function renderAgentList() {
                 '<td><span style="color:#64748b;font-size:11px">ဖန်တီးတုန်းက ပြပြီး</span></td>' +
                 '<td>' + (disabled ? '<span style="color:#ef4444">🔴 ပိတ်</span>' : '<span style="color:#4ade80">🟢 ဖွင့်</span>') + '</td>' +
                 '<td style="white-space:nowrap"><button class="btn small ' + (disabled ? 'gray' : 'red') + '" style="padding:4px 8px;font-size:12px" onclick="toggleAgentDisabled(\'' + agent.id + '\',' + (!disabled) + ')">' + (disabled ? 'ဖွင့်' : 'ပိတ်') + '</button>' +
-                '<button class="btn small" style="padding:4px 8px;font-size:12px;background:#374151;color:#fca5a5;border:1px solid #4b5563;margin-left:4px" onclick="deleteAgentAccount(\'' + agent.id + '\',\'' + escHtml(agent.name || `Agent ${n}`).replace(/'/g, "\\'") + '\')">🗑️</button></td>' +
+                '<button class="btn small" style="padding:4px 8px;font-size:12px;background:#374151;color:#fca5a5;border:1px solid #4b5563;margin-left:4px" onclick="deleteAgentAccount(\'' + agent.id + '\',\'' + escHtml(agent.name || `Agent ${n}`).replace(/'/g, "\\'") + '\')">×</button></td>' +
                 '</tr>';
         }
         html += '</tbody></table></div>';
@@ -3286,11 +3618,11 @@ window.editAgentLimit = async function editAgentLimit(tenantId, currentLimit) {
 
 /* 🔄 App Reset: clear all local data and reload */
 async function resetApp() {
-    // OFFLINE: keep activation + PIN + install ID — only app DATA is wiped.
+    // OFFLINE: keep activation + PIN + install ID + license — only app DATA is wiped.
     if (!confirm('စာရင်းဒေတာ အကုန် ရှင်းမလား? (Activation/PIN ကျန်မယ်)')) return;
     let keep = {};
     try {
-        for (const k of [OFF_LS.installId, OFF_LS.activated, OFF_LS.pinHash])
+        for (const k of [OFF_LS.installId, OFF_LS.activated, OFF_LS.pinHash, OFF_LS.license])
             keep[k] = localStorage.getItem(k);
     } catch (e) {}
     try {
@@ -3305,6 +3637,15 @@ async function resetApp() {
     location.reload();
 }
 
+/** In-place refresh after a saved-record edit/delete (voucher view +
+ * ledger + session totals). Previously the long-press menu fell back to
+ * location.reload() because this function was never defined. */
+window.refreshVoucherView = async function refreshVoucherView() {
+    try { await renderVouchers(); } catch (e) { /* ignore */ }
+    try { await renderLedger(); } catch (e) { /* ignore */ }
+    try { await renderSessions(); } catch (e) { /* ignore */ }
+};
+
 /** Long-press Edit/Delete for voucher rows (Pho's spec: nothing shows until long-press) */
 (function() {
     let pressTimer = null;
@@ -3314,11 +3655,14 @@ async function resetApp() {
         pressTarget = null;
     };
     const onPressStart = (e) => {
-        const tr = e.target.closest('tr[data-rid]');
+        const t = e.target;
+        const trG = (t && t.closest) ? t.closest('tr[data-rids]') : null;
+        const tr = trG || ((t && t.closest) ? t.closest('tr[data-rid]') : null);
         if (!tr) return;
         pressTarget = tr;
         pressTimer = setTimeout(() => {
-            showEditDeleteMenu(pressTarget.getAttribute('data-rid'), e);
+            if (pressTarget.hasAttribute('data-rids')) showGroupMenu(pressTarget.getAttribute('data-rids'), e);
+            else showEditDeleteMenu(pressTarget.getAttribute('data-rid'), e);
             clearPress();
         }, 600);
     };
@@ -3338,7 +3682,7 @@ async function resetApp() {
         menu.style.top = Math.min(y, window.innerHeight - 100) + 'px';
         menu.innerHTML =
             '<button onclick="openEditRecord(\'' + rid + '\')" style="display:block;width:100%;padding:8px 16px;margin:4px 0;background:#3b82f6;color:white;border:none;border-radius:4px;">✏️ ပြင်</button>' +
-            '<button onclick="deleteRecord(\'' + rid + '\')" style="display:block;width:100%;padding:8px 16px;margin:4px 0;background:#ef4444;color:white;border:none;border-radius:4px;">🗑️ ဖျက်</button>';
+            '<button onclick="deleteRecord(\'' + rid + '\')" style="display:block;width:100%;padding:8px 16px;margin:4px 0;background:#ef4444;color:white;border:none;border-radius:4px;">× ဖျက်</button>';
         document.body.appendChild(menu);
         setTimeout(() => { document.addEventListener('click', closeEditDeleteMenu, { once: true }); }, 100);
     };
@@ -3389,11 +3733,136 @@ async function resetApp() {
         closeEditDeleteMenu();
         if (!confirm('ဖျက်မလား?')) return;
         try {
-            await db.delete('lottery_records', rid);
+            await db.del('lottery_records', rid);
             await sync.mutate('delete', 'lottery_records', { id: rid });
             if (window.refreshVoucherView) await window.refreshVoucherView();
             else location.reload();
         } catch (e) { alert('Error: ' + e.message); }
     };
+
+    // Pho Oct 20 (ported from Master/Agent): long-press on GROUPED
+    // formula rows — edit/delete the whole group.
+    let _grpIds = [];
+    const _grpRefresh = async () => {
+        if (window.refreshVoucherView) await window.refreshVoucherView();
+        else location.reload();
+    };
+    window.showGroupMenu = function(ridsStr, e) {
+        closeEditDeleteMenu();
+        const menu = document.createElement('div');
+        menu.id = 'editDeleteMenu';
+        menu.style.cssText = 'position:fixed;z-index:9999;background:#1e293b;border:1px solid #3b82f6;border-radius:8px;padding:8px;box-shadow:0 4px 12px rgba(0,0,0,0.5);';
+        const x = (e.changedTouches ? e.changedTouches[0].clientX : e.clientX) || window.innerWidth/2;
+        const y = (e.changedTouches ? e.changedTouches[0].clientY : e.clientY) || window.innerHeight/2;
+        menu.style.left = Math.min(x, window.innerWidth - 140) + 'px';
+        menu.style.top = Math.min(y, window.innerHeight - 100) + 'px';
+        menu.innerHTML =
+            '<button onclick="openEditGroup(\'' + ridsStr + '\')" style="display:block;width:100%;padding:8px 16px;margin:4px 0;background:#3b82f6;color:white;border:none;border-radius:4px;">✏️ ပြင်</button>' +
+            '<button onclick="deleteRecordGroup(\'' + ridsStr + '\')" style="display:block;width:100%;padding:8px 16px;margin:4px 0;background:#ef4444;color:white;border:none;border-radius:4px;">× အကုန် ဖျက်</button>';
+        document.body.appendChild(menu);
+        setTimeout(() => { document.addEventListener('click', closeEditDeleteMenu, { once: true }); }, 100);
+    };
+    window.openEditGroup = async function(ridsStr) {
+        closeEditDeleteMenu();
+        _grpIds = ridsStr.split(',').filter(Boolean);
+        await renderGroupModal();
+    };
+    async function renderGroupModal() {
+        const old = document.getElementById('editRecordModal');
+        if (old) old.remove();
+        const recs = [];
+        for (const id of _grpIds) {
+            try { const r = await db.get('lottery_records', id); if (r) recs.push(r); } catch (e) { /* gone — dropped */ }
+        }
+        _grpIds = recs.map((r) => r.id);
+        if (!recs.length) { closeEditDeleteMenu(); await _grpRefresh(); return; }
+        const ft = (recs[0].formula_text || '').trim();
+        let rows = '';
+        for (const r of recs) {
+            rows += '<div style="display:flex;gap:6px;align-items:center;margin-bottom:6px;">' +
+                '<input id="gNum_' + r.id + '" type="text" value="' + escHtml(r.number) + '" style="width:56px;padding:6px;background:#0f172a;color:white;border:1px solid #334155;border-radius:4px;">' +
+                '<input id="gAmt_' + r.id + '" type="number" value="' + r.amount + '" style="flex:1;padding:6px;background:#0f172a;color:white;border:1px solid #334155;border-radius:4px;">' +
+                '<button onclick="deleteOneInGroup(\'' + r.id + '\')" style="padding:6px 10px;background:#ef4444;color:white;border:none;border-radius:4px;">ဖျက်</button></div>';
+        }
+        const modal = document.createElement('div');
+        modal.id = 'editRecordModal';
+        modal.style.cssText = 'position:fixed;z-index:9999;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;';
+        modal.innerHTML =
+            '<div style="background:#1e293b;border:1px solid #3b82f6;border-radius:12px;padding:20px;min-width:300px;max-width:92vw;max-height:84vh;display:flex;flex-direction:column;">' +
+            '<h3 style="color:white;margin:0 0 6px;">ပြင် — ' + escHtml(ft) + '</h3>' +
+            '<div style="color:#94a3b8;margin-bottom:12px;">' + recs.length + ' ကွက်</div>' +
+            '<div style="overflow-y:auto;">' + rows + '</div>' +
+            '<div style="display:flex;gap:8px;margin-top:12px;">' +
+            '<button onclick="saveEditGroup()" style="flex:1;padding:10px;background:#3b82f6;color:white;border:none;border-radius:4px;">သိမ်း</button>' +
+            '<button onclick="closeEditDeleteMenu()" style="flex:1;padding:10px;background:#475569;color:white;border:none;border-radius:4px;">ပိတ်</button>' +
+            '</div></div>';
+        document.body.appendChild(modal);
+    }
+    window.saveEditGroup = async function() {
+        try {
+            for (const id of _grpIds) {
+                const numEl = document.getElementById('gNum_' + id);
+                const amtEl = document.getElementById('gAmt_' + id);
+                if (!numEl || !amtEl) continue;
+                const num = numEl.value.trim();
+                const amt = Number(amtEl.value);
+                if (!num || !(amt > 0)) { alert('မှန်ကန်စွာ ဖြည့်ပါ'); return; }
+                const r = await db.get('lottery_records', id);
+                if (!r) continue;
+                if (String(r.number) !== num || Number(r.amount) !== amt) {
+                    r.number = num; r.amount = amt;
+                    await db.put('lottery_records', r);
+                    await sync.mutate('update', 'lottery_records', { id, number: num, amount: amt });
+                }
+            }
+            closeEditDeleteMenu();
+            await _grpRefresh();
+        } catch (e) { alert('Error: ' + e.message); }
+    };
+    window.deleteOneInGroup = async function(rid) {
+        if (!confirm('ဒီ ၁ ကွက် ဖျက်မလား?')) return;
+        try {
+            await db.del('lottery_records', rid);
+            await sync.mutate('delete', 'lottery_records', { id: rid });
+            _grpIds = _grpIds.filter((x) => x !== rid);
+            if (!_grpIds.length) { closeEditDeleteMenu(); await _grpRefresh(); }
+            else await renderGroupModal();
+        } catch (e) { alert('Error: ' + e.message); }
+    };
+    window.deleteRecordGroup = async function(ridsStr) {
+        closeEditDeleteMenu();
+        const ids = ridsStr.split(',').filter(Boolean);
+        let total = 0;
+        for (const id of ids) {
+            try { const r = await db.get('lottery_records', id); if (r) total += Number(r.amount) || 0; } catch (e) { /* gone — contributes 0 */ }
+        }
+        if (!confirm(ids.length + ' ကွက် လုံး ဖျက်မလား? (စုစုပေါင်း ' + total + ')')) return;
+        try {
+            for (const id of ids) {
+                await db.del('lottery_records', id);
+                await sync.mutate('delete', 'lottery_records', { id });
+            }
+            await _grpRefresh();
+        } catch (e) { alert('Error: ' + e.message); }
+    };
+})();
+
+/* Tap a voucher formula row -> toggle its စာရင်းဖြေ expansion.
+   A long-press (>500ms) still opens the group menu and must NOT toggle. */
+(function () {
+    let downAt = 0, downRow = null;
+    const mark = (e) => {
+        const tr = e.target && e.target.closest ? e.target.closest('tr[data-rids]') : null;
+        if (tr) { downAt = Date.now(); downRow = tr; }
+    };
+    document.addEventListener('touchstart', mark, { passive: true });
+    document.addEventListener('mousedown', mark);
+    document.addEventListener('click', (e) => {
+        const tr = e.target && e.target.closest ? e.target.closest('tr[data-rids]') : null;
+        if (!tr) return;
+        if (tr === downRow && Date.now() - downAt > 500) return;
+        const nx = tr.nextElementSibling;
+        if (nx && nx.classList.contains('vx-row')) nx.hidden = !nx.hidden;
+    });
 })();
 
