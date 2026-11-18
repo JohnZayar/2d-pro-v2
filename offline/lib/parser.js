@@ -18,16 +18,61 @@
  *              Lines that cannot be parsed are skipped (use parseBoardReport
  *              for per-line success info).
  *
+ * Oct 26 2026 (v16): Fix 1 — rule 4 allows a separator between a cover and its
+ * main amount ("35-ထိပ်-750r250" → cover @750 + swapped @250). Fix 2 — rule 5
+ * peels a trailing 3-4 digit group as the main amount ("…-1500r500" → mains
+ * @1500 + reverses @500). Fix 3 — trailing separators stripped from lines and
+ * combined parts ("6-ထိပ်-500-နောက်200" → 10 @500 + 10 @200).
+ *
+ * Oct 27 2026 (v17, Pho's written examples): "/" separates entries/groups
+ * ("3-8-bk-2500/1@1000" → 20 @2500 + 1ပါ 19 @1000 = 39;
+ * "7890/567-ခွေပူး-4000" → 16 + 9 = 25 — digits-only groups inherit the
+ * last part's keyword + amount). "/" keeps its OLD meanings for a bare
+ * trailing amount ("12/500") and for digit-lists before a digit-set keyword
+ * ("2/3/4 ပါ-3000" → 57). Rule 5 peel extended to 5+ digit amounts
+ * ("76-20000@15000" → 76 @20000 + 67 @15000). Odd-length digit run + r/@ =
+ * perms, no doubles ("16907r1000", "12457-@1000" → 20 each; even-length runs
+ * keep the old pair reading, e.g. "12-34r500"). New keywords, digit-required
+ * only (bare forms do NOT exist): digit + စုံကပ် = digit paired with each
+ * EVEN digit both orders (10 lines, overlaps kept); digit + မကပ် = digit
+ * paired with each ODD digit both orders (10 lines).
+ *
+ *
+ * Nov 3 2026 (v22): ORDER ONLY - nakhat list reordered to pairs-adjacent
+ * (base, reverse, base, reverse...); sets, counts and totals unchanged.
+ *
+ * Nov 6 2026 (v20): Thai branches added, mirroring online confirmed sets
+ * (Pho Oct 29 22:25): Thai-power = 13 31 26 62 47 74 58 85 90 09,
+ * Thai-nakhat = 19 91 23 32 48 84 56 65 70 07 (10 each, pairs-adjacent).
+ *
+ * Nov 6 2026 (v20b, held — not delivered): alias နတ်ခတ် = နက္ခတ်
+ * (both bare and ထိုင်း- forms); "/" split moved before the
+ * combined-formula split so slash-separated formula entries parse
+ * independently (Pho v17: "/" SEPARATES entries).
+ *
+ * Nov 6 2026 (v20c, held — not delivered): bare-continuation "/" segments —
+ * a segment that is a bare formula keyword + amount with NO digit set of its
+ * own (e.g. "နောက်400") belongs to the previous group ("၁အုပ်စုထဲမို့") and
+ * inherits its leading digits: "8,6,9ထိပ်600/နောက်400" = one group, 60.
+ * A segment WITH its own digit set (starts with a digit) stays separate.
+ *
+ * Nov 3 2026 (v23): dot-before-R tolerance - see parseLine note below.
  * Use as ES6 module:  import { parseBoard } from './parser.js'
  */
 
 /** Convert Myanmar digits to ASCII digits. */
 export function convertMyanmarNumbers(str) {
     if (!str) return '';
+    str = str.normalize('NFC');
     const mmNums = ['၀', '၁', '၂', '၃', '၄', '၅', '၆', '၇', '၈', '၉'];
     const enNums = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
     for (let i = 0; i < 10; i++) {
         str = str.replace(new RegExp(mmNums[i], 'g'), enNums[i]);
+    }
+    // Subscript digits (U+2080–U+2089) — sometimes pasted from rich text
+    const subNums = ['₀', '₁', '₂', '₃', '₄', '₅', '₆', '₇', '₈', '₉'];
+    for (let i = 0; i < 10; i++) {
+        str = str.replace(new RegExp(subNums[i], 'g'), enNums[i]);
     }
     return str;
 }
@@ -38,16 +83,63 @@ function _normR(s) {
 }
 
 /**
+ * Custom replacement rules (admin-defined via Rule settings).
+ * e.g. [{from:'$', to:' '}] lets "45$46$ 2000" parse as 45,46 x 2000.
+ * If `to` is blank, the symbol is deleted.
+ */
+let customRules = [];
+export function setCustomRules(rules) {
+    customRules = Array.isArray(rules)
+        ? rules.filter((r) => r && typeof r.from === 'string' && r.from.length > 0)
+              .map((r) => ({ from: r.from, to: typeof r.to === 'string' ? r.to : '' }))
+        : [];
+}
+export function getCustomRules() {
+    return customRules.map((r) => ({ ...r }));
+}
+/** Apply admin replacement rules to input text before parsing. */
+function applyCustomRules(text) {
+    let t = text || '';
+    for (const r of customRules) {
+        if (r.from) t = t.split(r.from).join(r.to);
+    }
+    return t;
+}
+/** Build the number-list split regex: base seps only (custom handled via replacement). */
+function sepRegex() {
+    return /[\s,.\-\/]+/;
+}
+
+/**
  * Expand a formula text into a list of 2-digit number strings.
  * E.g. expandFormula('6ထိပ်') -> ['60','61',...,'69']
  */
 export function expandFormula(fullNoText) {
     const generatedNums = [];
-    let cleanText = _normR(convertMyanmarNumbers(fullNoText).trim().normalize('NFC'));
+    let cleanText = _normR(convertMyanmarNumbers(fullNoText).trim().normalize('NFC')).replace(/နတ်ခတ်/g, 'နက္ခတ်'); // Pho Nov 6: နတ်ခတ် = နက္ခတ်
 
-    if (cleanText.includes('ခွေ') && cleanText.includes('ပူး')) {
+    // Pho Oct 17: ဘရိတ်/ပွင့်/Bk — Nဘရိတ် = pairs where (d1+d2)%10 == N (10 numbers per digit)
+    // e.g. 1ဘရိတ် → 01 10 29 92 38 83 47 74 56 65; 123bk → 30 numbers
+    if (cleanText.includes('ဘရိတ်') || cleanText.includes('ပွင့်') || /[bB][kK]/.test(cleanText)) {
+        const beforeKw = cleanText.split(/ဘရိတ်|ပွင့်|[bB][kK]/)[0];
+        const dStr = beforeKw.replace(/[^\d]/g, '');
+        const targets = dStr ? Array.from(new Set(dStr.split(''))).map(Number) : [1];
+        const setNums = new Set();
+        for (const target of targets) {
+            for (let d1 = 0; d1 <= 9; d1++) {
+                for (let d2 = 0; d2 <= 9; d2++) {
+                    if ((d1 + d2) % 10 === target) {
+                        setNums.add(`${d1}${d2}`);
+                    }
+                }
+            }
+        }
+        setNums.forEach((nn) => generatedNums.push(nn));
+    } else if (cleanText.includes('ခွေ') && cleanText.includes('ပူး')) {
         // ခွေပူး / အခွေအပူး — permutations WITH doubles (25 nums)
-        const allDigits = cleanText.match(/\d+/g);
+        // Digits only from BEFORE the formula keyword (exclude amount)
+        const beforeKw = cleanText.split(/ခွေ/)[0];
+        const allDigits = beforeKw.match(/\d+/g);
         const digits = allDigits ? allDigits.join('') : '123';
         const uniqueDigits = Array.from(new Set(digits.split('')));
         const setNums = new Set();
@@ -60,6 +152,11 @@ export function expandFormula(fullNoText) {
             setNums.add(`${uniqueDigits[i]}${uniqueDigits[i]}`);
         }
         return Array.from(setNums);
+    } else if (cleanText.includes('ထိုင်းပါဝါ')) {
+        // Pho Oct 29 22:25 CONFIRMED (supersedes 13:59 5-no-reverses):
+        // Thai-power = 10: base 5 + reverses. Must precede the
+        // generic ပါဝါ branch below (ထိုင်းပါဝါ contains ပါဝါ).
+        return ['13', '31', '26', '62', '47', '74', '58', '85', '90', '09'];
     } else if (cleanText.includes('ပါဝါ') || cleanText === 'ပါဝါ') {
         return ['05', '50', '16', '61', '27', '72', '38', '83', '49', '94'];
     } else if (cleanText.includes('ဘရိတ်') || cleanText.includes('ရိတ်') || /bk/i.test(cleanText) || cleanText.includes('ဘ')) {
@@ -81,7 +178,7 @@ export function expandFormula(fullNoText) {
     } else if (cleanText.endsWith('R') || cleanText.endsWith('r') || cleanText.endsWith('အာ')) {
         const cleanNo = cleanText.replace(/R|r|အာ/g, '').trim();
         // "34r 35r" list — expand each with reverse
-        const rParts = cleanNo.split(/[\s,.\-\/]+/).filter((p) => p.length > 0);
+        const rParts = cleanNo.split(sepRegex()).filter((p) => p.length > 0);
         if (rParts.length > 1) {
             rParts.forEach((p) => {
                 if (p.length === 2) {
@@ -101,51 +198,74 @@ export function expandFormula(fullNoText) {
                     if (i !== j) generatedNums.push(d[i] + d[j]);
                 }
             }
+        } else if (cleanNo.length === 1) {
+            // Pho Oct 21: single digit + r/အာ/@ = အပါ set (same as bare digit)
+            const sdSeen = new Set();
+            for (let i = 0; i <= 9; i++) { sdSeen.add(`${cleanNo}${i}`); sdSeen.add(`${i}${cleanNo}`); }
+            sdSeen.forEach((x) => generatedNums.push(x));
         } else {
             generatedNums.push(cleanNo);
         }
     } else if (cleanText.includes('ထိပ်')) {
-        // Multi-digit: 6.4.5ထိပ် -> 6ထိပ် + 4ထိပ် + 5ထိပ်
+        // Multi-digit: 758ထိပ် -> 7ထိပ် + 5ထိပ် + 8ထိပ် (each digit separate, Pho Oct 17)
         const dPartH = cleanText.replace(/ထိပ်/g, '').trim();
-        let dListH = dPartH.split(/[\.,\-\/\s]+/).filter((x) => x);
-        if (dListH.length === 0) dListH = [dPartH.replace(/[^\d]/g, '') || '5'];
+        const dStrH = dPartH.replace(/[^\d]/g, '');
+        const dListH = dStrH ? Array.from(new Set(dStrH.split(''))) : ['5'];
         const seenH = new Set();
-        dListH.forEach((dd) => {
-            const d = dd.replace(/[^\d]/g, '').slice(-1) || '5';
+        dListH.forEach((d) => {
             for (let i = 0; i <= 9; i++) {
                 const nn = `${d}${i}`;
                 if (!seenH.has(nn)) { seenH.add(nn); generatedNums.push(nn); }
             }
         });
     } else if (cleanText.includes('နောက်')) {
+        // Multi-digit: 758နောက် -> 7နောက် + 5နောက် + 8နောက် (each digit separate, Pho Oct 17)
         const dPartN = cleanText.replace(/နောက်/g, '').trim();
-        let dListN = dPartN.split(/[\.,\-\/\s]+/).filter((x) => x);
-        if (dListN.length === 0) dListN = [dPartN.replace(/[^\d]/g, '') || '5'];
+        const dStrN = dPartN.replace(/[^\d]/g, '');
+        const dListN = dStrN ? Array.from(new Set(dStrN.split(''))) : ['5'];
         const seenN = new Set();
-        dListN.forEach((dd) => {
-            const d = dd.replace(/[^\d]/g, '').slice(-1) || '5';
+        dListN.forEach((d) => {
             for (let i = 0; i <= 9; i++) {
                 const nn = `${i}${d}`;
                 if (!seenN.has(nn)) { seenN.add(nn); generatedNums.push(nn); }
             }
         });
     } else if (cleanText.includes('ပတ်')) {
-        const d = cleanText.replace(/အပတ်|ပတ်/g, '').replace(/[^\d]/g, '').slice(-1) || '5';
-        const setNums = new Set();
-        for (let i = 0; i <= 9; i++) { setNums.add(`${d}${i}`); setNums.add(`${i}${d}`); }
-        return Array.from(setNums);
+        // Multi-digit: "567ပတ်" = (5ပတ် 6ပတ် 7ပတ်) → 19×3=57, same as ပါ/အပါ (Pho)
+        const dStr = cleanText.replace(/အပတ်|ပတ်/g, '').replace(/[^\d]/g, '');
+        const digits = dStr ? Array.from(new Set(dStr.split(''))) : ['5'];
+        for (const d of digits) {
+            const seen = new Set();
+            for (let i = 0; i <= 9; i++) {
+                const a = `${d}${i}`, b = `${i}${d}`;
+                if (!seen.has(a)) { seen.add(a); generatedNums.push(a); }
+                if (!seen.has(b)) { seen.add(b); generatedNums.push(b); }
+            }
+        }
+        // Note: no cross-digit dedup — overlaps are intentional double bets
     } else if (cleanText.includes('ပူး')) {
         const dPoo = cleanText.replace(/အပူး|ပူး/g, '').replace(/[^\d]/g, '').slice(-1);
         if (dPoo) return [`${dPoo}${dPoo}`];
         return ['00', '11', '22', '33', '44', '55', '66', '77', '88', '99'];
     } else if (cleanText.includes('အပါ') || cleanText.includes('အပတ်') || cleanText.includes('ပါ')) {
-        const d = cleanText.replace(/အပါ|အပတ်|ပါ/g, '').replace(/[^\d]/g, '').slice(-1) || '5';
-        const setNums = new Set();
-        for (let i = 0; i <= 9; i++) { setNums.add(`${d}${i}`); setNums.add(`${i}${d}`); }
-        return Array.from(setNums);
+        // Multi-digit: "567ပါ" = (5ပါ 6ပါ 7ပါ) → 19×3=57, overlaps counted multiple times (Pho)
+        // Within each digit: dedup (55 once). Across digits: keep duplicates (56 in both 5ပါ and 6ပါ).
+        const dStr = cleanText.replace(/အပါ|အပတ်|ပါ/g, '').replace(/[^\d]/g, '');
+        const digits = dStr ? Array.from(new Set(dStr.split(''))) : ['5'];
+        for (const d of digits) {
+            const seen = new Set();
+            for (let i = 0; i <= 9; i++) {
+                const a = `${d}${i}`, b = `${i}${d}`;
+                if (!seen.has(a)) { seen.add(a); generatedNums.push(a); }
+                if (!seen.has(b)) { seen.add(b); generatedNums.push(b); }
+            }
+        }
+        // Note: no cross-digit dedup — overlaps (56,65,etc.) are intentional double bets
     } else if (cleanText.includes('အခွေ') || cleanText.includes('ခွေ')) {
         // ခွေ — permutations WITHOUT doubles (20 nums)
-        let digits = cleanText.replace(/[^\d]/g, '').trim();
+        // Digits only from BEFORE the formula keyword (exclude amount)
+        const beforeKw = cleanText.split(/အခွေ|ခွေ/)[0];
+        let digits = beforeKw.replace(/[^\d]/g, '').trim();
         if (!digits) digits = '123';
         const uniqueDigits = Array.from(new Set(digits.split('')));
         const setNums = new Set();
@@ -155,8 +275,12 @@ export function expandFormula(fullNoText) {
             }
         }
         return Array.from(setNums);
+    } else if (cleanText.includes('ထိုင်းနက္ခတ်')) {
+        // Pho Oct 29 22:25 CONFIRMED (supersedes 13:59 5-no-reverses):
+        // Thai-nakhat = 10: base 5 + reverses.
+        return ['19', '91', '23', '32', '48', '84', '56', '65', '70', '07'];
     } else if (cleanText.includes('နက္ခတ်')) {
-        return ['07', '18', '24', '53', '69', '70', '81', '42', '35', '96'];
+        return ['07', '70', '18', '81', '24', '42', '35', '53', '69', '96'];
     } else if (cleanText.includes('စုံစုံ')) {
         for (let i = 0; i <= 9; i += 2) for (let j = 0; j <= 9; j += 2) generatedNums.push(`${i}${j}`);
     } else if (cleanText.includes('မမ')) {
@@ -165,6 +289,29 @@ export function expandFormula(fullNoText) {
         for (let i = 0; i <= 9; i += 2) for (let j = 1; j <= 9; j += 2) generatedNums.push(`${i}${j}`);
     } else if (cleanText.includes('မစုံ')) {
         for (let i = 1; i <= 9; i += 2) for (let j = 0; j <= 9; j += 2) generatedNums.push(`${i}${j}`);
+    } else if (cleanText.includes('စုံကပ်')) {
+        // Pho Oct 27 (v17): digit + စုံကပ် = digit paired with each EVEN digit,
+        // both orders (10 lines, overlaps kept — 0စုံကပ် has 00 twice).
+        // Digits come from BEFORE the keyword only (amount excluded), so a
+        // bare "စုံကပ်1000" yields nothing — bare forms do NOT exist.
+        const beforeKw = cleanText.split(/စုံကပ်/)[0];
+        const dStr = beforeKw.replace(/[^\d]/g, '');
+        const digits = dStr ? Array.from(new Set(dStr.split(''))) : [];
+        for (const d of digits) {
+            for (const e of ['0', '2', '4', '6', '8']) generatedNums.push(`${d}${e}`);
+            for (const e of ['0', '2', '4', '6', '8']) generatedNums.push(`${e}${d}`);
+        }
+    } else if (cleanText.includes('မကပ်')) {
+        // Pho Oct 27 (v17): digit + မကပ် = digit paired with each ODD digit,
+        // both orders (10 lines, overlaps kept — 1မကပ် has 11 twice).
+        // Bare မကပ် does NOT exist (digits from before the keyword only).
+        const beforeKw = cleanText.split(/မကပ်/)[0];
+        const dStr = beforeKw.replace(/[^\d]/g, '');
+        const digits = dStr ? Array.from(new Set(dStr.split(''))) : [];
+        for (const d of digits) {
+            for (const o of ['1', '3', '5', '7', '9']) generatedNums.push(`${d}${o}`);
+            for (const o of ['1', '3', '5', '7', '9']) generatedNums.push(`${o}${d}`);
+        }
     } else if (cleanText.includes('ညီအစ်ကို')) {
         return ['01', '10', '12', '21', '23', '32', '34', '43', '45', '54', '56', '65', '67', '76', '78', '87', '89', '98', '90', '09'];
     } else {
@@ -174,7 +321,7 @@ export function expandFormula(fullNoText) {
                 generatedNums.push(pureDigits.substr(i, 2));
             }
         } else {
-            const numsToProcess = cleanText.split(/[\.,\-\/\s]+/);
+            const numsToProcess = cleanText.split(sepRegex());
             numsToProcess.forEach((nStr) => {
                 nStr = nStr.trim();
                 if (nStr) {
@@ -190,6 +337,8 @@ export function expandFormula(fullNoText) {
             });
         }
     }
+    // Note: duplicates INTENTIONAL for multi-digit formulas (e.g. 5-6-7ပါ → 19×3=57).
+    // Pho: each digit's set counts separately; do NOT deduplicate here.
     return generatedNums;
 }
 
@@ -205,24 +354,23 @@ export function expandReverseFormula(formulaText) {
     const pushRev = (x) => { if (!revSeen.has(x)) { revSeen.add(x); rev.push(x); } };
 
     if (ct.includes('ထိပ်')) {
-        let dList = ct.replace(/ထိပ်/g, '').trim().split(/[\.,\-\/\s]+/).filter((x) => x);
-        if (dList.length === 0) dList = ['5'];
-        dList.forEach((dd) => {
-            const d = dd.replace(/[^\d]/g, '').slice(-1) || '5';
+        // Multi-digit: each digit separate (Pho Oct 17)
+        const dStr = ct.replace(/ထိပ်/g, '').replace(/[^\d]/g, '');
+        const dList = dStr ? Array.from(new Set(dStr.split(''))) : ['5'];
+        dList.forEach((d) => {
             for (let i = 0; i <= 9; i++) pushRev(`${i}${d}`);
         });
     } else if (ct.includes('နောက်')) {
-        let dList = ct.replace(/နောက်/g, '').trim().split(/[\.,\-\/\s]+/).filter((x) => x);
-        if (dList.length === 0) dList = ['5'];
-        dList.forEach((dd) => {
-            const d = dd.replace(/[^\d]/g, '').slice(-1) || '5';
+        const dStr = ct.replace(/နောက်/g, '').replace(/[^\d]/g, '');
+        const dList = dStr ? Array.from(new Set(dStr.split(''))) : ['5'];
+        dList.forEach((d) => {
             for (let i = 0; i <= 9; i++) pushRev(`${d}${i}`);
         });
     } else if (/^\d{2}$/.test(ct)) {
         const sw = ct[1] + ct[0];
         if (sw !== ct) rev.push(sw);
     } else if (/^\d-\d-\d/.test(ct) || /^[\d\.,\-\/\s]+$/.test(ct)) {
-        ct.split(/[\.,\-\/\s]+/).forEach((p) => {
+        ct.split(sepRegex()).forEach((p) => {
             if (/^\d{2}$/.test(p)) {
                 const sw = p[1] + p[0];
                 if (sw !== p && !rev.includes(sw)) rev.push(sw);
@@ -233,17 +381,191 @@ export function expandReverseFormula(formulaText) {
 }
 
 /**
+ * Split a combined formula line like "5ထိပ်400နောက်100" into ["5ထိပ်400", "နောက်100"].
+ * Each part keeps its own amount.
+ */
+function splitCombinedFormula(line) {
+    // Note: ခွေပူး variants must come FIRST so overlap logic keeps them as single units
+    const keywords = ['ထိုင်းနက္ခတ်', 'နက္ခတ်', 'ညီအစ်ကို', 'အခွေအပူးပါ', 'အခွေအပူး', 'ခွေပူးပါ', 'ခွေအပူး', 'အခွေပူး', 'ခွေပူး', 'ဘရိတ်', 'ပွင့်', 'Bk', 'bk', 'BK', 'ထိပ်', 'နောက်', 'ပတ်', 'အပါ', 'ပါ', 'အပူး', 'ပူး', 'အခွေ', 'ခွေ', 'စုံမ', 'မစုံ', 'စုံကပ်', 'မကပ်'];
+    // Find all keyword occurrences
+    const positions = [];
+    for (const kw of keywords) {
+        let idx = 0;
+        while ((idx = line.indexOf(kw, idx)) !== -1) {
+            positions.push({ pos: idx, kw });
+            idx += kw.length;
+        }
+    }
+    if (positions.length <= 1) return [line];
+    // Sort by position, remove overlaps (keep longest at same position)
+    positions.sort((a, b) => a.pos - b.pos);
+    const filtered = [];
+    for (const p of positions) {
+        const last = filtered[filtered.length - 1];
+        if (last && p.pos < last.pos + last.kw.length) {
+            // Overlap — keep the longer keyword
+            if (p.kw.length > last.kw.length) filtered[filtered.length - 1] = p;
+        } else {
+            filtered.push(p);
+        }
+    }
+    if (filtered.length <= 1) return [line];
+    // Split into parts
+    const parts = [];
+    // Pho Oct 17: leading digits (e.g. "8,6,9" in "8,6,9ထိပ်600နောက်400") apply to ALL parts.
+    // Parts after the first (e.g. "နောက်400") get the leading digits prepended.
+    const firstKwPos = filtered[0].pos;
+    const leadingDigits = line.substring(0, firstKwPos).trim();
+    for (let i = 0; i < filtered.length; i++) {
+        const start = (i === 0) ? 0 : filtered[i].pos;
+        const end = (i + 1 < filtered.length) ? filtered[i + 1].pos : line.length;
+        let part = line.substring(start, end).trim();
+        if (i > 0 && leadingDigits && part.startsWith(filtered[i].kw)) {
+            part = leadingDigits + part;
+        }
+        // Pho Oct 26 Fix 3: strip a trailing separator left by the cut before the
+        // next keyword ("6-ထိပ်-500-" → "6-ထိပ်-500") so the amount survives.
+        part = part.replace(/[\s\-,\/\.]+$/, '');
+        if (part) parts.push(part);
+    }
+    return parts.length > 1 ? parts : [line];
+}
+
+/**
  * Parse a single board line into [{ number, amount }, ...].
  * Returns [] when the line cannot be parsed.
  */
 export function parseLine(line) {
     const results = [];
-    const cleanLine = (line || '').trim();
+    let cleanLine = applyCustomRules((line || '').trim());
     if (!cleanLine) return results;
 
-    let convertedLine = _normR(convertMyanmarNumbers(cleanLine));
+    // Pho Oct 18: aliases — (ထိပ်=ရှေ့=အရှေ့), (နောက်=ပိတ်=အပိတ်=အနောက်)
+    // Normalize to canonical forms so all writing methods work
+    cleanLine = cleanLine
+        .replace(/အရှေ့/g, 'ထိပ်').replace(/ရှေ့/g, 'ထိပ်')
+        .replace(/အနောက်/g, 'နောက်').replace(/အပိတ်/g, 'နောက်').replace(/ပိတ်/g, 'နောက်')
+        .replace(/နတ်ခတ်/g, 'နက္ခတ်'); // Pho Nov 6: နတ်ခတ် = နက္ခတ် (same word, က/တ spellings)
+
+    // Pho Oct 26 Fix 3: a trailing separator at line end is never meaningful.
+    cleanLine = cleanLine.replace(/[\s\-,\/\.]+$/, '');
+
+    // Pho: ရ before a formula keyword is ignored (e.g. "567ရခွေပူး" → "567ခွေပူး")
+    // (ရ as reverse marker only applies after a complete number, not mid-formula)
+    // Do this BEFORE _normR converts ရ → r
+    let preLine = convertMyanmarNumbers(cleanLine).replace(/ရ(?=\s*ခွေ|ခွေ|ပူး|ပါ|ပတ်|ထိပ်|နောက်|နက္ခတ်|စုံ)/g, '');
+    let convertedLine = _normR(preLine);
+    // Pho Nov 3 (v23): dot-before-R tolerance - a dot/space run between a
+    // number and a following R/r marker (and between the marker and its
+    // amount) is ignored, so '45. R. 500' parses exactly like '45R500'
+    // (45 + reverse @500). Dot-list separators are untouched: the first
+    // pattern requires a marker after the dots, the second a digit after
+    // the marker, and both require an amount digit to follow the marker.
+    convertedLine = convertedLine
+        .replace(/(\d)[\s.]+r(?=[\s.]*\d)/gi, '$1r')
+        .replace(/r[\s.]+(\d)/gi, 'r$1');
+    // Pho Oct 27 (v17): "/" separates entries/groups — split FIRST, then parse
+    // Nov 6 v20b: this block moved BEFORE the combined-formula split — a slash line
+    // with 2+ keywords was corrupted by splitCombinedFormula first (it kept "/01238"
+    // on part 1 and prepended leading digits to part 2); "/" wins per Pho's v17 rule.
+    // each part on its own ("3-8-bk-2500/1@1000" → 20 @2500 + 1ပါ 19 @1000;
+    // "48@6000/17-18@2500" → 48,84 @6000 + 17,71,18,81 @2500).
+    // Two cases keep the OLD "/" meaning and do NOT split:
+    //  (a) last part is a bare amount ("12/500" → amount separator);
+    //  (b) digit-list before a digit-set keyword ("2/3/4 ပါ-3000" → ပါ sets
+    //      for {2,3,4} — the "/" is a digit separator there).
+    // Digits-only parts (e.g. "7890" in "7890/567-ခွေပူး-4000") inherit the
+    // last part's keyword + amount, so each group gets the shared formula.
+    if (convertedLine.includes('/')) {
+        let sParts = convertedLine.split('/').map((p) => p.trim()).filter((p) => p.length > 0);
+        if (sParts.length > 1) {
+            // Pho Nov 6 v20c: bare-continuation segments — a "/" segment that is
+            // a bare formula keyword + amount with NO digit set of its own
+            // (starts with a letter, e.g. "နောက်400") belongs to the previous
+            // group ("၁အုပ်စုထဲမို့") and inherits its leading digits:
+            // "8,6,9ထိပ်600/နောက်400" = one group, 60 | 30,000. Glue ONLY when
+            // the previous segment starts with a digit AND is a formula group
+            // (contains a formula keyword); a bare formula after a plain direct
+            // bet ("12=500/နောက်400") stays split — gluing there would merge
+            // the two amounts ("500400"). r/အာ-style segments are never glued.
+            const kwMerge = ['ထိုင်းနက္ခတ်', 'ထိုင်းပါဝါ', 'ခွေပူး', 'အခွေ', 'ခွေ', 'စုံကပ်', 'မကပ်', 'ထိပ်', 'နောက်', 'အပတ်', 'ပတ်', 'အပါ', 'ပါ', 'ဘရိတ်', 'ပွင့်', 'ပါဝါ', 'နက္ခတ်', 'စုံစုံ', 'မမ', 'စုံမ', 'မစုံ', 'ညီအစ်ကို', 'အပူး', 'ပူး'];
+            const startsWithKw = (s) => kwMerge.some((k) => s.startsWith(k)) || /^bk/i.test(s);
+            const hasKw = (s) => kwMerge.some((k) => s.includes(k)) || /bk/i.test(s);
+            const mergedParts = [];
+            for (const seg of sParts) {
+                const prev = mergedParts[mergedParts.length - 1];
+                if (prev && /^\d/.test(prev) && hasKw(prev) && !/^\d/.test(seg) && startsWithKw(seg)) {
+                    mergedParts[mergedParts.length - 1] = prev + seg;
+                } else {
+                    mergedParts.push(seg);
+                }
+            }
+            sParts = mergedParts;
+            const lastP = sParts[sParts.length - 1];
+            const lastIsBareAmt = /^\d+$/.test(lastP);
+            const lastHasGroupKw = /ခွေ/.test(lastP);
+            const lastHasSetKw = !lastHasGroupKw && !/ပါဝါ/.test(lastP) && /(ထိပ်|နောက်|အပတ်|ပတ်|အပါ|ပါ|ဘရိတ်|ပွင့်|bk)/i.test(lastP);
+            const earlierBareDigits = sParts.slice(0, -1).every((p) => /^\d+$/.test(p.replace(/[\s,\-\.]+/g, '')));
+            const isDigitList = lastHasSetKw && earlierBareDigits;
+            if (!lastIsBareAmt && !isDigitList) {
+                // Keyword + amount to lend to digits-only parts (longest keyword first)
+                const kwList = ['ခွေပူး', 'အခွေ', 'ခွေ', 'စုံကပ်', 'မကပ်', 'ထိပ်', 'နောက်', 'အပတ်', 'ပတ်', 'အပါ', 'ပါ', 'ဘရိတ်', 'ပွင့်', 'ပါဝါ', 'နက္ခတ်', 'စုံစုံ', 'မမ', 'စုံမ', 'မစုံ', 'ညီအစ်ကို', 'အပူး', 'ပူး'];
+                const sortedKw = [...kwList].sort((a, b) => b.length - a.length);
+                let inheritKw = '';
+                for (const kw of sortedKw) {
+                    if (lastP.includes(kw)) { inheritKw = kw; break; }
+                }
+                if (!inheritKw && /bk/i.test(lastP)) inheritKw = 'bk';
+                const amtM = lastP.match(/(\d+)\s*$/);
+                const inheritAmt = amtM ? amtM[1] : '';
+                for (const part of sParts) {
+                    let pp = part.replace(/[\s\-,\.]+$/, '');
+                    if (/^\d+$/.test(pp) && (inheritKw || inheritAmt)) {
+                        pp = pp + '-' + (inheritKw ? inheritKw + '-' : '') + inheritAmt;
+                    }
+                    const sub = parseLine(pp);
+                    // Batch fix (Nov 3, FIX A): a slash-separated group WITHOUT
+                    // its own amount inherits the line's amount (the last
+                    // part's trailing amount). Previously such a group silently
+                    // kept amount 0 while the line stayed green. Non-zero
+                    // items are never touched.
+                    if (inheritAmt && parseInt(inheritAmt, 10) > 0) {
+                        const lineAmt = parseInt(inheritAmt, 10);
+                        sub.forEach((it) => { if (Number(it.amount) === 0) it.amount = lineAmt; });
+                    }
+                    results.push(...sub);
+                }
+                return results;
+            }
+        }
+    }
+
+    // Handle combined formulas: "5ထိပ်400နောက်100" → parse each part separately
+    // (Nov 6 v20b: runs AFTER the "/" split above, so slash-separated segments are never re-cut here.)
+    const cParts = splitCombinedFormula(convertedLine);
+    if (cParts.length > 1) {
+        // Batch fix (Nov 3, FIX A, combined path): same inheritance as the
+        // "/" branch — a part without its own amount inherits the line's
+        // trailing amount. (Slash lines were already handled above, so this
+        // covers the no-slash combined case.)
+        // Parts that already have amounts are never touched.
+        const lineAmtM = convertMyanmarNumbers(convertedLine).match(/(\d+)\s*$/);
+        const lineAmt = lineAmtM ? parseInt(lineAmtM[1], 10) : 0;
+        for (const part of cParts) {
+            const sub = parseLine(part);
+            if (lineAmt > 0) {
+                sub.forEach((it) => { if (Number(it.amount) === 0) it.amount = lineAmt; });
+            }
+            results.push(...sub);
+        }
+        return results;
+    }
+
     // v218.3: / and , as amount separators (12/500 -> 12=500, 12,500 -> 12=500)
     convertedLine = convertedLine.replace(/^(.+?)[/,](\d{3,})$/, '$1=$2');
+    // Pho: "=" between digits and formula keyword = space (e.g. "567=ပါ" → "567 ပါ")
+    // Only when = is followed by non-digit (formula keyword, not amount)
+    convertedLine = convertedLine.replace(/=\s*(?=[^\d\s])/g, ' ');
 
     const pushNums = (nums, amt) => {
         nums.forEach((n) => results.push({ number: n, amount: amt }));
@@ -253,17 +575,31 @@ export function parseLine(line) {
             results.push({ number: numStr, amount: mainAmt });
             if (numStr.length === 2) {
                 const revNum = numStr[1] + numStr[0];
-                if (revNum !== numStr) results.push({ number: revNum, amount: rAmt });
+                // Batch fix (Nov 3, FIX B): do not re-add a reverse that is
+                // already in the expansion itself when main and reverse share
+                // one amount (the @ case). A bare-digit list expands to
+                // contains-sets that already hold both orders, so re-adding
+                // the reverse doubled every number. Different-amount reverses
+                // (e.g. "=500r200" splits) are preserved as before.
+                if (revNum !== numStr && !(mainAmt === rAmt && nums.includes(revNum))) results.push({ number: revNum, amount: rAmt });
             }
         });
     };
+    // Pho Oct 21: a BARE single digit + (အာ/r/R/@) means အပါ — the 19-number
+    // contains-set, exactly like 1ပါ (a single digit has no reverse).
+    // Two-digit operands keep the reverse meaning (12အာ = 12 + 21).
+    const isBareDigit = (t) => /^\d$/.test((t || '').trim());
 
     // 1) "formula=mainAmt r rAmt"  e.g. "12=500r200"
-    let m = convertedLine.match(/^(.+?)\s*=\s*(\d+)\s*[rR]\s*(\d+)$/);
+    // Pho Oct 27 (v18): main amount MUST be 3+ digits (bets are 100/150/250+;
+    // 50/20/10 never bet) — a 2-digit tail stays a number ("60=64=68r1000"
+    // → 6 @1000 via rule 5, not mains @68). Falls through to rule 5.
+    let m = convertedLine.match(/^(.+?)\s*=\s*(\d{3,})\s*[rR]\s*(\d+)$/);
     if (m) {
         const expanded = expandFormula(m[1].trim());
         if (expanded.length > 0) {
-            pushWithReverse(expanded, parseInt(m[2], 10), parseInt(m[3], 10));
+            if (isBareDigit(m[1])) pushNums(expanded, parseInt(m[2], 10));
+            else pushWithReverse(expanded, parseInt(m[2], 10), parseInt(m[3], 10));
             return results;
         }
     }
@@ -277,36 +613,50 @@ export function parseLine(line) {
         if (hasR) leftPart = leftPart.slice(0, -1).trim();
         const exp = expandFormula(leftPart);
         if (exp.length > 0 && !isNaN(mainAmt) && mainAmt > 0) {
-            if (hasR) pushWithReverse(exp, mainAmt, mainAmt);
+            if (hasR && !isBareDigit(leftPart)) pushWithReverse(exp, mainAmt, mainAmt);
             else pushNums(exp, mainAmt);
             return results;
         }
     }
 
     // 3) "numbers amount r reverseAmount"  e.g. "12,13,14 500r100"
-    m = convertedLine.match(/^(.+?)\s+(\d+)\s*[rR]\s*(\d+)$/);
+    // Pho Oct 27 (v18): main amount MUST be 3+ digits (bets are 100/150/250+;
+    // 50/20/10 never bet) — a 2-digit tail stays a number ("20 24 27 47 70
+    // 40R 2000" → 12 @2000 via rule 6, not mains @40). Falls through to rule 6.
+    m = convertedLine.match(/^(.+?)\s+(\d{3,})\s*[rR]\s*(\d+)$/);
     if (m) {
         const exp = expandFormula(m[1].trim());
         const mainAmt = parseInt(m[2], 10);
         const rAmt = parseInt(m[3], 10);
         if (exp.length > 0 && mainAmt > 0) {
-            pushWithReverse(exp, mainAmt, rAmt);
+            if (isBareDigit(m[1])) pushNums(exp, mainAmt);
+            else pushWithReverse(exp, mainAmt, rAmt);
             return results;
         }
     }
 
     // 4) jammed "formulaAmt r reverseAmt"  e.g. "6ထိပ်7000r3000"
-    m = convertedLine.match(/^(.+?[^0-9\s,.\-\/])(\d{2,})[rR](\d{2,})$/);
+    // Pho Oct 27 (v18): main amount MUST be 3+ digits — a 2-digit tail stays
+    // a number ("60=64=68r1000" → 6 @1000 via rule 5, not mains @68).
+    // Pho Oct 26 Fix 1: allow a separator between the cover and its main amount
+    // ("35-ထိပ်-750r250" → cover @750 + swapped @250). The separator form only
+    // applies to cover formulas (ထိပ်/နောက်); other formulas keep the old path
+    // (e.g. "123ခွေ-500r300" still gives 6 @300 via rule 5).
+    m = convertedLine.match(/^(.+?[^0-9\s,.\-\/])([\s,\-\/]*)(\d{3,})[rR](\d{2,})$/);
     if (m) {
         const formulaPart = m[1].trim();
-        const mainAmt = parseInt(m[2], 10);
-        const rAmt = parseInt(m[3], 10);
-        const exp = expandFormula(formulaPart);
-        const revExp = expandReverseFormula(formulaPart);
-        if (exp.length > 0 && mainAmt > 0) {
-            pushNums(exp, mainAmt);
-            pushNums(revExp, rAmt);
-            return results;
+        const seps = m[2];
+        const mainAmt = parseInt(m[3], 10);
+        const rAmt = parseInt(m[4], 10);
+        const isCover = /ထိပ်|နောက်/.test(formulaPart);
+        if (!(seps && !isCover)) {
+            const exp = expandFormula(formulaPart);
+            const revExp = expandReverseFormula(formulaPart);
+            if (exp.length > 0 && mainAmt > 0) {
+                pushNums(exp, mainAmt);
+                pushNums(revExp, rAmt);
+                return results;
+            }
         }
     }
 
@@ -318,7 +668,40 @@ export function parseLine(line) {
         const exp = expandFormula(formulaPart);
         const isPlainNums = !/ထိပ်|နောက်|ပတ်|ပါ|ဘရိတ်|ရိတ်|ခွေ|ပူး|ပါဝါ|နက္ခတ်|စုံ|ညီအစ်ကို|bk/i.test(formulaPart);
         if (exp.length > 0 && amt > 0) {
-            if (isPlainNums) pushWithReverse(exp, amt, amt);
+            if (isPlainNums && !isBareDigit(formulaPart)) {
+                // Pho Oct 26 Fix 2 (v17: extended to 5+ digit groups):
+                // a trailing 3+ digit group before r is the main amount
+                // ("10-30-50-17-37-57-1500r500" → mains @1500 + reverses @500;
+                // "76-20000r15000" → 76 @20000 + 67 @15000).
+                // A 2-digit tail stays a number ("12-34r500" unchanged).
+                const peel = formulaPart.match(/^(.*)[\s,\-\/]+(\d{3,})$/);
+                if (peel && peel[1].trim()) {
+                    const mains = expandFormula(peel[1].trim());
+                    const mainAmt = parseInt(peel[2], 10);
+                    if (mains.length > 0) {
+                        pushWithReverse(mains, mainAmt, amt);
+                        return results;
+                    }
+                }
+                // Pho Oct 27 (v17): a separator-free ODD-length digit run + r/@ =
+                // perms, no doubles ("16907r1000", "12457-@1000" → 20 each).
+                // Even-length runs keep the old pair reading ("1234r500" → pairs),
+                // and separated lists ("12-34r500") are untouched — a run with an
+                // internal separator is never treated as one digit string.
+                const core = formulaPart.replace(/^[\s,\-\/\.]+|[\s,\-\/\.]+$/g, '');
+                if (/^\d{3,}$/.test(core) && core.length % 2 === 1) {
+                    const uniq = Array.from(new Set(core.split('')));
+                    const perms = [];
+                    for (let i = 0; i < uniq.length; i++) {
+                        for (let j = 0; j < uniq.length; j++) {
+                            if (i !== j) perms.push(uniq[i] + uniq[j]);
+                        }
+                    }
+                    pushNums(perms, amt);
+                    return results;
+                }
+                pushWithReverse(exp, amt, amt);
+            }
             else pushNums(exp, amt);
             return results;
         }
@@ -333,7 +716,7 @@ export function parseLine(line) {
         if (hasR) leftPart = leftPart.slice(0, -1).trim();
         const exp = expandFormula(leftPart);
         if (exp.length > 0 && !isNaN(amt) && amt > 0) {
-            if (hasR) pushWithReverse(exp, amt, amt);
+            if (hasR && !isBareDigit(leftPart)) pushWithReverse(exp, amt, amt);
             else pushNums(exp, amt);
             return results;
         }
@@ -388,17 +771,32 @@ export function parseBoard(text) {
 }
 
 /**
+ * Parse board with source line attached: [{ number, amount, formula_text }, ...].
+ * formula_text is the original input line (e.g. "အပူး 500").
+ */
+export function parseBoardWithSource(text) {
+    const out = [];
+    (text || '').split('\n').forEach((line) => {
+        const trimmed = (line || '').trim();
+        if (!trimmed) return;
+        const parsed = parseLine(line);
+        for (const p of parsed) out.push({ ...p, formula_text: trimmed });
+    });
+    return out;
+}
+
+/**
  * Parse with per-line report: { items, invalidLines: [lineText...] }.
  * Useful for the v218.11-style UX: save valid lines, keep invalid visible.
  */
 export function parseBoardReport(text) {
     const items = [];
     const invalidLines = [];
-    (text || '').split('\n').forEach((line) => {
+    (text || '').split('\n').forEach((line, lineIdx) => {
         if (!line.trim()) return;
         const parsed = parseLine(line);
         if (parsed.length > 0) {
-            for (const p of parsed) items.push(p);
+            for (const p of parsed) items.push({ ...p, formula_text: line.trim(), line_idx: lineIdx });
         } else {
             invalidLines.push(line);
         }
