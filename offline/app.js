@@ -565,17 +565,8 @@ async function updateReminders() {
         const msLeft = cutoff.getTime() - now.getTime();
         const label = sessionLabel(s);
 
-        if (!hasWin && msLeft > 0 && msLeft <= 15 * 60 * 1000) {
-            // ⏰ closing soon — countdown
-            const mins = Math.max(1, Math.ceil(msLeft / 60000));
-            html = `⏰ ${mins} မိနစ် အလို — ${escHtml(label)} ပိတ်တော့မယ်`;
-            cls = 'warn';
-            if (!_remindState.warned[s.id]) {
-                _remindState.warned[s.id] = true;
-                try { navigator.vibrate && navigator.vibrate([200, 100, 200]); } catch (e) {}
-            }
-            break;
-        }
+        // Offline v22 (Pho Nov 23): NO auto-close, so no "closing soon"
+        // countdown. The nudge below (enter the winning number) stays.
         if (!hasWin && msLeft <= 0) {
             // 🏆 closed but no winning number yet — nudge to enter it
             html = `🏆 ပေါက်သီး ထည့်ပါ — ${escHtml(label)}`;
@@ -1518,8 +1509,10 @@ window.entryDeleteGroup = function entryDeleteGroup(idxList) {
     renderEntryTable();
 };
 
-/** Session lock: betting closes at 11:55 (AM) / 15:55 (PM) on session date;
-    and locks entirely once winning numbers are entered. */
+/** Session lock (Offline v22, Pho Nov 23): NO time cutoff — the 11:55 /
+    15:55 auto-close is REMOVED (single user, Pho's own phone). A session
+    locks only when the bookie closes it manually, or once winning
+    numbers are entered. */
 async function isSessionLocked(sessionId) {
     const s = state.sessions.find((x) => x.id === sessionId);
     if (!s) return { locked: false };
@@ -1528,20 +1521,6 @@ async function isSessionLocked(sessionId) {
     // winning numbers entered → locked
     const wins = await _getWins(sessionId);
     if (wins && wins.length) return { locked: true, reason: 'ပေါက်ဂဏန်း ထည့်ပြီးပြီ' };
-    // cutoff time
-    if (s.date) {
-        const isAM = (s.timeType || '') === 'မနက်ပိုင်း';
-        const [hh, mm] = isAM ? [11, 55] : [15, 55];
-        // s.date is DD.MM.YYYY — parse properly (new Date("08.10.2026T11:55:00") is Invalid)
-        const parts = String(s.date).split('.');
-        let cutoff;
-        if (parts.length === 3) {
-            cutoff = new Date(Number(parts[2]), Number(parts[1]) - 1, Number(parts[0]), hh, mm, 0);
-        } else {
-            cutoff = new Date(s.date + `T${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}:00`);
-        }
-        if (!isNaN(cutoff.getTime()) && new Date() > cutoff) return { locked: true, reason: 'ထိုးခွင့် ပိတ်ပြီ' };
-    }
     return { locked: false };
 }
 
