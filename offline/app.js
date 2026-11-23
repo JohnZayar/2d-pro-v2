@@ -1709,7 +1709,9 @@ async function renderLedger() {
     const limit = sessionLimit(s);
     const recs = await db.query('lottery_records', 'by_session', s.id);
     const wins = await _getWins(s.id);
-    const winNums = new Set(wins.map((w) => String(w.number).padStart(2, '0')));
+    // Pho Nov 23 rule: NEWEST only — highlight just the newest number.
+    const _nw = newestWinRow(wins);
+    const winNums = _nw ? new Set([String(_nw.number).padStart(2, '0')]) : new Set();
 
     // person filter list (grouped: agent-synced under agent name)
     const persons = [];
@@ -1812,7 +1814,8 @@ async function renderWinningHome() {
     const rows = [];
     for (const s of sess) {
         const wins = await _getWins(s.id);
-        const num = wins.length ? String(wins[0].number).padStart(2, '0') : null;
+        const _nw = newestWinRow(wins);
+        const num = _nw ? String(_nw.number).padStart(2, '0') : null;
         rows.push('<div class="agent-row"><div><div class="nm">' + escHtml(sessionLabel(s)) + '</div>' +
             '<div class="ph">' + (num
                 ? '🏆 ပေါက်သီး <b style="color:var(--green)">' + escHtml(num) + '</b>'
@@ -1933,7 +1936,8 @@ async function openDaily(sessionId) {
     const s = state.sessions.find((x) => x.id === sessionId);
     const recs = await db.query('lottery_records', 'by_session', sessionId);
     const wins = await _getWins(sessionId);
-    const winNum = wins.length ? String(wins[0].number).padStart(2, '0') : null;
+    const _nw = newestWinRow(wins);
+    const winNum = _nw ? String(_nw.number).padStart(2, '0') : null;
 
     // per-person aggregation: incoming and outgoing (akan) shown as separate rows
     const per = {};
@@ -1996,7 +2000,8 @@ let _homeDailyDate = null;
 async function dailySessionAgg(sessionId) {
     const recs = await db.query('lottery_records', 'by_session', sessionId);
     const wins = await _getWins(sessionId);
-    const winNum = wins.length ? String(wins[0].number).padStart(2, '0') : null;
+    const _nw = newestWinRow(wins);
+    const winNum = _nw ? String(_nw.number).padStart(2, '0') : null;
     return dailyAggFromRecords(recs, winNum);
 }
 
@@ -2066,14 +2071,18 @@ async function renderHomeDaily() {
     // Get winning numbers for this date (prefer denormalized w.date so
     // deleted sessions don't hide them)
     const allWins = await db.getAll('winning_numbers');
+    // Pho Nov 23 rule: NEWEST only, per period — newestWinRow picks the
+    // greatest write stamp, so Daily and Weekly can never disagree.
     const dayWins = {};
-    for (const w of allWins) {
-        const sess = state.sessions.find((s) => s.id === w.session);
-        const wDate = w.date || (sess ? sess.date : null);
-        if (wDate === ds) {
-            const tt = w.timeType || (sess ? sess.timeType : '') || '';
-            dayWins[tt] = String(w.number).padStart(2, '0');
-        }
+    for (const tt of ['မနက်ပိုင်း', 'ညနေပိုင်း']) {
+        const matches = allWins.filter((w) => {
+            const sess = state.sessions.find((s) => s.id === w.session);
+            const wDate = w.date || (sess ? sess.date : null);
+            const wTT = w.timeType || (sess ? sess.timeType : '') || '';
+            return wDate === ds && wTT === tt;
+        });
+        const best = newestWinRow(matches);
+        if (best) dayWins[tt] = String(best.number).padStart(2, '0');
     }
 
     let html = '';
@@ -2141,15 +2150,36 @@ function shortTimeType(tt) {
 // while Daily was right. Iterating and overwriting keeps the last row;
 // db.getAll() returns rows in key (insertion) order, so last = newest.
 // Also adds Daily's session fallback for rows missing date/timeType.
+// Pho Nov 23 rule: winning number = NEWEST only. The row with the greatest
+// write stamp wins — `_updated` (ms, stamped on every local create/update),
+// else PB `updated`, else `created`. Never rely on getAll order, never on
+// `created`, never on "earliest": saveWinning updates the OLDEST row
+// (existing[0]), so after a correction the newest number lives in the
+// oldest row; and a session-id change can create a newer row instead.
+// The stamp is right in BOTH cases. (v23 used last-in-getAll-order — same
+// result for current data, wrong after a correction; v24 fixes that.)
+function winStamp(w) {
+    if (typeof w._updated === 'number' && isFinite(w._updated)) return w._updated;
+    const t = Date.parse(String(w.updated || w.created || ''));
+    return isNaN(t) ? -Infinity : t;
+}
+function newestWinRow(rows) {
+    let best = null;
+    for (const w of rows || []) {
+        if (!best || winStamp(w) >= winStamp(best)) best = w;
+    }
+    return best;
+}
+
 function latestWinNum(allWins, ds, tt) {
-    let winNum = null;
-    for (const x of allWins) {
+    const matches = allWins.filter((x) => {
         const xs = state.sessions.find((s) => s.id === x.session);
         const xDate = x.date || (xs ? xs.date : null);
         const xTT = x.timeType || (xs ? xs.timeType : '') || '';
-        if (xDate === ds && xTT === tt) winNum = String(x.number).padStart(2, '0');
-    }
-    return winNum;
+        return xDate === ds && xTT === tt;
+    });
+    const best = newestWinRow(matches);
+    return best ? String(best.number).padStart(2, '0') : null;
 }
 
 async function renderWeekly() {
@@ -2748,7 +2778,8 @@ async function openAllTotal(sessionId) {
     const s = state.sessions.find((x) => x.id === sessionId);
     const recs = await db.query('lottery_records', 'by_session', sessionId);
     const wins = await _getWins(sessionId);
-    const winNum = wins.length ? String(wins[0].number).padStart(2, '0') : null;
+    const _nw = newestWinRow(wins);
+    const winNum = _nw ? String(_nw.number).padStart(2, '0') : null;
 
     // per-person: incoming and akan, grouped by voucherPersonKey (agent grouped)
     // Akan amounts are SUBTRACTED (Pho pays out to hedge bookies)
@@ -2923,7 +2954,9 @@ async function renderVoucherContent() {
 
     // Winning numbers for yellow highlight
     const wins = await _getWins(sid);
-    const winNums = new Set(wins.map((w) => String(w.number).padStart(2, '0')));
+    // Pho Nov 23 rule: NEWEST only — highlight just the newest number.
+    const _nw = newestWinRow(wins);
+    const winNums = _nw ? new Set([String(_nw.number).padStart(2, '0')]) : new Set();
 
     // Group: player (first-appearance order) → batch (first-appearance order) → entry order
     const playerOrder = [];
