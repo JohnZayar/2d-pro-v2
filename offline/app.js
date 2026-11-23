@@ -2133,6 +2133,25 @@ function shortTimeType(tt) {
     return tt || '';
 }
 
+// Offline v23 (Pho Nov 23): Weekly MUST resolve the winning number exactly
+// like renderHomeDaily — the NEWEST matching row. Weekly used .find()
+// (FIRST row), so when a stale duplicate win row existed (Pho's phone:
+// old 85 + new 58 for 23.11.2026 AM), Weekly counted wins against the
+// WRONG number (TL win 500 instead of 5,250; SS 4,000 instead of 4,500)
+// while Daily was right. Iterating and overwriting keeps the last row;
+// db.getAll() returns rows in key (insertion) order, so last = newest.
+// Also adds Daily's session fallback for rows missing date/timeType.
+function latestWinNum(allWins, ds, tt) {
+    let winNum = null;
+    for (const x of allWins) {
+        const xs = state.sessions.find((s) => s.id === x.session);
+        const xDate = x.date || (xs ? xs.date : null);
+        const xTT = x.timeType || (xs ? xs.timeType : '') || '';
+        if (xDate === ds && xTT === tt) winNum = String(x.number).padStart(2, '0');
+    }
+    return winNum;
+}
+
 async function renderWeekly() {
     const box = $('weeklyContent');
     const offset = state.weeklyOffset || 0;
@@ -2161,9 +2180,7 @@ async function renderWeekly() {
         for (const tt of ['မနက်ပိုင်း', 'ညနေပိုင်း']) {
         const isAM = tt === 'မနက်ပိုင်း';
         const recs = allRecs.filter((r) => r.session_date === ds && (r.session_timeType || '') === tt && !isDeadSessionRecord(r, liveSessionIds));
-        const _w = allWins.find((x) => (x.date || '') === ds && ((x.timeType || '') === tt));
-        const wins = _w ? [_w] : [];
-        const winNum = wins.length ? String(wins[0].number).padStart(2, '0') : null;
+        const winNum = latestWinNum(allWins, ds, tt);
         for (const r of recs) {
             const isAkan = r.record_type === 'akan';
             const pkey = voucherPersonKey(r) || '(အမည် မရှိ)';
