@@ -2088,7 +2088,9 @@ async function renderLedger() {
         showToast('❌ ' + (e.message || e));
         return;
     }
-    const winNums = new Set(wins.map((w) => String(w.number).padStart(2, '0')));
+    // Pho Nov 23 rule: NEWEST only — highlight just the newest number.
+    const _nw = newestWinRow(wins);
+    const winNums = _nw ? new Set([String(_nw.number).padStart(2, '0')]) : new Set();
 
     // person filter list (grouped: agent-synced under agent name)
     const persons = [];
@@ -2196,7 +2198,8 @@ async function renderWinningHome() {
     try {
     for (const s of sess) {
         const wins = await _getWins(s.id);
-        const num = wins.length ? String(wins[0].number).padStart(2, '0') : null;
+        const _nw = newestWinRow(wins);
+        const num = _nw ? String(_nw.number).padStart(2, '0') : null;
         rows.push('<div class="agent-row"><div><div class="nm">' + escHtml(sessionLabel(s)) + '</div>' +
             '<div class="ph">' + (num
                 ? '🏆 ပေါက်သီး <b style="color:var(--green)">' + escHtml(num) + '</b>'
@@ -2388,7 +2391,8 @@ async function openDaily(sessionId) {
         showToast('❌ ' + (e.message || e));
         return;
     }
-    const winNum = wins.length ? String(wins[0].number).padStart(2, '0') : null;
+    const _nw = newestWinRow(wins);
+    const winNum = _nw ? String(_nw.number).padStart(2, '0') : null;
 
     // per-person aggregation: incoming and outgoing (akan) shown as separate rows
     const per = {};
@@ -2481,6 +2485,24 @@ function dailyAggFromRecords(recs, winNum) {
     return { rows, tBet, tWin, tNet, winNum };
 }
 
+// Pho Nov 23 rule: winning number = NEWEST only. Returns the win row
+// with the greatest `updated` (last write wins) — never rely on list
+// order, never on `created`, never on "earliest": saveWinning updates the
+// OLDEST row (existing[0]), so after a correction the newest number lives
+// in the oldest row; and a session-id change can create a newer row
+// instead. `updated` is stamped by PocketBase on every save and is right
+// in BOTH cases. `created` is the fallback. Daily, Weekly and every
+// per-session view use this helper so they can never disagree (same flaw
+// Offline v23 fixed, where Weekly took the oldest row and Daily the newest).
+function newestWinRow(rows) {
+    let best = null, bestKey = '';
+    for (const w of rows || []) {
+        const k = String(w.updated || w.created || '');
+        if (!best || k >= bestKey) { best = w; bestKey = k; }
+    }
+    return best;
+}
+
 async function renderHomeDaily() {
     await loadArchivedSessionIds();
     const dateInput = $('homeDailyDate');
@@ -2535,15 +2557,18 @@ async function renderHomeDaily() {
     });
 
     // Winning numbers for this date were fetched above, in parallel with
-    // the records (the loop below is unchanged).
+    // the records. Pho Nov 23 rule: NEWEST only, per period — newestWinRow
+    // picks the greatest `updated`, so Daily and Weekly can never disagree.
     const dayWins = {};
-    for (const w of allWins) {
-        const sess = state.sessions.find((s) => s.id === w.session);
-        const wDate = w.date || (sess ? sess.date : null);
-        if (wDate === ds) {
-            const tt = w.timeType || (sess ? sess.timeType : '') || '';
-            dayWins[tt] = String(w.number).padStart(2, '0');
-        }
+    for (const tt of ['မနက်ပိုင်း', 'ညနေပိုင်း']) {
+        const matches = allWins.filter((w) => {
+            const sess = state.sessions.find((s) => s.id === w.session);
+            const wDate = w.date || (sess ? sess.date : null);
+            const wTT = w.timeType || (sess ? sess.timeType : '') || '';
+            return wDate === ds && wTT === tt;
+        });
+        const best = newestWinRow(matches);
+        if (best) dayWins[tt] = String(best.number).padStart(2, '0');
     }
 
     let html = '';
@@ -2662,14 +2687,14 @@ async function renderWeekly() {
             const rTT = r.session_timeType || (rs ? rs.timeType : '');
             return rDate === ds && rTT === tt;
         });
-        const _w = allWins.find((x) => {
+        const matches = allWins.filter((x) => {
             const ws = sessById.get(x.session);
             const wDate = x.date || (ws ? ws.date : '');
             const wTT = x.timeType || (ws ? ws.timeType : '');
             return wDate === ds && wTT === tt;
         });
-        const wins = _w ? [_w] : [];
-        const winNum = wins.length ? String(wins[0].number).padStart(2, '0') : null;
+        const _w = newestWinRow(matches);
+        const winNum = _w ? String(_w.number).padStart(2, '0') : null;
         for (const r of recs) {
             const isAkan = r.record_type === 'akan';
             const pkey = voucherPersonKey(r) || '(အမည် မရှိ)';
@@ -3267,7 +3292,8 @@ async function openAllTotal(sessionId) {
         showToast('❌ ' + (e.message || e));
         return;
     }
-    const winNum = wins.length ? String(wins[0].number).padStart(2, '0') : null;
+    const _nw = newestWinRow(wins);
+    const winNum = _nw ? String(_nw.number).padStart(2, '0') : null;
 
     // per-person: incoming and akan, grouped by voucherPersonKey (agent grouped)
     // Akan amounts are SUBTRACTED (Pho pays out to hedge bookies)
@@ -3480,7 +3506,9 @@ async function renderVoucherContent() {
         showToast('❌ ' + (e.message || e));
         return;
     }
-    const winNums = new Set(wins.map((w) => String(w.number).padStart(2, '0')));
+    // Pho Nov 23 rule: NEWEST only — highlight just the newest number.
+    const _nw = newestWinRow(wins);
+    const winNums = _nw ? new Set([String(_nw.number).padStart(2, '0')]) : new Set();
 
     // Group: player (first-appearance order) → batch (first-appearance order) → entry order
     const playerOrder = [];
