@@ -120,6 +120,23 @@ document.addEventListener('DOMContentLoaded', init);
 
 /** Server-direct winning-number lookup: session id IS the server id
  * (no _pbId fallback needed — that was a local-first artifact). */
+// Pho Nov 23 rule: winning number = NEWEST only, per session.
+// _getWins returns all rows for the session; pick the row with the
+// greatest `updated` (last write wins) — never rely on list order, never
+// on `created`, never on "earliest": saveWinning updates the OLDEST row,
+// so after a correction the newest number lives in the oldest row; and a
+// session-id change can create a newer row instead. `updated` is stamped
+// by PocketBase on every save and is right in BOTH cases. `created` is
+// the fallback. Returns the 2-digit number string, or null.
+function newestWinNum(winList) {
+    let best = null, bestKey = '';
+    for (const w of winList || []) {
+        const k = String(w.updated || w.created || '');
+        if (!best || k >= bestKey) { best = w; bestKey = k; }
+    }
+    return best ? String(best.number).padStart(2, '0') : null;
+}
+
 async function _getWins(sessionId) {
     try {
         return await direct.withRetry(() => direct.directList('winning_numbers', tenantId, { filter: `session = "${sessionId}"` }));
@@ -375,14 +392,15 @@ async function refreshSession() {
             let winHtml = '';
             try {
                 const wins = await _getWins(pick.id);
-                if (wins && wins.length) {
-                    // Dedupe: same number from duplicate rows shows only once
-                    const uniqNums = [...new Set(wins.map((w) => String(w.number).padStart(2, '0')))];
-                    winHtml = ' &nbsp;🏆 <b>' + uniqNums.map((n) => escHtml(n)).join(' ') + '</b>';
+                // Pho Nov 23 rule: NEWEST only — show just the newest number,
+                // never a stale duplicate alongside it.
+                const _nw = newestWinNum(wins);
+                if (_nw) {
+                    winHtml = ' &nbsp;🏆 <b>' + escHtml(_nw) + '</b>';
                     // 🔔 NEW winning number alert (first sighting only)
                     if (!_agentRemind.knownWins[pick.id]) {
                         _agentRemind.knownWins[pick.id] = true;
-                        showToast('🏆 ပေါက်သီး ထွက်ပြီ: ' + uniqNums.join(' '));
+                        showToast('🏆 ပေါက်သီး ထွက်ပြီ: ' + _nw);
                         try { navigator.vibrate && navigator.vibrate([300, 150, 300]); } catch (e) {}
                     }
                 }
@@ -1329,7 +1347,9 @@ window.renderRecordsView = async function renderRecordsView() {
         _getWins(sessId).catch(() => []),
         pb.list('batch_acks', { perPage: 200 }).catch(() => null),
     ]);
-    let winNums = new Set(winsRes.map((w) => String(w.number).padStart(2, '0')));
+    // Pho Nov 23 rule: NEWEST only — highlight just the newest number.
+    const _nw = newestWinNum(winsRes);
+    let winNums = _nw ? new Set([_nw]) : new Set();
 
     // Play a soft beep when Ok appears (Pho's request)
     const playOkSound = () => {
@@ -2276,7 +2296,9 @@ async function renderDailyTable(recs, dateKeyStr) {
     const winLists = await Promise.all(sessIds.map((sid) => _getWins(sid).catch(() => [])));
     const winBySess = {};
     sessIds.forEach((sid, i) => {
-        winBySess[sid] = new Set(winLists[i].map((w) => String(w.number).padStart(2, '0')));
+        // Pho Nov 23 rule: NEWEST only, per session — the Set holds at most one number.
+        const _nw = newestWinNum(winLists[i]);
+        winBySess[sid] = _nw ? new Set([_nw]) : new Set();
     });
 
     // Group by session
@@ -2379,11 +2401,14 @@ async function renderPlayerGroups(recs, emptyMsg) {
 
     // Get winning numbers for sessions in these records
     const sessIds = [...new Set(recs.map((r) => r.session).filter(Boolean))];
+    // Pho Nov 23 rule: NEWEST only, per session — a stale duplicate must
+    // never count its number as a win.
     const winNums = new Set();
     for (const sid of sessIds) {
         try {
             const wins = await _getWins(sid);
-            wins.forEach((w) => winNums.add(String(w.number).padStart(2, '0')));
+            const _nw = newestWinNum(wins);
+            if (_nw) winNums.add(_nw);
         } catch (e) { /* ignore */ }
     }
     const isWin = (r) => winNums.has(String(r.number).padStart(2, '0'));
@@ -2490,7 +2515,9 @@ window.renderWeekly = async function renderWeekly() {
     const winLists = await Promise.all(sessIds.map((sid) => _getWins(sid).catch(() => [])));
     const winBySess = {};
     sessIds.forEach((sid, i) => {
-        winBySess[sid] = new Set(winLists[i].map((w) => String(w.number).padStart(2, '0')));
+        // Pho Nov 23 rule: NEWEST only, per session — the Set holds at most one number.
+        const _nw = newestWinNum(winLists[i]);
+        winBySess[sid] = _nw ? new Set([_nw]) : new Set();
     });
     const byDay = {};
     // Complete-delete: filter nulls BEFORE grouping — a null group must
