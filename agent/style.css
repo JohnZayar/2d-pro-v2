@@ -207,6 +207,7 @@ button { font-family: inherit; }
 .board-preview .bline.bad .tx { color: #a33b3b; }
 /* Nov 3 layout: flex .tx must not widen the page - min-width: 0 lets the ellipsis truncate long dot-strings instead of pushing the fixed keypad off-screen. */
 .board-preview .bline .tx { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; overflow-wrap: anywhere; }
+.board-preview .bline.total { font-weight: 700; border-top: 1px dashed #888; margin-top: 4px; padding-top: 4px; }
 .board-btns { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
 .board-btns button {
     padding: 8px 4px; border-radius: 10px; font-weight: 700; font-size: 13px;
