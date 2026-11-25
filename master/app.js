@@ -1469,6 +1469,7 @@ function renderBoardLineCheck() {
     if (!text.trim()) { box.innerHTML = ''; box.style.display = 'none'; return 0; }
     let html = '';
     let bad = 0;
+    let totCount = 0, totMoney = 0;
     for (const line of text.split('\n')) {
         if (!line.trim()) continue;
         const ok = boardLineOk(line);
@@ -1478,11 +1479,13 @@ function renderBoardLineCheck() {
             try {
                 const parsed = parseLine(line);
                 const total = parsed.reduce((s, p) => s + (Number(p.amount) || 0), 0);
+                totCount += parsed.length; totMoney += total;
                 extra = ` <span class="muted">(${parsed.length}) ${formatMoney(total)}</span>`;
             } catch (e) {}
         }
         html += `<div class="bline ${ok ? 'ok' : 'bad'}"><span class="mk">${ok ? '✅' : '❌'}</span><span class="tx">${escHtml(line)}${extra}</span></div>`;
     }
+    if (totCount) html += `<div class="bline total"><span class="tx">စုစုပေါင်း: ${totCount} ကွက် · ${formatMoney(totMoney)}</span></div>`;
     box.innerHTML = html;
     box.style.display = '';
     return bad;
