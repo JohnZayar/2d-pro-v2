@@ -734,6 +734,7 @@ tr.win-row td { background: rgba(250,204,21,.15); }
 .board-check .bline.bad .tx { color: #a33b3b; }
 /* Nov 3 layout: flex .tx must not widen the page - min-width: 0 lets the ellipsis truncate long dot-strings instead of pushing the fixed keypad off-screen. */
 .board-check .bline .tx { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; overflow-wrap: anywhere; }
+.board-check .bline.total { font-weight: 700; border-top: 1px dashed #888; margin-top: 4px; padding-top: 4px; }
 
 /* ===== Reminder bar (session-close countdown + winning-number nudge) ===== */
 .reminder-bar {
